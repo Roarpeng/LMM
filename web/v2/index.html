@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LMM Web v2 — 完整手动控制</title>
+  <style>
+    :root {
+      --bg: #12161b; --panel: #1c242c; --line: #35404c; --text: #e8eef4;
+      --muted: #8b99a8; --ok: #3dba7e; --warn: #e0a53a; --danger: #e05454;
+      --accent: #4a9fd8; --x: #5eb3e8; --y: #6bcf8e; --z: #d4a24a; --r: #b08fd4;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; color: var(--text);
+      font-family: "IBM Plex Sans", "Noto Sans SC", system-ui, sans-serif;
+      background: var(--bg); line-height: 1.35;
+    }
+    header {
+      display: flex; flex-wrap: wrap; justify-content: space-between; gap: .5rem 1rem;
+      padding: .85rem 1.1rem; border-bottom: 1px solid var(--line); background: #0e1216;
+    }
+    h1 { margin: 0; font-size: 1.05rem; font-weight: 600; }
+    .meta { color: var(--muted); font-size: .8rem; }
+    .wrap {
+      display: grid;
+      grid-template-columns: 1.05fr 1.2fr .95fr;
+      gap: .75rem; padding: .75rem; max-width: 1400px; margin: 0 auto;
+    }
+    @media (max-width: 1100px) { .wrap { grid-template-columns: 1fr; } }
+    section {
+      background: var(--panel); border: 1px solid var(--line);
+      border-radius: 6px; padding: .7rem .8rem;
+    }
+    section h2 {
+      margin: 0 0 .55rem; font-size: .72rem; letter-spacing: .05em;
+      text-transform: uppercase; color: var(--muted); font-weight: 600;
+    }
+    .pills { display: flex; flex-wrap: wrap; gap: .35rem; margin-bottom: .5rem; }
+    .pill {
+      font-size: .72rem; padding: .2rem .5rem; border-radius: 999px;
+      border: 1px solid var(--line); background: #12161b;
+    }
+    .pill.ok { border-color: var(--ok); color: var(--ok); }
+    .pill.bad { border-color: var(--danger); color: var(--danger); }
+    .pill.warn { border-color: var(--warn); color: var(--warn); }
+    button, .hold {
+      font: inherit; color: var(--text); cursor: pointer;
+      border: 1px solid var(--line); background: #2a333d;
+      border-radius: 4px; padding: .42rem .65rem; font-size: .82rem;
+      user-select: none; -webkit-user-select: none; touch-action: none;
+    }
+    button:hover:not(:disabled), .hold:hover:not(:disabled) { border-color: var(--accent); }
+    button:disabled, .hold:disabled { opacity: .35; cursor: not-allowed; }
+    button.danger { background: #5a2626; border-color: var(--danger); }
+    button.active, .hold.active { background: #1e4a6e; border-color: var(--accent); }
+    .row { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; margin: .35rem 0; }
+    label.opt {
+      display: inline-flex; align-items: center; gap: .3rem;
+      font-size: .8rem; padding: .28rem .5rem; border: 1px solid var(--line);
+      border-radius: 4px; cursor: pointer; background: #12161b;
+    }
+    label.opt input { accent-color: var(--accent); }
+    .params {
+      display: grid; grid-template-columns: auto 1fr auto; gap: .35rem .5rem;
+      align-items: center; font-size: .8rem; margin: .4rem 0;
+    }
+    .params input[type=range] { width: 100%; }
+    .params .val { min-width: 3.2rem; color: var(--accent); font-variant-numeric: tabular-nums; }
+    .schematic {
+      position: relative; height: 260px; border: 1px dashed var(--line);
+      border-radius: 4px; background: #161b22; overflow: hidden;
+    }
+    /* 俯视：左右两条 X 导轨（竖向），Y 沿横梁左右 */
+    .rail {
+      position: absolute; top: 12px; bottom: 28px; width: 10px;
+      background: linear-gradient(180deg, #2a4058, #1e2a36);
+      border-radius: 2px;
+    }
+    .rail.left { left: 18%; }
+    .rail.right { right: 18%; }
+    .axis-label {
+      position: absolute; font-size: .65rem; color: var(--muted); font-weight: 600;
+    }
+    .axis-label.x { left: 4px; top: 50%; transform: translateY(-50%); writing-mode: vertical-rl; color: var(--x); }
+    .axis-label.y { bottom: 6px; left: 50%; transform: translateX(-50%); color: var(--y); }
+    .gantry {
+      position: absolute; left: 18%; right: 18%; top: 50%;
+      height: 14px; margin-top: -7px;
+      background: #3a4654; border-radius: 3px;
+      transition: top .05s linear, transform .05s linear;
+      transform-origin: center center;
+    }
+    .leg {
+      position: absolute; top: 50%; width: 22px; height: 22px;
+      margin-top: -11px; background: #4a9fd8; border-radius: 3px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: .62rem; font-weight: 700; color: #0e1216;
+    }
+    .leg.m1 { left: -6px; }
+    .leg.m2 { right: -6px; }
+    .leg.moving { box-shadow: 0 0 0 2px #fff8; }
+    .carriage {
+      position: absolute; top: 50%; left: 50%;
+      width: 34px; height: 26px; margin: -20px 0 0 -17px;
+      background: var(--y); border-radius: 3px; font-size: .65rem;
+      display: flex; align-items: center; justify-content: center; color: #102018;
+      font-weight: 700; transition: left .05s linear;
+      z-index: 2;
+    }
+    .zblock {
+      position: absolute; left: 50%; top: 50%;
+      width: 18px; height: 16px; margin: 8px 0 0 -9px;
+      background: var(--z); border-radius: 2px; font-size: .58rem;
+      display: flex; align-items: center; justify-content: center; color: #1a1408;
+      font-weight: 700; transition: margin-top .05s linear;
+      z-index: 3;
+    }
+    .fb-table { width: 100%; border-collapse: collapse; font-size: .78rem; }
+    .fb-table th, .fb-table td {
+      border-bottom: 1px solid var(--line); padding: .28rem .3rem; text-align: left;
+    }
+    .fb-table th { color: var(--muted); font-weight: 500; }
+    .bit { color: var(--ok); } .bit.off { color: #55606c; }
+    .log {
+      height: 140px; overflow: auto; font-family: ui-monospace, monospace;
+      font-size: .68rem; background: #0a0d10; border: 1px solid var(--line);
+      border-radius: 4px; padding: .4rem; color: var(--muted);
+    }
+    .log div { margin-bottom: .15rem; }
+    .hint { font-size: .75rem; color: var(--muted); margin: .25rem 0 0; }
+    .cmd-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .4rem; }
+    @media (max-width: 500px) { .cmd-grid { grid-template-columns: 1fr; } }
+    .axis-card {
+      border: 1px solid var(--line); border-radius: 4px; padding: .45rem;
+      background: #12161b;
+    }
+    .axis-card h3 { margin: 0 0 .35rem; font-size: .82rem; }
+    .axis-card.x h3 { color: var(--x); }
+    .axis-card.y h3 { color: var(--y); }
+    .axis-card.z h3 { color: var(--z); }
+    .axis-card.r h3 { color: var(--r); }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>LMM Web v2 — 完整手动控制（对照 docs/plc）</h1>
+      <div class="meta">龙门 X · Sync/Diff · 相对编码上电0 · Axis 独立任务仅 GVL · 本期无自动</div>
+    </div>
+    <div class="meta">Gate D · 通过后回复「Web v2 通过」</div>
+  </header>
+
+  <div class="wrap">
+    <!-- 左：布局 + 安全 + 联锁 -->
+    <div>
+      <section>
+        <h2>龙门示意</h2>
+        <div class="schematic" id="schematic">
+          <div class="axis-label x">X↑ M1/M2</div>
+          <div class="axis-label y">← Y →</div>
+          <div class="rail left"></div>
+          <div class="rail right"></div>
+          <div class="gantry" id="gantry">
+            <div class="leg m1" id="leg-m1">M1</div>
+            <div class="leg m2" id="leg-m2">M2</div>
+            <div class="carriage" id="carriage">Y</div>
+            <div class="zblock" id="zblock">Z</div>
+          </div>
+        </div>
+        <p class="hint">俯视：X 沿导轨上下（与 Y 垂直）；Y 沿横梁左右；原地旋转改变横梁角度。</p>
+      </section>
+
+      <section>
+        <h2>安全</h2>
+        <div class="pills">
+          <span class="pill" id="p-estop">EStop</span>
+          <span class="pill" id="p-en">Enable</span>
+          <span class="pill" id="p-alarm">Alarm</span>
+          <span class="pill ok">Mode=Manual</span>
+        </div>
+        <div class="row">
+          <button type="button" class="danger" id="btn-estop">急停按住 (→FALSE)</button>
+          <button type="button" id="btn-stop">停止（点按停 / 长按3s复位轴错误）</button>
+        </div>
+        <p class="hint">HMI_xEStop：未按 TRUE / 按下 FALSE。长按 Stop：清锁存 + ResetFault。</p>
+      </section>
+
+      <section>
+        <h2>联锁输入（模拟）</h2>
+        <label class="opt"><input type="checkbox" id="il-yp" /> I_xLimYPos</label>
+        <label class="opt"><input type="checkbox" id="il-yn" /> I_xLimYNeg</label>
+        <label class="opt"><input type="checkbox" id="il-zp" /> I_xLimZPos</label>
+        <label class="opt"><input type="checkbox" id="il-zn" /> I_xLimZNeg</label>
+        <label class="opt"><input type="checkbox" id="il-zb" /> Z忙禁Y</label>
+        <label class="opt"><input type="checkbox" id="il-ft" /> 模拟 Fault</label>
+      </section>
+    </div>
+
+    <!-- 中：完整操作 -->
+    <div>
+      <section>
+        <h2>参数 → HMI</h2>
+        <div class="params">
+          <span title="HMI_rJogVelX/Y/Z">JogVel</span><input type="range" id="p-vel" min="0.05" max="2" step="0.05" value="0.4" /><span class="val" id="v-vel">0.40</span>
+          <span title="HMI_rDiffDelta">Δ纠偏</span><input type="range" id="p-delta" min="0" max="0.5" step="0.01" value="0.08" /><span class="val" id="v-delta">0.08</span>
+          <span title="HMI_rTurnOmega">ω拐弯</span><input type="range" id="p-omega" min="0" max="0.8" step="0.02" value="0.2" /><span class="val" id="v-omega">0.20</span>
+          <span title="HMI_rWheelBase">跨距L</span><input type="range" id="p-base" min="4" max="6" step="0.1" value="5" /><span class="val" id="v-base">5.0 m</span>
+        </div>
+        <p class="hint">HMI_rJogVelX/Y/Z · HMI_rDiffDelta · HMI_rTurnOmega · HMI_rWheelBase[4..6]</p>
+      </section>
+
+      <section>
+        <h2>X 龙门 · HMI_eXMode / HMI_eDiffFunc</h2>
+        <div class="row">
+          <label class="opt"><input type="radio" name="xm" value="0" /> Indep(0)</label>
+          <label class="opt"><input type="radio" name="xm" value="1" checked /> Sync(1) 同速⊥Y</label>
+          <label class="opt"><input type="radio" name="xm" value="2" /> Diff(2)</label>
+        </div>
+        <div class="row" id="diff-funcs">
+          <label class="opt"><input type="radio" name="df" value="0" checked /> 纠偏(0)</label>
+          <label class="opt"><input type="radio" name="df" value="1" /> 原地旋转(1)一正一反</label>
+          <label class="opt"><input type="radio" name="df" value="2" /> 差速拐弯(2)</label>
+        </div>
+        <div class="cmd-grid" style="margin-top:.5rem">
+          <div class="axis-card x">
+            <h3>成对 · Sync/Diff JOG</h3>
+            <div class="row">
+              <button type="button" class="hold" data-act="sync+" title="HMI_xJogXSyncPos">Sync+ HMI_xJogXSyncPos</button>
+              <button type="button" class="hold" data-act="sync-" title="HMI_xJogXSyncNeg">Sync− HMI_xJogXSyncNeg</button>
+            </div>
+            <div class="row">
+              <button type="button" class="hold" data-act="diff+" title="HMI_xJogXDiffPos">Diff+ HMI_xJogXDiffPos</button>
+              <button type="button" class="hold" data-act="diff-" title="HMI_xJogXDiffNeg">Diff− HMI_xJogXDiffNeg</button>
+            </div>
+            <p class="hint" id="x-hint">公式对齐 FB_XDiff / WEB_PLC_ALIGN.md</p>
+          </div>
+          <div class="axis-card x">
+            <h3>Indep · HMI_xJogM1/M2</h3>
+            <div class="row">
+              <button type="button" class="hold" data-act="m1+">M1+ JogM1Pos</button>
+              <button type="button" class="hold" data-act="m1-">M1− JogM1Neg</button>
+            </div>
+            <div class="row">
+              <button type="button" class="hold" data-act="m2+">M2+ JogM2Pos</button>
+              <button type="button" class="hold" data-act="m2-">M2− JogM2Neg</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Y / Z / R · HMI_xJog* / HomeReq</h2>
+        <div class="cmd-grid">
+          <div class="axis-card y">
+            <h3>Y ⊥ X（横梁）</h3>
+            <div class="row">
+              <button type="button" class="hold" data-act="y+">Y+ JogYPos</button>
+              <button type="button" class="hold" data-act="y-">Y− JogYNeg</button>
+              <button type="button" data-act="homeY">HomeReqY</button>
+            </div>
+          </div>
+          <div class="axis-card z">
+            <h3>Z on Y</h3>
+            <div class="row">
+              <button type="button" class="hold" data-act="z+">Z+ JogZPos</button>
+              <button type="button" class="hold" data-act="z-">Z− JogZNeg</button>
+              <button type="button" data-act="homeZ">HomeReqZ</button>
+            </div>
+          </div>
+          <div class="axis-card r" style="grid-column:1/-1">
+            <h3>R · xM5Ready=FALSE</h3>
+            <div class="row">
+              <button type="button" data-act="r+" disabled>R+</button>
+              <button type="button" data-act="r-" disabled>R−</button>
+              <button type="button" data-act="homeR" disabled>HomeReqR</button>
+              <span class="pill warn">Alarm 1099</span>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- 右：反馈 + 日志 -->
+    <div>
+      <section>
+        <h2>AxisCmd/Fb 反馈（PLC 同名）</h2>
+        <table class="fb-table">
+          <tr><th>量</th><th>值</th></tr>
+          <tr><td>AxisFb_rVelCmdM1/M2</td><td id="fb-vel">0 / 0</td></tr>
+          <tr><td>AxisFb_rPosM1/M2</td><td id="fb-posx">0 / 0</td></tr>
+          <tr><td>AxisFb_rPosY/Z</td><td id="fb-posyz">0 / 0</td></tr>
+          <tr><td>Yaw 示意°</td><td id="fb-yaw">0</td></tr>
+          <tr><td>AxisFb_xMoving*</td><td id="fb-mv">—</td></tr>
+          <tr><td>xEnablePermit / Ready</td><td id="fb-pw">—</td></tr>
+          <tr><td>AxisFb_xHomedY/Z</td><td id="fb-home">F / F</td></tr>
+        </table>
+      </section>
+      <section>
+        <h2>动作日志</h2>
+        <div class="log" id="log"></div>
+      </section>
+      <section>
+        <h2>架构 · docs/plc/WEB_PLC_ALIGN.md</h2>
+        <p class="hint">HMI→PRG_Logic→AxisCmd；PRG_Axis_Control 独立任务只读写 GVL；公式与 FB_XDiff 一致。</p>
+      </section>
+    </div>
+  </div>
+
+  <script>
+(() => {
+  const S = {
+    eStopBtnOk: true,
+    eStopLatch: false,
+    fault: false,
+    alarm: 0,
+    mode: 1,
+    diffFunc: 0,
+    vel: 0.4,
+    delta: 0.08,
+    omega: 0.2,
+    base: 5.0,
+    limYP: false, limYN: false, limZP: false, limZN: false, zBusyGate: true,
+    hold: null,
+    v1: 0, v2: 0, vy: 0, vz: 0,
+    p1: 0, p2: 0, py: 0, pz: 0, yaw: 0,
+    homedY: false, homedZ: false,
+    stopHold: null, stopMs: 0,
+  };
+
+  const logEl = document.getElementById('log');
+  const log = (m) => {
+    const d = document.createElement('div');
+    d.textContent = `[${new Date().toLocaleTimeString()}] ${m}`;
+    logEl.prepend(d);
+  };
+
+  const permit = () => S.eStopBtnOk && !S.eStopLatch && !S.fault;
+
+  function computeXPair(dir) {
+    // dir: +1 / -1
+    const V = S.vel, D = S.delta, W = S.omega, L = S.base;
+    let v1 = 0, v2 = 0;
+    if (S.mode === 1) {
+      v1 = v2 = V * dir;
+    } else if (S.mode === 2) {
+      if (L < 4 || L > 6) return { v1: 0, v2: 0, err: '跨距非法' };
+      if (S.diffFunc === 0) {
+        v1 = (V + D) * dir;
+        v2 = (V - D) * dir;
+      } else if (S.diffFunc === 1) {
+        const mag = Math.abs(W) > 1e-6 ? W * L * 0.5 : V;
+        v1 = mag * dir;
+        v2 = -mag * dir;
+      } else {
+        if (Math.abs(W) > 1e-6) {
+          v1 = (V + W * L * 0.5) * dir;
+          v2 = (V - W * L * 0.5) * dir;
+        } else {
+          v1 = (V + D) * dir;
+          v2 = (V - D) * dir;
+        }
+      }
+    }
+    return { v1, v2 };
+  }
+
+  function setAlarm() {
+    if (!S.eStopBtnOk || S.eStopLatch) S.alarm = 1001;
+    else if (S.fault) S.alarm = 1002;
+    else if (S.alarm === 1099) { /* keep */ }
+    else S.alarm = 0;
+  }
+
+  function stopAll(why) {
+    S.v1 = S.v2 = S.vy = S.vz = 0;
+    S.hold = null;
+    document.querySelectorAll('.hold.active').forEach(b => b.classList.remove('active'));
+    log('StopAll: ' + why);
+    render();
+  }
+
+  function applyHold(act) {
+    if (!permit()) {
+      S.alarm = 1004;
+      log('拒绝 ' + act + '：无 EnablePermit');
+      render();
+      return;
+    }
+    S.alarm = S.alarm === 1099 ? 0 : S.alarm;
+
+    if (act.startsWith('sync')) {
+      if (S.mode !== 1) { log('需 Sync 模式'); return; }
+      const dir = act.endsWith('+') ? 1 : -1;
+      const r = computeXPair(dir);
+      S.v1 = r.v1; S.v2 = r.v2; S.vy = 0; S.vz = 0;
+      log(`Sync ${dir > 0 ? '+' : '−'} → V1=${S.v1.toFixed(2)} V2=${S.v2.toFixed(2)}`);
+    } else if (act.startsWith('diff')) {
+      if (S.mode !== 2) { log('需 Diff 模式'); return; }
+      const dir = act.endsWith('+') ? 1 : -1;
+      const r = computeXPair(dir);
+      if (r.err) { log(r.err); S.v1 = S.v2 = 0; return render(); }
+      S.v1 = r.v1; S.v2 = r.v2; S.vy = 0; S.vz = 0;
+      const names = ['纠偏', '原地旋转', '差速拐弯'];
+      log(`Diff/${names[S.diffFunc]} ${dir > 0 ? '+' : '−'} → V1=${S.v1.toFixed(2)} V2=${S.v2.toFixed(2)}`);
+    } else if (act.startsWith('m1') || act.startsWith('m2')) {
+      if (S.mode !== 0) { log('需 Indep 模式'); return; }
+      const dir = act.endsWith('+') ? 1 : -1;
+      if (act.startsWith('m1')) { S.v1 = S.vel * dir; S.v2 = 0; }
+      else { S.v2 = S.vel * dir; S.v1 = 0; }
+      S.vy = S.vz = 0;
+      log(`${act} Indep`);
+    } else if (act.startsWith('y')) {
+      const dir = act.endsWith('+') ? 1 : -1;
+      if (dir > 0 && S.limYP) { S.alarm = 1003; log('1003 Y+ limit'); return render(); }
+      if (dir < 0 && S.limYN) { S.alarm = 1003; log('1003 Y− limit'); return render(); }
+      if (S.zBusyGate && Math.abs(S.vz) > 1e-6) { log('Z 运动中禁 Y'); return; }
+      S.vy = S.vel * dir; S.v1 = S.v2 = S.vz = 0;
+      log(`Y JOG ${dir > 0 ? '+' : '−'}`);
+    } else if (act.startsWith('z')) {
+      const dir = act.endsWith('+') ? 1 : -1;
+      if (dir > 0 && S.limZP) { S.alarm = 1003; log('1003 Z+ limit'); return render(); }
+      if (dir < 0 && S.limZN) { S.alarm = 1003; log('1003 Z− limit'); return render(); }
+      S.vz = S.vel * dir; S.v1 = S.v2 = S.vy = 0;
+      log(`Z JOG ${dir > 0 ? '+' : '−'}`);
+    }
+    render();
+  }
+
+  function releaseHold() {
+    S.v1 = S.v2 = S.vy = S.vz = 0;
+    S.hold = null;
+    document.querySelectorAll('.hold.active').forEach(b => b.classList.remove('active'));
+    render();
+  }
+
+  function render() {
+    setAlarm();
+    const pe = document.getElementById('p-estop');
+    pe.textContent = `EStop btn=${S.eStopBtnOk ? 'T' : 'F'} latch=${S.eStopLatch ? 'T' : 'F'}`;
+    pe.className = 'pill ' + ((!S.eStopBtnOk || S.eStopLatch) ? 'bad' : 'ok');
+    const en = document.getElementById('p-en');
+    const ok = permit();
+    en.textContent = `EnablePermit=${ok ? 'T' : 'F'}`;
+    en.className = 'pill ' + (ok ? 'ok' : 'bad');
+    document.getElementById('p-alarm').textContent = 'Alarm=' + S.alarm;
+    document.getElementById('p-alarm').className = 'pill ' + (S.alarm ? 'bad' : 'ok');
+
+    document.getElementById('fb-vel').textContent = `${S.v1.toFixed(2)} / ${S.v2.toFixed(2)}`;
+    document.getElementById('fb-posx').textContent = `${S.p1.toFixed(2)} / ${S.p2.toFixed(2)}`;
+    document.getElementById('fb-posyz').textContent = `${S.py.toFixed(2)} / ${S.pz.toFixed(2)}`;
+    document.getElementById('fb-yaw').textContent = S.yaw.toFixed(1);
+    const mv = Math.abs(S.v1) + Math.abs(S.v2) + Math.abs(S.vy) + Math.abs(S.vz) > 1e-6;
+    document.getElementById('fb-mv').innerHTML = mv
+      ? '<span class="bit">●</span> moving'
+      : '<span class="bit off">●</span> idle';
+    document.getElementById('fb-pw').textContent = `Power=${ok && !mv || ok} Ready=${!S.fault}`;
+    document.getElementById('fb-home').textContent = `${S.homedY} / ${S.homedZ}`;
+
+    document.getElementById('leg-m1').classList.toggle('moving', Math.abs(S.v1) > 1e-6);
+    document.getElementById('leg-m2').classList.toggle('moving', Math.abs(S.v2) > 1e-6);
+
+    const gantry = document.getElementById('gantry');
+    const mid = (S.p1 + S.p2) * 0.5;
+    // X：沿导轨纵向（屏幕上下）；Y：沿横梁横向（与 X 垂直）
+    const xPx = Math.max(-90, Math.min(90, mid * 12));
+    gantry.style.top = `calc(50% + ${xPx}px)`;
+    gantry.style.transform = `rotate(${S.yaw}deg)`;
+
+    const car = document.getElementById('carriage');
+    const yPct = 50 + Math.max(-35, Math.min(35, S.py * 8));
+    car.style.left = yPct + '%';
+    const zb = document.getElementById('zblock');
+    zb.style.left = yPct + '%';
+    zb.style.marginTop = `${8 + Math.max(-12, Math.min(24, S.pz * 6))}px`;
+
+    const diffRow = document.getElementById('diff-funcs');
+    diffRow.style.opacity = S.mode === 2 ? '1' : '.4';
+    diffRow.querySelectorAll('input').forEach(i => { i.disabled = S.mode !== 2; });
+
+    const hints = [
+      'Indep：单侧 JOG',
+      'Sync：M1=M2 同速平移',
+      ['Diff/纠偏：同向 V±Δ', 'Diff/原地旋转：一正一反', 'Diff/差速拐弯：同向速度差'][S.diffFunc]
+    ];
+    document.getElementById('x-hint').textContent = S.mode === 2 ? hints[2] : hints[S.mode];
+  }
+
+  // params
+  const bindRange = (id, key, fmt) => {
+    const el = document.getElementById(id);
+    const lab = document.getElementById(id.replace('p-', 'v-'));
+    const sync = () => {
+      S[key] = +el.value;
+      lab.textContent = fmt(S[key]);
+    };
+    el.addEventListener('input', sync);
+    sync();
+  };
+  bindRange('p-vel', 'vel', v => v.toFixed(2));
+  bindRange('p-delta', 'delta', v => v.toFixed(2));
+  bindRange('p-omega', 'omega', v => v.toFixed(2));
+  bindRange('p-base', 'base', v => v.toFixed(1) + ' m');
+
+  document.querySelectorAll('input[name="xm"]').forEach(r => {
+    r.addEventListener('change', () => {
+      S.mode = +r.value;
+      stopAll('切 X 模式 ' + S.mode);
+    });
+  });
+  document.querySelectorAll('input[name="df"]').forEach(r => {
+    r.addEventListener('change', () => {
+      S.diffFunc = +r.value;
+      log('eDiffFunc=' + S.diffFunc);
+      render();
+    });
+  });
+
+  // hold buttons
+  document.querySelectorAll('.hold').forEach(btn => {
+    const act = btn.getAttribute('data-act');
+    const down = (e) => {
+      e.preventDefault();
+      btn.classList.add('active');
+      S.hold = act;
+      applyHold(act);
+    };
+    const up = () => {
+      btn.classList.remove('active');
+      if (S.hold === act) releaseHold();
+    };
+    btn.addEventListener('mousedown', down);
+    btn.addEventListener('mouseup', up);
+    btn.addEventListener('mouseleave', up);
+    btn.addEventListener('touchstart', down, { passive: false });
+    btn.addEventListener('touchend', up);
+  });
+
+  document.querySelectorAll('button[data-act^="home"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (!permit()) { log('回零拒绝：无许可'); return; }
+      const a = btn.getAttribute('data-act');
+      if (a === 'homeY') { S.homedY = true; S.py = 0; log('Home Y 请求/完成(模拟)'); }
+      if (a === 'homeZ') { S.homedZ = true; S.pz = 0; log('Home Z 请求/完成(模拟)'); }
+      render();
+    });
+  });
+
+  // estop press/release
+  const estop = document.getElementById('btn-estop');
+  const edown = () => {
+    S.eStopBtnOk = false;
+    S.eStopLatch = true;
+    S.alarm = 1001;
+    stopAll('HMI_xEStop=FALSE');
+  };
+  const eup = () => {
+    S.eStopBtnOk = true;
+    log('HMI_xEStop=TRUE 松开（锁存保持）');
+    render();
+  };
+  estop.addEventListener('mousedown', edown);
+  estop.addEventListener('mouseup', eup);
+  estop.addEventListener('mouseleave', () => { if (!S.eStopBtnOk) eup(); });
+  estop.addEventListener('touchstart', e => { e.preventDefault(); edown(); }, { passive: false });
+  estop.addEventListener('touchend', eup);
+
+  // stop short / long
+  const stopBtn = document.getElementById('btn-stop');
+  const clearStopHold = () => {
+    if (S.stopHold) { clearInterval(S.stopHold); S.stopHold = null; }
+    S.stopMs = 0;
+    stopBtn.textContent = '停止（点按停 / 长按3s复位轴错误）';
+  };
+  stopBtn.addEventListener('mousedown', () => {
+    stopAll('HMI_xStop');
+    if (!S.eStopBtnOk) { log('急停仍按下，不计时复位'); return; }
+    S.stopMs = 0;
+    S.stopHold = setInterval(() => {
+      S.stopMs += 100;
+      stopBtn.textContent = `复位轴错误 ${(S.stopMs / 1000).toFixed(1)}/3s`;
+      if (S.stopMs >= 3000) {
+        clearStopHold();
+        S.eStopLatch = false;
+        S.fault = false;
+        document.getElementById('il-ft').checked = false;
+        S.alarm = 0;
+        log('长按3s：清锁存 + AxisCmd_xResetFault');
+        render();
+      }
+    }, 100);
+  });
+  stopBtn.addEventListener('mouseup', clearStopHold);
+  stopBtn.addEventListener('mouseleave', clearStopHold);
+
+  // interlocks
+  [['il-yp','limYP'],['il-yn','limYN'],['il-zp','limZP'],['il-zn','limZN']].forEach(([id,k]) => {
+    document.getElementById(id).addEventListener('change', e => {
+      S[k] = e.target.checked;
+      log(`${k}=${S[k]}`);
+    });
+  });
+  document.getElementById('il-zb').addEventListener('change', e => {
+    S.zBusyGate = e.target.checked;
+    log('Z忙禁Y=' + S.zBusyGate);
+  });
+  document.getElementById('il-zb').checked = true;
+  document.getElementById('il-ft').addEventListener('change', e => {
+    S.fault = e.target.checked;
+    if (S.fault) { S.alarm = 1002; stopAll('Fault'); }
+    else render();
+  });
+
+  // integrate
+  let last = performance.now();
+  function tick(now) {
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    if (permit()) {
+      S.p1 += S.v1 * dt;
+      S.p2 += S.v2 * dt;
+      S.py += S.vy * dt;
+      S.pz += S.vz * dt;
+      // yaw from opposite velocities (spin)
+      if (S.mode === 2 && S.diffFunc === 1 && Math.abs(S.v1 - (-S.v2)) < 1e-6 + Math.abs(S.v1) * 0.01) {
+        const w = (S.v1 - S.v2) / Math.max(S.base, 0.1);
+        S.yaw += (w * dt) * (180 / Math.PI) * 0.5;
+      } else if (Math.abs(S.v1 - S.v2) > 1e-4) {
+        const w = (S.v1 - S.v2) / Math.max(S.base, 0.1);
+        S.yaw += (w * dt) * (180 / Math.PI) * 0.25;
+      }
+    } else {
+      S.v1 = S.v2 = S.vy = S.vz = 0;
+    }
+    render();
+    requestAnimationFrame(tick);
+  }
+
+  render();
+  log('Web v2 完整控制就绪');
+  requestAnimationFrame(tick);
+})();
+  </script>
+</body>
+</html>

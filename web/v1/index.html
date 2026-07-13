@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LMM Web v1 — XYZR 手动验收</title>
+  <style>
+    :root {
+      --bg: #1a1f24;
+      --panel: #242b33;
+      --line: #3d4a57;
+      --text: #e8eef4;
+      --muted: #8b9aab;
+      --ok: #3dba7e;
+      --warn: #e0a53a;
+      --danger: #e05454;
+      --accent: #4a9fd8;
+      --axis-x: #5eb3e8;
+      --axis-y: #6bcf8e;
+      --axis-z: #d4a24a;
+      --axis-r: #b08fd4;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "IBM Plex Sans", "Noto Sans SC", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.4;
+    }
+    header {
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem 1.5rem;
+      align-items: baseline;
+      justify-content: space-between;
+    }
+    header h1 { margin: 0; font-size: 1.15rem; font-weight: 600; }
+    header .meta { color: var(--muted); font-size: 0.85rem; }
+    main {
+      display: grid;
+      grid-template-columns: 1.1fr 1fr;
+      gap: 1rem;
+      padding: 1rem;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    @media (max-width: 900px) {
+      main { grid-template-columns: 1fr; }
+    }
+    section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 0.9rem 1rem;
+    }
+    section h2 {
+      margin: 0 0 0.75rem;
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .schematic {
+      position: relative;
+      min-height: 280px;
+      background:
+        linear-gradient(90deg, transparent 49.5%, var(--line) 49.5%, var(--line) 50.5%, transparent 50.5%),
+        linear-gradient(transparent 49.5%, var(--line) 49.5%, var(--line) 50.5%, transparent 50.5%);
+      background-size: 40px 40px;
+      border-radius: 4px;
+      border: 1px dashed var(--line);
+    }
+    .node {
+      position: absolute;
+      padding: 0.35rem 0.55rem;
+      border-radius: 4px;
+      border: 2px solid;
+      font-size: 0.8rem;
+      font-weight: 600;
+      background: #1a1f24cc;
+      transition: box-shadow 0.15s, opacity 0.15s;
+    }
+    .node.on { box-shadow: 0 0 0 2px currentColor; }
+    .node.off { opacity: 0.45; }
+    .node.fault { border-style: dashed; color: var(--danger) !important; }
+    .m1 { left: 8%; top: 42%; color: var(--axis-x); border-color: var(--axis-x); }
+    .m2 { right: 8%; top: 42%; color: var(--axis-x); border-color: var(--axis-x); }
+    .m3 { left: 42%; top: 18%; color: var(--axis-y); border-color: var(--axis-y); }
+    .m4 { left: 42%; top: 58%; color: var(--axis-z); border-color: var(--axis-z); }
+    .m5 { left: 42%; top: 78%; color: var(--axis-r); border-color: var(--axis-r); opacity: 0.5; }
+    .body-label {
+      position: absolute;
+      left: 50%;
+      top: 38%;
+      transform: translateX(-50%);
+      color: var(--muted);
+      font-size: 0.75rem;
+    }
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem 1rem;
+      margin-top: 0.75rem;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+    .legend span::before {
+      content: "";
+      display: inline-block;
+      width: 0.6rem;
+      height: 0.6rem;
+      border-radius: 2px;
+      margin-right: 0.35rem;
+      vertical-align: middle;
+    }
+    .lx::before { background: var(--axis-x); }
+    .ly::before { background: var(--axis-y); }
+    .lz::before { background: var(--axis-z); }
+    .lr::before { background: var(--axis-r); }
+
+    .safety-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+      margin-bottom: 0.75rem;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.25rem 0.6rem;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      border: 1px solid var(--line);
+      background: #1a1f24;
+    }
+    .pill.ok { border-color: var(--ok); color: var(--ok); }
+    .pill.bad { border-color: var(--danger); color: var(--danger); }
+    .pill.warn { border-color: var(--warn); color: var(--warn); }
+
+    button, .btn {
+      font: inherit;
+      cursor: pointer;
+      border: 1px solid var(--line);
+      background: #323c48;
+      color: var(--text);
+      border-radius: 4px;
+      padding: 0.4rem 0.7rem;
+      font-size: 0.85rem;
+    }
+    button:hover:not(:disabled) { border-color: var(--accent); }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+    button.danger { background: #5a2a2a; border-color: var(--danger); }
+    button.primary { background: #2a4058; border-color: var(--accent); }
+    button.stop-hold { min-width: 9rem; }
+
+    .axis-grid {
+      display: grid;
+      gap: 0.65rem;
+    }
+    .axis-row {
+      display: grid;
+      grid-template-columns: 4.5rem 1fr auto;
+      gap: 0.5rem;
+      align-items: center;
+      padding: 0.45rem 0.5rem;
+      background: #1a1f24;
+      border-radius: 4px;
+      border: 1px solid var(--line);
+    }
+    .axis-row .name { font-weight: 600; font-size: 0.85rem; }
+    .fb {
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+    .fb .bit { color: var(--ok); }
+    .fb .bit.off { color: var(--muted); }
+    .cmds { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+
+    .mode-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-bottom: 0.75rem;
+    }
+    label.radio {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      font-size: 0.85rem;
+      padding: 0.3rem 0.55rem;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    label.radio input { accent-color: var(--accent); }
+
+    .interlock-box {
+      display: grid;
+      gap: 0.4rem;
+      font-size: 0.85rem;
+    }
+    .interlock-box label {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      cursor: pointer;
+    }
+    .log {
+      margin-top: 0.75rem;
+      height: 7rem;
+      overflow: auto;
+      font-family: "IBM Plex Mono", ui-monospace, monospace;
+      font-size: 0.72rem;
+      background: #12161a;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      padding: 0.5rem;
+      color: var(--muted);
+    }
+    .log div { margin-bottom: 0.2rem; }
+    .hint {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin: 0.4rem 0 0;
+    }
+    .auto-box {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+      opacity: 0.75;
+    }
+    .step-num {
+      font-size: 1.4rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      min-width: 2.5rem;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>LMM Web v1 — XYZR 理解验收</h1>
+      <div class="meta">验收 UI · 非软 PLC · 本期仅手动 · M5/R 预留 · 视觉直线后续</div>
+    </div>
+    <div class="meta">Gate A · 通过后请在对话回复「Web v1 通过」</div>
+  </header>
+
+  <main>
+    <div class="col">
+      <section>
+        <h2>S1 布局</h2>
+        <div class="schematic" id="schematic" aria-label="XYZR schematic">
+          <div class="body-label">车体 / 基座</div>
+          <div class="node m1" id="node-m1">M1 X左</div>
+          <div class="node m2" id="node-m2">M2 X右</div>
+          <div class="node m3" id="node-m3">M3 Y</div>
+          <div class="node m4" id="node-m4">M4 Z↓装在Y</div>
+          <div class="node m5" id="node-m5">M5 R（未到货）</div>
+        </div>
+        <div class="legend">
+          <span class="lx">龙门 X：Sync同速平移 · Diff纠偏/拐弯 · 跨距4~6m</span>
+          <span class="ly">Y 左右</span>
+          <span class="lz">Z 上下</span>
+          <span class="lr">R 顺时针正方向（预留）</span>
+        </div>
+      </section>
+
+      <section>
+        <h2>安全 / 停止</h2>
+        <div class="safety-bar">
+          <span class="pill" id="pill-estop">急停锁存: —</span>
+          <span class="pill" id="pill-enable">使能允许: —</span>
+          <span class="pill" id="pill-mode">模式: 手动</span>
+        </div>
+        <div class="safety-bar">
+          <button type="button" class="danger" id="btn-estop">急停（按=FALSE / 松=TRUE）</button>
+          <button type="button" class="stop-hold" id="btn-stop">停止（点按停 · 长按3s复位轴错误）</button>
+          <button type="button" id="btn-clear-fault" disabled>清 Fault（演示）</button>
+        </div>
+        <p class="hint">急停极性：未触发 TRUE、触发 FALSE，可按可松；松按钮不清锁存。停止：点按停运动；长按 3s = 清锁存 + 复位各轴错误。</p>
+        <div class="log" id="log" aria-live="polite"></div>
+      </section>
+    </div>
+
+    <div class="col">
+      <section>
+        <h2>手动 · 执行器族 servo</h2>
+        <div class="mode-row">
+          <label class="radio"><input type="radio" name="xMode" value="sync" checked /> X 同步直行</label>
+          <label class="radio"><input type="radio" name="xMode" value="diff" /> X 差速（纠偏/转向）</label>
+          <label class="radio"><input type="radio" name="xMode" value="indep" /> X 独立（单侧）</label>
+        </div>
+        <div class="axis-grid" id="axes"></div>
+        <p class="hint">反馈灯：Enable / Moving。急停或联锁时命令无效且输出显示为 OFF。</p>
+      </section>
+
+      <section>
+        <h2>联锁演示（可触发 ≥2）</h2>
+        <div class="interlock-box">
+          <label><input type="checkbox" id="il-y-pos" /> 触发 Y+ 限位（禁 Y+）</label>
+          <label><input type="checkbox" id="il-z-neg" /> 触发 Z− 限位（禁 Z−）</label>
+          <label><input type="checkbox" id="il-fault" /> 模拟驱动 Fault（全停+松使能）</label>
+          <label><input type="checkbox" id="il-z-busy" /> Z 运动中禁 Y（演示）</label>
+        </div>
+      </section>
+
+      <section>
+        <h2>自动（本期禁用 · 合同保留步号）</h2>
+        <div class="auto-box">
+          <span>Step</span>
+          <span class="step-num" id="auto-step">0</span>
+          <button type="button" id="btn-auto-adv" disabled>步进</button>
+          <button type="button" id="btn-auto-rst" disabled>步复位</button>
+          <span class="pill warn">先手动 · 自动未开放</span>
+        </div>
+        <p class="hint">S2 约定本期仅手动；步号可见以满足 Gate A，不可推进。</p>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    const axes = [
+      { id: "m1", label: "M1 X左", group: "x", dir: ["−", "+"], reserved: false },
+      { id: "m2", label: "M2 X右", group: "x", dir: ["−", "+"], reserved: false },
+      { id: "m3", label: "M3 Y", group: "y", dir: ["−", "+"], reserved: false },
+      { id: "m4", label: "M4 Z", group: "z", dir: ["−", "+"], reserved: false },
+      { id: "m5", label: "M5 R", group: "r", dir: ["CW−", "CW+"], reserved: true },
+    ];
+
+    const state = {
+      eStopBtnOk: true,       // HMI_xEStop: TRUE=未触发
+      eStopLatched: false,
+      enablePermit: true,
+      fault: false,
+      xMode: "sync",
+      holdMs: 0,
+      holdTimer: null,
+      moving: Object.fromEntries(axes.map(a => [a.id, false])),
+      enabled: Object.fromEntries(axes.map(a => [a.id, false])),
+      il: { yPos: false, zNeg: false, zBusy: false },
+    };
+
+    const logEl = document.getElementById("log");
+    function log(msg) {
+      const t = new Date().toLocaleTimeString();
+      const d = document.createElement("div");
+      d.textContent = `[${t}] ${msg}`;
+      logEl.prepend(d);
+    }
+
+    function safetyOk() {
+      return state.eStopBtnOk && !state.eStopLatched && !state.fault && state.enablePermit;
+    }
+
+    function stopAll(reason) {
+      axes.forEach(a => {
+        state.moving[a.id] = false;
+        state.enabled[a.id] = false;
+      });
+      log(`全停+松使能: ${reason}`);
+      render();
+    }
+
+    function renderPills() {
+      const pe = document.getElementById("pill-estop");
+      const en = document.getElementById("pill-enable");
+      pe.textContent = `急停: btn=${state.eStopBtnOk ? "TRUE" : "FALSE"} latch=${state.eStopLatched ? "ON" : "OFF"}`;
+      pe.className = "pill " + ((!state.eStopBtnOk || state.eStopLatched) ? "bad" : "ok");
+      state.enablePermit = state.eStopBtnOk && !state.eStopLatched && !state.fault;
+      const allow = safetyOk();
+      en.textContent = `使能允许: ${allow ? "YES" : "NO"}`;
+      en.className = "pill " + (allow ? "ok" : "bad");
+    }
+
+    function renderNodes() {
+      axes.forEach(a => {
+        const el = document.getElementById("node-" + a.id);
+        el.classList.toggle("on", state.enabled[a.id] || state.moving[a.id]);
+        el.classList.toggle("off", !state.enabled[a.id] && !state.moving[a.id]);
+        el.classList.toggle("fault", state.fault || (a.reserved && true));
+      });
+    }
+
+    function canCmd(axisId, dir) {
+      if (!safetyOk()) return false;
+      const a = axes.find(x => x.id === axisId);
+      if (a.reserved) return false;
+      if (state.il.yPos && axisId === "m3" && dir === "+") return false;
+      if (state.il.zNeg && axisId === "m4" && dir === "-") return false;
+      if (state.il.zBusy && axisId === "m3" && state.moving.m4) return false;
+      if (a.group === "x") {
+        if (state.xMode === "sync" || state.xMode === "diff") {
+          /* pair commands go through jogX */
+        }
+      }
+      return true;
+    }
+
+    function setMoving(ids, on) {
+      ids.forEach(id => {
+        state.moving[id] = on;
+        state.enabled[id] = on && safetyOk();
+      });
+    }
+
+    function jogAxis(id, dir) {
+      if (!canCmd(id, dir)) {
+        log(`拒绝 ${id} ${dir}: 联锁/急停/预留`);
+        render();
+        return;
+      }
+      const a = axes.find(x => x.id === id);
+      if (a.group === "x" && state.xMode !== "indep") {
+        log(`X 当前为 ${state.xMode}，请用 X 成对按钮或切到独立`);
+        return;
+      }
+      setMoving([id], true);
+      log(`${id} JOG ${dir}`);
+      render();
+    }
+
+    function jogX(dir, kind) {
+      if (!safetyOk()) {
+        log("拒绝 X: 急停/Fault");
+        render();
+        return;
+      }
+      if (state.xMode === "indep") {
+        log("独立模式请用 M1/M2 单侧按钮");
+        return;
+      }
+      if (kind === "diff") {
+        /* 差速：同向幅值不同 — UI 上显示两侧都动 */
+        setMoving(["m1", "m2"], true);
+        log(`X 差速 ${dir === "+" ? "纠偏/右转倾向" : "纠偏/左转倾向"} (V±Δ)`);
+      } else {
+        setMoving(["m1", "m2"], true);
+        log(`X 同步直行 ${dir} (同向)`);
+      }
+      render();
+    }
+
+    function stopAxis(id) {
+      state.moving[id] = false;
+      /* 松手停运动，使能保持仅当安全允许且曾使能 — 简化：停后保持 enable 假直到再 jog */
+      state.enabled[id] = false;
+      log(`${id} 停止`);
+      render();
+    }
+
+    function stopX() {
+      setMoving(["m1", "m2"], false);
+      log("X 双驱停止");
+      render();
+    }
+
+    function buildAxes() {
+      const root = document.getElementById("axes");
+      root.innerHTML = "";
+
+      /* X pair controls */
+      const xRow = document.createElement("div");
+      xRow.className = "axis-row";
+      xRow.innerHTML = `
+        <div class="name" style="color:var(--axis-x)">X 双驱</div>
+        <div class="fb" id="fb-x">En <span class="bit off" data-b="en">●</span> Mv <span class="bit off" data-b="mv">●</span></div>
+        <div class="cmds">
+          <button type="button" data-x="sync-">同步−</button>
+          <button type="button" data-x="sync+">同步+</button>
+          <button type="button" data-x="diff-">差速−</button>
+          <button type="button" data-x="diff+">差速+</button>
+          <button type="button" data-x="stop">停</button>
+        </div>`;
+      root.appendChild(xRow);
+      xRow.querySelectorAll("[data-x]").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const v = btn.getAttribute("data-x");
+          if (v === "stop") return stopX();
+          if (v.startsWith("sync")) {
+            if (state.xMode !== "sync") {
+              document.querySelector('input[name="xMode"][value="sync"]').checked = true;
+              state.xMode = "sync";
+            }
+            jogX(v.endsWith("+") ? "+" : "-", "sync");
+          } else if (v.startsWith("diff")) {
+            if (state.xMode !== "diff") {
+              document.querySelector('input[name="xMode"][value="diff"]').checked = true;
+              state.xMode = "diff";
+            }
+            jogX(v.endsWith("+") ? "+" : "-", "diff");
+          }
+        });
+      });
+
+      axes.forEach(a => {
+        const row = document.createElement("div");
+        row.className = "axis-row";
+        row.innerHTML = `
+          <div class="name">${a.label}${a.reserved ? " · 预留" : ""}</div>
+          <div class="fb" id="fb-${a.id}">En <span class="bit off" data-b="en">●</span> Mv <span class="bit off" data-b="mv">●</span></div>
+          <div class="cmds">
+            <button type="button" data-jog="${a.id}" data-dir="${a.group === "r" ? "-" : "-"}" ${a.reserved ? "disabled" : ""}>${a.dir[0]}</button>
+            <button type="button" data-jog="${a.id}" data-dir="+" ${a.reserved ? "disabled" : ""}>${a.dir[1]}</button>
+            <button type="button" data-stop="${a.id}" ${a.reserved ? "disabled" : ""}>停</button>
+          </div>`;
+        root.appendChild(row);
+      });
+
+      root.querySelectorAll("[data-jog]").forEach(btn => {
+        const id = btn.getAttribute("data-jog");
+        const dir = btn.getAttribute("data-dir");
+        btn.addEventListener("mousedown", () => jogAxis(id, dir));
+        btn.addEventListener("mouseup", () => stopAxis(id));
+        btn.addEventListener("mouseleave", () => { if (state.moving[id]) stopAxis(id); });
+        btn.addEventListener("touchstart", e => { e.preventDefault(); jogAxis(id, dir); }, { passive: false });
+        btn.addEventListener("touchend", () => stopAxis(id));
+      });
+      root.querySelectorAll("[data-stop]").forEach(btn => {
+        btn.addEventListener("click", () => stopAxis(btn.getAttribute("data-stop")));
+      });
+    }
+
+    function renderFb() {
+      const xEn = state.enabled.m1 || state.enabled.m2;
+      const xMv = state.moving.m1 || state.moving.m2;
+      const fx = document.getElementById("fb-x");
+      if (fx) {
+        fx.querySelector('[data-b="en"]').classList.toggle("off", !xEn);
+        fx.querySelector('[data-b="mv"]').classList.toggle("off", !xMv);
+      }
+      axes.forEach(a => {
+        const fb = document.getElementById("fb-" + a.id);
+        if (!fb) return;
+        fb.querySelector('[data-b="en"]').classList.toggle("off", !state.enabled[a.id]);
+        fb.querySelector('[data-b="mv"]').classList.toggle("off", !state.moving[a.id]);
+      });
+    }
+
+    function render() {
+      renderPills();
+      renderNodes();
+      renderFb();
+      document.getElementById("btn-clear-fault").disabled = !state.fault;
+    }
+
+    const estopBtn = document.getElementById("btn-estop");
+    function estopDown() {
+      state.eStopBtnOk = false; // HMI_xEStop = FALSE
+      state.eStopLatched = true;
+      state.enablePermit = false;
+      stopAll("急停按下 HMI_xEStop=FALSE");
+    }
+    function estopUp() {
+      state.eStopBtnOk = true; // 松开回到 TRUE，锁存保持
+      log("急停松开 HMI_xEStop=TRUE（锁存仍保持，需长按停止复位）");
+      render();
+    }
+    estopBtn.addEventListener("mousedown", estopDown);
+    estopBtn.addEventListener("mouseup", estopUp);
+    estopBtn.addEventListener("mouseleave", () => { if (!state.eStopBtnOk) estopUp(); });
+    estopBtn.addEventListener("touchstart", e => { e.preventDefault(); estopDown(); }, { passive: false });
+    estopBtn.addEventListener("touchend", estopUp);
+
+    const stopBtn = document.getElementById("btn-stop");
+    function clearHold() {
+      if (state.holdTimer) {
+        clearInterval(state.holdTimer);
+        state.holdTimer = null;
+      }
+      state.holdMs = 0;
+      stopBtn.textContent = "停止（点按停 · 长按3s复位轴错误）";
+    }
+    function onHoldStart() {
+      axes.forEach(a => { state.moving[a.id] = false; });
+      log("点按/按住停止：AxisCmd_xStopAll");
+      render();
+      if (!state.eStopBtnOk) {
+        log("急停仍按下，不能进入复位计时");
+        return;
+      }
+      state.holdMs = 0;
+      state.holdTimer = setInterval(() => {
+        state.holdMs += 100;
+        const s = (state.holdMs / 1000).toFixed(1);
+        stopBtn.textContent = `复位轴错误… ${s}s / 3s`;
+        if (state.holdMs >= 3000) {
+          clearHold();
+          state.eStopLatched = false;
+          state.fault = false;
+          document.getElementById("il-fault").checked = false;
+          state.enablePermit = true;
+          log("长按3s：清急停锁存 + AxisCmd_xResetFault（各轴错误复位）");
+          render();
+        }
+      }, 100);
+    }
+    stopBtn.addEventListener("mousedown", onHoldStart);
+    stopBtn.addEventListener("mouseup", clearHold);
+    stopBtn.addEventListener("mouseleave", clearHold);
+    stopBtn.addEventListener("touchstart", e => { e.preventDefault(); onHoldStart(); }, { passive: false });
+    stopBtn.addEventListener("touchend", clearHold);
+
+    document.getElementById("btn-clear-fault").addEventListener("click", () => {
+      if (state.eStopLatched) {
+        log("仍有急停锁存，请长按停止 3s 复位");
+        return;
+      }
+      state.fault = false;
+      document.getElementById("il-fault").checked = false;
+      state.enablePermit = true;
+      log("Fault 清除");
+      render();
+    });
+
+    document.querySelectorAll('input[name="xMode"]').forEach(r => {
+      r.addEventListener("change", () => {
+        state.xMode = r.value;
+        stopX();
+        log(`X 命令源: ${state.xMode}`);
+      });
+    });
+
+    document.getElementById("il-y-pos").addEventListener("change", e => {
+      state.il.yPos = e.target.checked;
+      log(`联锁 Y+限位: ${state.il.yPos}`);
+      if (state.il.yPos && state.moving.m3) stopAxis("m3");
+      render();
+    });
+    document.getElementById("il-z-neg").addEventListener("change", e => {
+      state.il.zNeg = e.target.checked;
+      log(`联锁 Z−限位: ${state.il.zNeg}`);
+      if (state.il.zNeg) stopAxis("m4");
+      render();
+    });
+    document.getElementById("il-fault").addEventListener("change", e => {
+      state.fault = e.target.checked;
+      if (state.fault) {
+        state.enablePermit = false;
+        stopAll("驱动 Fault");
+      } else {
+        log("Fault 勾选取消（仍需复位逻辑时请长按停止）");
+        render();
+      }
+    });
+    document.getElementById("il-z-busy").addEventListener("change", e => {
+      state.il.zBusy = e.target.checked;
+      log(`联锁 Z忙禁Y: ${state.il.zBusy}`);
+      render();
+    });
+
+    buildAxes();
+    render();
+    log("Web v1 就绪 — 请验证布局/手动/联锁/急停");
+  </script>
+</body>
+</html>

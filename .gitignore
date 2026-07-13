@@ -1,0 +1,12 @@
+# IDE / local tooling
+Cursor/
+.graphflow-cache/
+graphflow-out/
+
+# Backups
+*.bak
+LMM.xml.bak
+
+# OS
+.DS_Store
+Thumbs.db
