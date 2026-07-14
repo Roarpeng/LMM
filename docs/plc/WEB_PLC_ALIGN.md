@@ -16,20 +16,21 @@
 
 | Web 操作 | HMI 变量 | Logic 写出 | Axis 消费 |
 |----------|----------|------------|-----------|
-| 急停按住/松开 | `HMI_xEStop` F/T | `xEStopLatched`；`AxisCmd_xStopAll`/`xPower` | 停+松使能 |
-| 停止点按 | `HMI_xStop` | `AxisCmd_xStopAll` | MC_Stop |
-| 停止长按3s | `HMI_xStopHold3s` | 清锁存 + `AxisCmd_xResetFault` | `MC_Reset` 各轴 |
+| 急停按住/松开 | `HMI_xEStop` F/T | `xEStopLatched`；`AxisCmd_xStopAll`；清使能闩 | 停+松使能 |
+| **使能（瞬时）** | `HMI_xEnable` 上升沿 | 切换 `xPowerLatched` → `AxisCmd_xPower` | `MC_Power` / `FB_Servo.xEnable` |
+| 停止点按 | `HMI_xStop` | `AxisCmd_xStopAll`（**不清**使能闩） | MC_Stop |
+| 停止长按3s | `HMI_xStopHold3s` | 清锁存 + `AxisCmd_xResetFault` + **下使能** | `MC_Reset` 各轴 |
 | Indep/Sync/Diff | `HMI_eXMode` 0/1/2 | `AxisCmd_eXMode` | `FB_XDiff` / 单侧 |
 | 纠偏/原地旋/差速弯 | `HMI_eDiffFunc` 0/1/2 | `AxisCmd_eDiffFunc` | `FB_XDiff` CASE |
-| Sync± 按住 | `HMI_xJogXSyncPos/Neg` | 透传（仅 mode=1） | 同速 V |
-| Diff± 按住 | `HMI_xJogXDiffPos/Neg` | 透传（仅 mode=2） | 见 FB_XDiff |
-| M1/M2± | `HMI_xJogM1/M2*` | 仅 mode=0 | 单侧 JOG |
-| Y/Z± | `HMI_xJogY/Z*` | 限位门控 | `FB_Servo` |
+| Sync± 按住 | `HMI_xJogXSyncPos/Neg` | 透传（仅 mode=1，须已使能） | 同速 V；松=暂停 |
+| Diff± 按住 | `HMI_xJogXDiffPos/Neg` | 透传（仅 mode=2） | 见 FB_XDiff；松=暂停 |
+| M1/M2± | `HMI_xJogM1/M2*` | 仅 mode=0 | 单侧 JOG；松=暂停 |
+| Y/Z± | `HMI_xJogY/Z*` | 限位门控 | `FB_Servo`；松=暂停 |
 | Home Y/Z | `HMI_xHomeReqY/Z` | `AxisCmd_xHome*` | `MC_Home` |
 | JogVel/Δ/ω/L | `HMI_rJogVel*` / `rDiffDelta` / `rTurnOmega` / `rWheelBase` | → AxisCmd | FB 参数 |
 | 限位勾选 | `I_xLim*` | `xIlk_Block*` | 禁对应方向 |
 | Z忙禁Y | （Logic 用 `AxisFb_xMovingZ`） | `xIlk_BlockYWhenZ` | 禁 Y |
-| Fault 模拟 | （联调时驱动 Fault） | `xFaultAggregate` / 1002 | 停 |
+| Fault 模拟 | （联调时驱动 Fault） | `xFaultAggregate` / 1002 | 停+下使能 |
 
 ## Diff 速度公式（Web = FB_XDiff）
 

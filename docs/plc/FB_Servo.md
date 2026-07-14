@@ -128,3 +128,5 @@ END_IF;
 
 - 正方向：现场顺时针为正（轴参数配置）。  
 - M5/R：`xEnable` 由上层门控。  
+- **点动**：`xJogPos`/`xJogNeg` 为电平——**TRUE=按 `rJogVel` 移动，FALSE=暂停**（`fbJog.Execute:=FALSE`），不在 JOG 分支内清功率。  
+- **使能**：`xEnable`（←`AxisCmd_xPower`）须由 HMI 使能触发闩给出；故障复位后 Logic 清闩，须重新上使能再动。  

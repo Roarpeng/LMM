@@ -16,7 +16,9 @@
 |------|--------|------|------|
 | `HMI_xEStop` | **TRUE** | **FALSE**=按下 | 可按可松；按下→锁存急停；松开信号回 TRUE，**不清**锁存 |
 | `HMI_xStop` | FALSE | TRUE=按下 | **点按/短按**：停止运动；**长按 3s**：复位脉冲 |
-| 长按复位 | — | `HMI_xStopHold3s` 或 Logic `TON` | 清 `xEStopLatched` + `AxisCmd_xResetFault` 复位各轴错误 |
+| `HMI_xEnable` | FALSE | TRUE 上升沿 | **切换**使能闩：未使能→上使能；已使能→下使能。急停/故障/复位后闩强制 FALSE，须再触发 |
+| 长按复位 | — | `HMI_xStopHold3s` 或 Logic `TON` | 清 `xEStopLatched` + `AxisCmd_xResetFault` 复位各轴错误；**同时下使能** |
+| JOG 各位 | FALSE | TRUE=按住 | **点动电平**：TRUE=移动，FALSE=暂停（只停速度指令，不经此口下使能） |
 
 ## 纲要
 
@@ -26,6 +28,8 @@ VAR
     tonHold         : TON;
     xResetPulse     : BOOL;
     xResetPrev      : BOOL;
+    xEnablePrev     : BOOL;   (* HMI_xEnable 上一拍，做上升沿 *)
+    xPowerLatched   : BOOL;   (* 使能闩：仅上升沿切换；复位/急停/故障清 *)
 END_VAR
 
 (* === 急停锁存：信号 FALSE = 触发 === *)
@@ -41,6 +45,7 @@ xResetPrev := HMI_xStopHold3s OR tonHold.Q;
 IF xResetPulse THEN
     xEStopLatched := FALSE;
     AxisCmd_xResetFault := TRUE;  (* 一拍脉冲；下周期清 FALSE *)
+    xPowerLatched := FALSE;       (* 复位后必须再触发使能 *)
 ELSE
     AxisCmd_xResetFault := FALSE;
 END_IF;
@@ -53,6 +58,14 @@ xFaultAggregate := AxisFb_xFaultM1 OR AxisFb_xFaultM2 OR AxisFb_xFaultY OR AxisF
 xEnablePermit := HMI_xEStop AND NOT xEStopLatched AND NOT xFaultAggregate;
 eOpMode := 0; (* Manual only *)
 
+(* === 使能触发：HMI_xEnable 上升沿切换闩 === *)
+IF NOT xEnablePermit THEN
+    xPowerLatched := FALSE;
+ELSIF HMI_xEnable AND NOT xEnablePrev THEN
+    xPowerLatched := NOT xPowerLatched;
+END_IF;
+xEnablePrev := HMI_xEnable;
+
 (* === 限位联锁 === *)
 xIlk_BlockYPlus := I_xLimYPos;
 xIlk_BlockYNeg  := I_xLimYNeg;
@@ -61,9 +74,9 @@ xIlk_BlockZNeg  := I_xLimZNeg;
 xIlk_BlockYWhenZ := AxisFb_xMovingZ;
 
 (* === 急停/停止 → Axis ===
-   点按 HMI_xStop：停运动；急停锁存或按钮仍按下：停+禁使能 *)
+   点按 HMI_xStop：停运动（不停使能闩）；急停/故障：停+强制下使能 *)
 AxisCmd_xStopAll := xEStopLatched OR NOT HMI_xEStop OR HMI_xStop OR xFaultAggregate;
-AxisCmd_xPower   := xEnablePermit AND NOT AxisCmd_xStopAll;
+AxisCmd_xPower   := xPowerLatched AND xEnablePermit;
 
 (* === X 模式互斥 === *)
 AxisCmd_eXMode := LIMIT(0, HMI_eXMode, 2);
@@ -80,7 +93,8 @@ AxisCmd_xJogM2Pos := FALSE; AxisCmd_xJogM2Neg := FALSE;
 AxisCmd_xJogXSyncPos := FALSE; AxisCmd_xJogXSyncNeg := FALSE;
 AxisCmd_xJogXDiffPos := FALSE; AxisCmd_xJogXDiffNeg := FALSE;
 
-IF xEnablePermit AND NOT AxisCmd_xStopAll THEN
+(* JOG：电平点动 TRUE=移动 FALSE=暂停；须已使能且未 StopAll *)
+IF AxisCmd_xPower AND NOT AxisCmd_xStopAll THEN
     CASE AxisCmd_eXMode OF
         0:
             AxisCmd_xJogM1Pos := HMI_xJogM1Pos;
@@ -96,16 +110,18 @@ IF xEnablePermit AND NOT AxisCmd_xStopAll THEN
     END_CASE;
 END_IF;
 
-AxisCmd_xJogYPos := xEnablePermit AND HMI_xJogYPos AND NOT xIlk_BlockYPlus
-                    AND NOT xIlk_BlockYWhenZ;
-AxisCmd_xJogYNeg := xEnablePermit AND HMI_xJogYNeg AND NOT xIlk_BlockYNeg
-                    AND NOT xIlk_BlockYWhenZ;
-AxisCmd_xJogZPos := xEnablePermit AND HMI_xJogZPos AND NOT xIlk_BlockZPlus;
-AxisCmd_xJogZNeg := xEnablePermit AND HMI_xJogZNeg AND NOT xIlk_BlockZNeg;
+AxisCmd_xJogYPos := AxisCmd_xPower AND HMI_xJogYPos AND NOT xIlk_BlockYPlus
+                    AND NOT xIlk_BlockYWhenZ AND NOT AxisCmd_xStopAll;
+AxisCmd_xJogYNeg := AxisCmd_xPower AND HMI_xJogYNeg AND NOT xIlk_BlockYNeg
+                    AND NOT xIlk_BlockYWhenZ AND NOT AxisCmd_xStopAll;
+AxisCmd_xJogZPos := AxisCmd_xPower AND HMI_xJogZPos AND NOT xIlk_BlockZPlus
+                    AND NOT AxisCmd_xStopAll;
+AxisCmd_xJogZNeg := AxisCmd_xPower AND HMI_xJogZNeg AND NOT xIlk_BlockZNeg
+                    AND NOT AxisCmd_xStopAll;
 
 IF xM5Ready THEN
-    AxisCmd_xJogRPos := xEnablePermit AND HMI_xJogRPos;
-    AxisCmd_xJogRNeg := xEnablePermit AND HMI_xJogRNeg;
+    AxisCmd_xJogRPos := AxisCmd_xPower AND HMI_xJogRPos AND NOT AxisCmd_xStopAll;
+    AxisCmd_xJogRNeg := AxisCmd_xPower AND HMI_xJogRNeg AND NOT AxisCmd_xStopAll;
 ELSE
     AxisCmd_xJogRPos := FALSE;
     AxisCmd_xJogRNeg := FALSE;
@@ -114,9 +130,9 @@ ELSE
     END_IF;
 END_IF;
 
-AxisCmd_xHomeY := xEnablePermit AND HMI_xHomeReqY;
-AxisCmd_xHomeZ := xEnablePermit AND HMI_xHomeReqZ;
-AxisCmd_xHomeR := xEnablePermit AND xM5Ready AND HMI_xHomeReqR;
+AxisCmd_xHomeY := AxisCmd_xPower AND HMI_xHomeReqY AND NOT AxisCmd_xStopAll;
+AxisCmd_xHomeZ := AxisCmd_xPower AND HMI_xHomeReqZ AND NOT AxisCmd_xStopAll;
+AxisCmd_xHomeR := AxisCmd_xPower AND xM5Ready AND HMI_xHomeReqR AND NOT AxisCmd_xStopAll;
 
 (* === Alarm === *)
 IF xEStopLatched OR NOT HMI_xEStop THEN
@@ -130,7 +146,7 @@ ELSIF iAlarmID <> 1099 THEN
 END_IF;
 
 HMI_xLampEStop    := xEStopLatched OR NOT HMI_xEStop;
-HMI_xLampEnableOk := xEnablePermit;
+HMI_xLampEnableOk := xPowerLatched AND xEnablePermit;  (* 已上使能且条件仍满足 *)
 HMI_xLampFault    := xFaultAggregate;
 HMI_iAlarmShow    := iAlarmID;
 ```

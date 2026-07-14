@@ -16,6 +16,7 @@ VAR_GLOBAL
     HMI_xEStop          : BOOL;   (* TRUE=未触发 OK；FALSE=急停按下 *)
     HMI_xStop           : BOOL;   (* 点按/按住：停止请求 *)
     HMI_xStopHold3s     : BOOL;   (* 长按满 3s 脉冲：复位锁存 + 各轴错误复位请求 *)
+    HMI_xEnable         : BOOL;   (* 使能触发：上升沿切换上/下使能；复位/急停/故障后强制下使能，须再触发 *)
 
     HMI_eXMode          : INT;    (* 0=Indep 1=Sync 2=Diff *)
     HMI_eDiffFunc       : INT;    (* Diff：0纠偏 1原地旋转(一正一反) 2差速拐弯 *)
@@ -157,10 +158,10 @@ END_VAR
 
 ```iecst
 VAR_GLOBAL
-    HMI_xLampEStop      : BOOL;
-    HMI_xLampEnableOk   : BOOL;
-    HMI_xLampFault      : BOOL;
-    HMI_iAlarmShow      : INT;
+    HMI_xLampEStop     : BOOL;
+    HMI_xLampEnableOk  : BOOL;   (* = xPowerLatched AND xEnablePermit *)
+    HMI_xLampFault     : BOOL;
+    HMI_iAlarmShow     : INT;
 END_VAR
 ```
 
