@@ -174,17 +174,17 @@
       <section>
         <h2>安全</h2>
         <div class="pills">
+          <span class="pill" id="p-dev">Dev=STOP</span>
           <span class="pill" id="p-estop">EStop</span>
-          <span class="pill" id="p-en">Enable</span>
           <span class="pill" id="p-alarm">Alarm</span>
           <span class="pill ok">Mode=Manual</span>
         </div>
         <div class="row">
           <button type="button" class="danger" id="btn-estop">急停按住 (→FALSE)</button>
-          <button type="button" id="btn-enable">使能（瞬时，上升沿切换）</button>
-          <button type="button" id="btn-stop">停止（点按停 / 长按3s复位轴错误）</button>
+          <button type="button" id="btn-start">启动 Start (STOP→RUN)</button>
+          <button type="button" id="btn-stop">停止（短按 STOP / 长按3s复位）</button>
         </div>
-        <p class="hint">HMI_xEStop：未按 TRUE / 按下 FALSE。HMI_xEnable：上升沿切换使能闩。长按 Stop：清锁存 + ResetFault + 下使能。JOG：按住移动 / 松开暂停。</p>
+        <p class="hint">设备灯：Run=运行中 · Stop=停止/待机 · Error=错误。手动：X± / 左旋右旋 / Y±Z±R±。自动：X→Z压到力→Y恒力。力可模拟。</p>
       </section>
 
       <section>
@@ -313,7 +313,7 @@
   const S = {
     eStopBtnOk: true,
     eStopLatch: false,
-    powerLatched: false,
+    eDevState: 0, // 0 STOP 1 RUN 2 ERROR
     fault: false,
     alarm: 0,
     mode: 1,
@@ -338,7 +338,10 @@
   };
 
   const permit = () => S.eStopBtnOk && !S.eStopLatch && !S.fault;
-  const powered = () => S.powerLatched && permit();
+  const isRun = () => S.eDevState === 1;
+  const syncDev = () => {
+    if (!S.eStopBtnOk || S.eStopLatch || S.fault) S.eDevState = 2;
+  };
 
   function computeXPair(dir) {
     // dir: +1 / -1
@@ -384,15 +387,16 @@
   }
 
   function applyHold(act) {
-    if (!permit()) {
+    syncDev();
+    if (!permit() || S.eDevState === 2) {
       S.alarm = 1004;
-      log('拒绝 ' + act + '：无 EnablePermit');
+      log('拒绝 ' + act + '：设备 ERROR 或无许可');
       render();
       return;
     }
-    if (!powered()) {
+    if (!isRun()) {
       S.alarm = 1004;
-      log('拒绝 ' + act + '：未使能（按 HMI_xEnable）');
+      log('拒绝 ' + act + '：非 RUN（先按启动）');
       render();
       return;
     }
@@ -444,14 +448,16 @@
   }
 
   function render() {
+    syncDev();
     setAlarm();
+    const names = ['STOP停止/待机', 'RUN运行中', 'ERROR错误'];
+    const pd = document.getElementById('p-dev');
+    const mode = S.eDevState === 1 ? '(手动)' : '';
+    pd.textContent = `Dev=${names[S.eDevState]}${mode}`;
+    pd.className = 'pill ' + (S.eDevState === 1 ? 'ok' : S.eDevState === 2 ? 'bad' : '');
     const pe = document.getElementById('p-estop');
     pe.textContent = `EStop btn=${S.eStopBtnOk ? 'T' : 'F'} latch=${S.eStopLatch ? 'T' : 'F'}`;
     pe.className = 'pill ' + ((!S.eStopBtnOk || S.eStopLatch) ? 'bad' : 'ok');
-    const en = document.getElementById('p-en');
-    const ok = powered();
-    en.textContent = `Power=${ok ? 'T' : 'F'} Permit=${permit() ? 'T' : 'F'}`;
-    en.className = 'pill ' + (ok ? 'ok' : 'bad');
     document.getElementById('p-alarm').textContent = 'Alarm=' + S.alarm;
     document.getElementById('p-alarm').className = 'pill ' + (S.alarm ? 'bad' : 'ok');
 
@@ -463,7 +469,7 @@
     document.getElementById('fb-mv').innerHTML = mv
       ? '<span class="bit">●</span> moving'
       : '<span class="bit off">●</span> idle';
-    document.getElementById('fb-pw').textContent = `Power=${ok} Ready=${!S.fault}`;
+    document.getElementById('fb-pw').textContent = `Power=${isRun()} Ready=${!S.fault}`;
     document.getElementById('fb-home').textContent = `${S.homedY} / ${S.homedZ}`;
 
     document.getElementById('leg-m1').classList.toggle('moving', Math.abs(S.v1) > 1e-6);
@@ -547,7 +553,7 @@
 
   document.querySelectorAll('button[data-act^="home"]').forEach(btn => {
     btn.addEventListener('click', () => {
-      if (!powered()) { log('回零拒绝：未使能'); return; }
+      if (!isRun()) { log('回零拒绝：非 RUN'); return; }
       const a = btn.getAttribute('data-act');
       if (a === 'homeY') { S.homedY = true; S.py = 0; log('Home Y 请求/完成(模拟)'); }
       if (a === 'homeZ') { S.homedZ = true; S.pz = 0; log('Home Z 请求/完成(模拟)'); }
@@ -555,16 +561,26 @@
     });
   });
 
-  // enable toggle (rising edge)
-  document.getElementById('btn-enable').addEventListener('click', () => {
-    if (!permit()) {
-      log('使能拒绝：无许可（急停/故障）');
+  // Start: STOP→RUN
+  document.getElementById('btn-start').addEventListener('click', () => {
+    syncDev();
+    if (S.eDevState === 2) {
+      log('启动拒绝：ERROR，请先长按停止复位');
       render();
       return;
     }
-    S.powerLatched = !S.powerLatched;
-    log(S.powerLatched ? 'HMI_xEnable 上升沿 → 上使能' : 'HMI_xEnable 上升沿 → 下使能');
-    if (!S.powerLatched) releaseHold();
+    if (!permit()) {
+      S.alarm = 1004;
+      log('启动拒绝：无许可');
+      render();
+      return;
+    }
+    if (S.eDevState === 0) {
+      S.eDevState = 1;
+      log('HMI_xStart → RUN');
+    } else {
+      log('已在 RUN');
+    }
     render();
   });
 
@@ -573,9 +589,9 @@
   const edown = () => {
     S.eStopBtnOk = false;
     S.eStopLatch = true;
-    S.powerLatched = false;
+    S.eDevState = 2;
     S.alarm = 1001;
-    stopAll('HMI_xEStop=FALSE');
+    stopAll('HMI_xEStop=FALSE → ERROR');
   };
   const eup = () => {
     S.eStopBtnOk = true;
@@ -596,20 +612,25 @@
     stopBtn.textContent = '停止（点按停 / 长按3s复位轴错误）';
   };
   stopBtn.addEventListener('mousedown', () => {
-    stopAll('HMI_xStop');
+    if (S.eDevState === 1) {
+      S.eDevState = 0;
+      stopAll('HMI_xStop 短按 → STOP');
+    } else {
+      stopAll('HMI_xStop');
+    }
     if (!S.eStopBtnOk) { log('急停仍按下，不计时复位'); return; }
     S.stopMs = 0;
     S.stopHold = setInterval(() => {
       S.stopMs += 100;
-      stopBtn.textContent = `复位轴错误 ${(S.stopMs / 1000).toFixed(1)}/3s`;
+      stopBtn.textContent = `复位 ${(S.stopMs / 1000).toFixed(1)}/3s`;
       if (S.stopMs >= 3000) {
         clearStopHold();
         S.eStopLatch = false;
         S.fault = false;
-        S.powerLatched = false;
+        S.eDevState = 0;
         document.getElementById('il-ft').checked = false;
         S.alarm = 0;
-        log('长按3s：清锁存 + AxisCmd_xResetFault + 下使能（须再按使能）');
+        log('长按3s：清锁存 + ResetFault → STOP');
         render();
       }
     }, 100);
@@ -632,9 +653,9 @@
   document.getElementById('il-ft').addEventListener('change', e => {
     S.fault = e.target.checked;
     if (S.fault) {
-      S.powerLatched = false;
+      S.eDevState = 2;
       S.alarm = 1002;
-      stopAll('Fault');
+      stopAll('Fault → ERROR');
     }
     else render();
   });

@@ -1,9 +1,6 @@
 # FB_XDiff.md — 龙门 X 双驱（同步 / 差速）
 
-> **仅在 Axis_Control 任务内**调用。  
-> 机械：**龙门**两侧驱动（M1/M2）；X 运动方向**与 Y 轴垂直**；相对编码器；上电当前位置=0。  
-> 跨距 **4~6 m 可变**。同速同向 = 沿 X 导轨平移（极性用户自配）。  
-> 速度公式与 Web v2 对齐，见 [WEB_PLC_ALIGN.md](WEB_PLC_ALIGN.md)。
+> **本期 HMI 简化**：仅使用 **Sync（eMode=1）** 与 **原地旋转（eMode=2, eDiffFunc=1）** 对应 X± / 左旋右旋。Indep/纠偏/差速弯不再对触摸屏开放。
 
 ## 上层模式 `eMode`
 

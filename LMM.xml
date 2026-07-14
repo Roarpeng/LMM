@@ -451,210 +451,239 @@ PRG_Logic();
         </addData>
       </pou>
       <pou name="PRG_Logic" pouType="program">
-        <interface>
+                <interface>
           <localVars>
-            <variable name="tonHold">
-              <type>
-                <derived name="TON" />
-              </type>
-            </variable>
-            <variable name="xResetPulse">
-              <type>
-                <BOOL />
-              </type>
-            </variable>
-            <variable name="xResetPrev">
-              <type>
-                <BOOL />
-              </type>
-            </variable>
-            <variable name="xEnablePrev">
-              <type>
-                <BOOL />
-              </type>
-            </variable>
-            <variable name="xPowerLatched">
-              <type>
-                <BOOL />
-              </type>
-            </variable>
-            <variable name="xBridgeInited">
-              <type>
-                <BOOL />
-              </type>
-            </variable>
+            <variable name="tonHold"><type><derived name="TON" /></type></variable>
+            <variable name="tonResetHold"><type><derived name="TON" /></type></variable>
+            <variable name="xResetPulse"><type><BOOL /></type></variable>
+            <variable name="xResetPrev"><type><BOOL /></type></variable>
+            <variable name="xStartEdge"><type><BOOL /></type></variable>
+            <variable name="xStartPrev"><type><BOOL /></type></variable>
+            <variable name="xStopEdge"><type><BOOL /></type></variable>
+            <variable name="xStopPrev"><type><BOOL /></type></variable>
+            <variable name="xPostResetHold"><type><BOOL /></type></variable>
+            <variable name="xAutoStartPrev"><type><BOOL /></type></variable>
+            <variable name="xAutoStartEdge"><type><BOOL /></type></variable>
+            <variable name="rRHold"><type><REAL /></type></variable>
+            <variable name="xMoveXSent"><type><BOOL /></type></variable>
+            <variable name="xMoveYSent"><type><BOOL /></type></variable>
+            <variable name="xBridgeInited"><type><BOOL /></type></variable>
           </localVars>
         </interface>
         <body>
           <ST>
             <xhtml xmlns="http://www.w3.org/1999/xhtml">(*==============================================================================
- * PRG_Logic — 许可 / 联锁 / 写 AxisCmd（MainTask）
- * 禁止 CALL PRG_Axis_Control / FB_Servo / FB_XDiff
+ * PRG_Logic — 设备态 / 手动裁定 / 自动步序 / 恒力
+ * 禁止 CALL Axis / FB_Servo / FB_XDiff
  *============================================================================*)
 
-(* ---------- 首次运行：默认参数 ---------- *)
-IF NOT xBridgeInited THEN
-	HMI_rJogVelX := JogVel;
-	HMI_rJogVelY := JogVel;
-	HMI_rJogVelZ := JogVel;
-	HMI_rWheelBase := yLength;
-	IF HMI_rWheelBase &lt; 4.0 THEN
-		HMI_rWheelBase := 5.0; (* 默认跨距 5m *)
-	END_IF;
-	HMI_rDiffDelta := 0.08;
-	HMI_rTurnOmega := 0.2;
-	HMI_eXMode := 1;      (* 默认 Sync *)
-	HMI_eDiffFunc := 0;   (* 默认纠偏 *)
-	xM5Ready := FALSE;    (* 第5轴未到货 *)
-	xBridgeInited := TRUE;
-END_IF;
-
-(* ---------- 原面板变量桥接 ----------
- * EStop：面板按下=TRUE → HMI_xEStop 约定未触发=TRUE，故取反
- * StopBtn：停止；ResetBtn：当作长按复位脉冲（若有独立复位钮）
- * StartBtn：使能触发 → HMI_xEnable（上升沿切换使能闩）
- * 触摸屏可直接写 HMI_*，无需经面板桥
- *------------------------------------------------------------------------*)
-HMI_xEStop := NOT EStop;
+(* —— 面板桥：地址固定 —— *)
+HMI_xEStop := EStop;
 HMI_xStop := StopBtn;
+HMI_xStart := StartBtn;
 HMI_xEnable := StartBtn;
-IF ResetBtn THEN
-	HMI_xStopHold3s := TRUE;
-ELSE
-	HMI_xStopHold3s := FALSE;
-END_IF;
+HMI_xStopHold3s := ResetBtn;
 
-(* 前进/后退按当前 X 模式映射到 Sync / Diff / 独立 *)
-IF HMI_eXMode = 1 THEN
-	HMI_xJogXSyncPos := JogFwd;
-	HMI_xJogXSyncNeg := JogBwd;
-END_IF;
-IF HMI_eXMode = 2 THEN
-	HMI_xJogXDiffPos := JogFwd;
-	HMI_xJogXDiffNeg := JogBwd;
-END_IF;
-IF HMI_eXMode = 0 THEN
-	HMI_xJogM1Pos := JogFwd;
-	HMI_xJogM1Neg := JogBwd;
-	HMI_xJogM2Pos := JogFwd;
-	HMI_xJogM2Neg := JogBwd;
-END_IF;
+(* 面板前进/后退 → X± *)
+HMI_xJogXPos := JogFwd;
+HMI_xJogXNeg := JogBwd;
 HMI_xJogYPos := JogRight;
 HMI_xJogYNeg := JogLeft;
 HMI_xJogZPos := JogUp;
 HMI_xJogZNeg := JogDown;
-HMI_xHomeReqY := HomeReq;
-HMI_xHomeReqZ := HomeReq;
 HMI_rJogVelX := JogVel;
 HMI_rJogVelY := JogVel;
 HMI_rJogVelZ := JogVel;
-IF yLength &gt;= 4.0 AND yLength &lt;= 6.0 THEN
-	HMI_rWheelBase := yLength;
-END_IF;
 
-(* ---------- 急停锁存：HMI_xEStop=FALSE 为触发 ---------- *)
-IF NOT HMI_xEStop THEN
-	xEStopLatched := TRUE;
-END_IF;
-
-(* 长按停止 3s 复位（要求急停已松开） *)
+(* —— 急停 / 复位 —— *)
+IF NOT HMI_xEStop THEN xEStopLatched := TRUE; END_IF;
 tonHold(IN := HMI_xStop AND HMI_xEStop, PT := T#3S);
 xResetPulse := (HMI_xStopHold3s OR tonHold.Q) AND NOT xResetPrev;
 xResetPrev := HMI_xStopHold3s OR tonHold.Q;
-
 IF xResetPulse THEN
 	xEStopLatched := FALSE;
-	AxisCmd_xResetFault := TRUE; (* 一拍：各轴 MC_Reset *)
-	xPowerLatched := FALSE; (* 复位后须再触发使能 *)
+	AxisCmd_xResetFault := TRUE;
+	eDevState := 0;
+	xPostResetHold := TRUE;
+	iAutoStep := 0;
 ELSE
 	AxisCmd_xResetFault := FALSE;
 END_IF;
 
-(* ---------- Fault / 使能许可 ---------- *)
-xFaultAggregate := AxisFb_xFaultM1 OR AxisFb_xFaultM2 OR AxisFb_xFaultY OR AxisFb_xFaultZ;
+xFaultAggregate := AxisFb_xFaultM1 OR AxisFb_xFaultM2 OR AxisFb_xFaultY OR AxisFb_xFaultZ
+	OR (xM5Ready AND AxisFb_xFaultR);
 xEnablePermit := HMI_xEStop AND NOT xEStopLatched AND NOT xFaultAggregate;
-eOpMode := 0; (* 本期仅手动 *)
+IF HMI_xAutoMode THEN eOpMode := 1; ELSE eOpMode := 0; END_IF;
+HMI_eOpMode := eOpMode;
 
-(* 使能触发：HMI_xEnable 上升沿切换闩；无许可则强制下使能 *)
-IF NOT xEnablePermit THEN
-	xPowerLatched := FALSE;
-ELSIF HMI_xEnable AND NOT xEnablePrev THEN
-	xPowerLatched := NOT xPowerLatched;
+tonResetHold(IN := xPostResetHold, PT := T#2S);
+IF NOT xFaultAggregate AND HMI_xEStop AND NOT xEStopLatched THEN
+	xPostResetHold := FALSE;
+ELSIF tonResetHold.Q OR NOT HMI_xEStop OR xEStopLatched THEN
+	xPostResetHold := FALSE;
 END_IF;
-xEnablePrev := HMI_xEnable;
 
-(* ---------- 限位联锁 ---------- *)
-xIlk_BlockYPlus := I_xLimYPos;
-xIlk_BlockYNeg := I_xLimYNeg;
-xIlk_BlockZPlus := I_xLimZPos;
-xIlk_BlockZNeg := I_xLimZNeg;
-xIlk_BlockYWhenZ := AxisFb_xMovingZ; (* Z 动则禁 Y *)
+xStartEdge := (HMI_xStart OR HMI_xEnable) AND NOT xStartPrev;
+xStartPrev := HMI_xStart OR HMI_xEnable;
+xStopEdge := HMI_xStop AND NOT xStopPrev;
+xStopPrev := HMI_xStop;
 
-(* ---------- 写 Axis 命令区 ---------- *)
-AxisCmd_xStopAll := xEStopLatched OR NOT HMI_xEStop OR HMI_xStop OR xFaultAggregate;
-AxisCmd_xPower := xPowerLatched AND xEnablePermit;
+IF xResetPulse THEN
+	eDevState := 0;
+ELSIF NOT HMI_xEStop OR xEStopLatched THEN
+	eDevState := 2;
+ELSIF xFaultAggregate AND NOT xPostResetHold THEN
+	eDevState := 2;
+ELSIF eDevState = 2 THEN
+	;
+ELSIF xStopEdge AND NOT tonHold.Q THEN
+	eDevState := 0;
+	iAutoStep := 0;
+ELSIF xStartEdge AND eDevState = 0 AND xEnablePermit THEN
+	eDevState := 1;
+ELSIF xStartEdge AND eDevState = 0 AND NOT xEnablePermit THEN
+	iAlarmID := 1004;
+END_IF;
 
-AxisCmd_eXMode := LIMIT(0, HMI_eXMode, 2);
-AxisCmd_eDiffFunc := LIMIT(0, HMI_eDiffFunc, 2);
-AxisCmd_rDiffDelta := HMI_rDiffDelta;
-AxisCmd_rTurnOmega := HMI_rTurnOmega;
-AxisCmd_rWheelBase := LIMIT(4.0, HMI_rWheelBase, 6.0);
+Dev_xStop := (eDevState = 0);
+Dev_xRun := (eDevState = 1);
+Dev_xError := (eDevState = 2);
+HMI_eDevState := eDevState;
+HMI_xDevStop := Dev_xStop;
+HMI_xDevRun := Dev_xRun;
+HMI_xDevError := Dev_xError;
+
+IF HMI_xForceSimEnable THEN
+	rForceAct := HMI_rForceSim;
+END_IF;
+HMI_rForceShow := rForceAct;
+IF rForceKp &lt; 1.0E-6 THEN rForceKp := 1.0; END_IF;
+
+xIlk_BlockYPlus := I_xLimYPos; xIlk_BlockYNeg := I_xLimYNeg;
+xIlk_BlockZPlus := I_xLimZPos; xIlk_BlockZNeg := I_xLimZNeg;
+xIlk_BlockYWhenZ := FALSE;
+
+AxisCmd_xStopAll := (eDevState &lt;&gt; 1) OR HMI_xStop OR HMI_xAutoAbort;
+AxisCmd_xPower := (eDevState = 1);
 AxisCmd_rJogVelX := HMI_rJogVelX;
 AxisCmd_rJogVelY := HMI_rJogVelY;
 AxisCmd_rJogVelZ := HMI_rJogVelZ;
+AxisCmd_rJogVelR := HMI_rJogVelR;
+AxisCmd_rWheelBase := LIMIT(4.0, 5.0, 6.0);
 AxisCmd_rAcc := JogACC;
 AxisCmd_rDec := JogDEC;
 IF AxisCmd_rAcc &lt; 1.0 THEN AxisCmd_rAcc := 100.0; END_IF;
 IF AxisCmd_rDec &lt; 1.0 THEN AxisCmd_rDec := 100.0; END_IF;
 
-(* 先清零，再按模式透传（命令源互斥）；JOG 电平 TRUE=移动 FALSE=暂停 *)
-AxisCmd_xJogM1Pos := FALSE; AxisCmd_xJogM1Neg := FALSE;
-AxisCmd_xJogM2Pos := FALSE; AxisCmd_xJogM2Neg := FALSE;
-AxisCmd_xJogXSyncPos := FALSE; AxisCmd_xJogXSyncNeg := FALSE;
-AxisCmd_xJogXDiffPos := FALSE; AxisCmd_xJogXDiffNeg := FALSE;
+AxisCmd_xJogXPos := FALSE; AxisCmd_xJogXNeg := FALSE;
+AxisCmd_xSpinLeft := FALSE; AxisCmd_xSpinRight := FALSE;
+AxisCmd_xJogYPos := FALSE; AxisCmd_xJogYNeg := FALSE;
+AxisCmd_xJogZPos := FALSE; AxisCmd_xJogZNeg := FALSE;
+AxisCmd_xJogRPos := FALSE; AxisCmd_xJogRNeg := FALSE;
+AxisCmd_xUseZVelCmd := FALSE; AxisCmd_rZVelCmd := 0.0;
+AxisCmd_xMoveRelX := FALSE; AxisCmd_xMoveRelY := FALSE;
+AxisCmd_xHoldR := FALSE;
 
-IF AxisCmd_xPower AND NOT AxisCmd_xStopAll THEN
-	CASE AxisCmd_eXMode OF
-		0: (* 独立 *)
-			AxisCmd_xJogM1Pos := HMI_xJogM1Pos;
-			AxisCmd_xJogM1Neg := HMI_xJogM1Neg;
-			AxisCmd_xJogM2Pos := HMI_xJogM2Pos;
-			AxisCmd_xJogM2Neg := HMI_xJogM2Neg;
-		1: (* 同步 *)
-			AxisCmd_xJogXSyncPos := HMI_xJogXSyncPos;
-			AxisCmd_xJogXSyncNeg := HMI_xJogXSyncNeg;
-		2: (* 差速 *)
-			AxisCmd_xJogXDiffPos := HMI_xJogXDiffPos;
-			AxisCmd_xJogXDiffNeg := HMI_xJogXDiffNeg;
+xAutoStartEdge := HMI_xAutoStart AND NOT xAutoStartPrev;
+xAutoStartPrev := HMI_xAutoStart;
+
+IF Dev_xError OR HMI_xAutoAbort OR (eDevState &lt;&gt; 1) THEN
+	iAutoStep := 0;
+	HMI_xAutoBusy := FALSE;
+END_IF;
+
+(* ===== 手动：仅 RUN + 手动模式 ===== *)
+IF Dev_xRun AND (eOpMode = 0) AND NOT HMI_xStop THEN
+	IF HMI_xSpinLeft XOR HMI_xSpinRight THEN
+		AxisCmd_xSpinLeft := HMI_xSpinLeft;
+		AxisCmd_xSpinRight := HMI_xSpinRight;
+	ELSIF HMI_xJogXPos XOR HMI_xJogXNeg THEN
+		AxisCmd_xJogXPos := HMI_xJogXPos;
+		AxisCmd_xJogXNeg := HMI_xJogXNeg;
+	END_IF;
+	AxisCmd_xJogYPos := HMI_xJogYPos AND NOT xIlk_BlockYPlus;
+	AxisCmd_xJogYNeg := HMI_xJogYNeg AND NOT xIlk_BlockYNeg;
+	AxisCmd_xJogZPos := HMI_xJogZPos AND NOT xIlk_BlockZPlus;
+	AxisCmd_xJogZNeg := HMI_xJogZNeg AND NOT xIlk_BlockZNeg;
+	IF xM5Ready THEN
+		AxisCmd_xJogRPos := HMI_xJogRPos;
+		AxisCmd_xJogRNeg := HMI_xJogRNeg;
+	END_IF;
+END_IF;
+
+(* ===== 自动 ===== *)
+IF Dev_xRun AND (eOpMode = 1) AND NOT HMI_xStop THEN
+	IF iAutoStep = 0 AND xAutoStartEdge THEN
+		iAutoStep := 1;
+		rRHold := AxisFb_rPosR;
+		xMoveXSent := FALSE; xMoveYSent := FALSE;
+		HMI_xAutoDone := FALSE;
+		HMI_xAutoBusy := TRUE;
+	END_IF;
+
+	CASE iAutoStep OF
+		1: (* MoveX *)
+			AxisCmd_xHoldR := TRUE;
+			AxisCmd_rRHoldPos := rRHold;
+			AxisCmd_rMoveDistX := HMI_rAutoDistX;
+			AxisCmd_rMoveVelX := HMI_rAutoVelX;
+			AxisCmd_xMoveRelX := TRUE;
+			IF AxisFb_xMoveDoneX THEN
+				AxisCmd_xMoveRelX := FALSE;
+				iAutoStep := 2;
+			END_IF;
+		2: (* PressZ *)
+			AxisCmd_xHoldR := TRUE;
+			AxisCmd_rRHoldPos := rRHold;
+			AxisCmd_xUseZVelCmd := TRUE;
+			IF rForceAct &gt;= HMI_rForceSet THEN
+				AxisCmd_rZVelCmd := 0.0;
+				iAutoStep := 3;
+				xMoveYSent := FALSE;
+			ELSE
+				AxisCmd_rZVelCmd := -ABS(HMI_rAutoVelZ);
+			END_IF;
+		3: (* MoveY + 恒力 *)
+			AxisCmd_xHoldR := TRUE;
+			AxisCmd_rRHoldPos := rRHold;
+			AxisCmd_rMoveDistY := HMI_rAutoDistY;
+			AxisCmd_rMoveVelY := HMI_rAutoVelY;
+			AxisCmd_xMoveRelY := TRUE;
+			AxisCmd_xUseZVelCmd := TRUE;
+			AxisCmd_rZVelCmd := LIMIT(-ABS(HMI_rAutoVelZ),
+				rForceKp * (HMI_rForceSet - rForceAct), ABS(HMI_rAutoVelZ));
+			IF AxisFb_xMoveDoneY THEN
+				AxisCmd_xMoveRelY := FALSE;
+				AxisCmd_rZVelCmd := 0.0;
+				iAutoStep := 4;
+			END_IF;
+		4: (* RWobble 占位 *)
+			iAutoStep := 5;
+		5: (* Done *)
+			HMI_xAutoBusy := FALSE;
+			HMI_xAutoDone := TRUE;
+			iAutoStep := 0;
 	END_CASE;
 END_IF;
 
-AxisCmd_xJogYPos := AxisCmd_xPower AND HMI_xJogYPos AND NOT xIlk_BlockYPlus AND NOT xIlk_BlockYWhenZ AND NOT AxisCmd_xStopAll;
-AxisCmd_xJogYNeg := AxisCmd_xPower AND HMI_xJogYNeg AND NOT xIlk_BlockYNeg AND NOT xIlk_BlockYWhenZ AND NOT AxisCmd_xStopAll;
-AxisCmd_xJogZPos := AxisCmd_xPower AND HMI_xJogZPos AND NOT xIlk_BlockZPlus AND NOT AxisCmd_xStopAll;
-AxisCmd_xJogZNeg := AxisCmd_xPower AND HMI_xJogZNeg AND NOT xIlk_BlockZNeg AND NOT AxisCmd_xStopAll;
-AxisCmd_xJogRPos := FALSE;
-AxisCmd_xJogRNeg := FALSE;
-AxisCmd_xHomeY := AxisCmd_xPower AND HMI_xHomeReqY AND NOT AxisCmd_xStopAll;
-AxisCmd_xHomeZ := AxisCmd_xPower AND HMI_xHomeReqZ AND NOT AxisCmd_xStopAll;
-AxisCmd_xHomeR := FALSE;
-
-(* ---------- 报警号 ---------- *)
-IF xEStopLatched OR NOT HMI_xEStop THEN
-	iAlarmID := 1001; (* 急停 *)
-ELSIF xFaultAggregate THEN
-	iAlarmID := 1002; (* 驱动故障 *)
-ELSIF (HMI_xJogYPos AND xIlk_BlockYPlus) OR (HMI_xJogYNeg AND xIlk_BlockYNeg)
-	OR (HMI_xJogZPos AND xIlk_BlockZPlus) OR (HMI_xJogZNeg AND xIlk_BlockZNeg) THEN
-	iAlarmID := 1003; (* 限位拒动 *)
-ELSE
+IF Dev_xError THEN
+	IF xEStopLatched OR NOT HMI_xEStop THEN
+		iAlarmID := 1001;
+	ELSE
+		iAlarmID := 1002;
+	END_IF;
+ELSIF iAlarmID &lt;&gt; 1004 THEN
 	iAlarmID := 0;
 END_IF;
 
+HMI_iAutoStepShow := iAutoStep;
 HMI_xLampEStop := xEStopLatched OR NOT HMI_xEStop;
-HMI_xLampEnableOk := xPowerLatched AND xEnablePermit;
+HMI_xLampEnableOk := Dev_xRun;
 HMI_xLampFault := xFaultAggregate;
 HMI_iAlarmShow := iAlarmID;
+
+StopLamp := Dev_xStop;
+StartLamp := Dev_xRun;
 </xhtml>
           </ST>
         </body>
@@ -926,36 +955,52 @@ END_IF;
     </data>
     <data name="http://www.3s-software.com/plcopenxml/globalvars" handleUnknown="implementation">
       <globalVars name="GVL">
-        <variable name="StartBtn">
+                <variable name="StartBtn" address="%IX1.6">
           <type>
             <BOOL />
           </type>
           <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">启动/使能触发 → HMI_xEnable</xhtml>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【面板启动】AT %IX1.6 → HMI_xStart/HMI_xEnable（上升沿 STOP→RUN）</xhtml>
           </documentation>
         </variable>
-        <variable name="StopBtn">
+                <variable name="StopBtn" address="%IX1.4">
           <type>
             <BOOL />
           </type>
           <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">停止</xhtml>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【面板停止】AT %IX1.4 → HMI_xStop</xhtml>
           </documentation>
         </variable>
-        <variable name="ResetBtn">
+                <variable name="ResetBtn">
           <type>
             <BOOL />
           </type>
           <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">复位</xhtml>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【面板复位】→ HMI_xStopHold3s（错误复位脉冲）；地址现场可另绑</xhtml>
           </documentation>
         </variable>
-        <variable name="EStop">
+                <variable name="EStop" address="%IX0.4">
           <type>
             <BOOL />
           </type>
           <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">急停 press=TRUE</xhtml>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【面板急停】AT %IX0.4 正常=TRUE 按下=FALSE → 直通 HMI_xEStop</xhtml>
+          </documentation>
+        </variable>
+        <variable name="StopLamp" address="%QX0.6">
+          <type>
+            <BOOL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【停止指示灯】AT %QX0.6 ← Dev_xStop（停止/待机）</xhtml>
+          </documentation>
+        </variable>
+        <variable name="StartLamp" address="%QX0.7">
+          <type>
+            <BOOL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【启动/运行指示灯】AT %QX0.7 ← Dev_xRun（正在运行）</xhtml>
           </documentation>
         </variable>
         <variable name="JogVel">
@@ -963,7 +1008,7 @@ END_IF;
             <REAL />
           </type>
           <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">手动速度</xhtml>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">面板点动速度 → 桥接到 HMI_rJogVel*</xhtml>
           </documentation>
         </variable>
         <variable name="JogFwd">
@@ -971,7 +1016,7 @@ END_IF;
             <BOOL />
           </type>
           <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">手动前进</xhtml>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">面板前进 → 按 X 模式映射到 Sync/Diff/独立点动+</xhtml>
           </documentation>
         </variable>
         <variable name="JogBwd">
@@ -979,7 +1024,7 @@ END_IF;
             <BOOL />
           </type>
           <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">手动后退</xhtml>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">面板后退 → 按 X 模式映射到 Sync/Diff/独立点动-</xhtml>
           </documentation>
         </variable>
         <variable name="JogUp">
@@ -987,7 +1032,7 @@ END_IF;
             <BOOL />
           </type>
           <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">手动上升</xhtml>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">面板上 → HMI_xJogZPos</xhtml>
           </documentation>
         </variable>
         <variable name="JogDown">
@@ -995,7 +1040,7 @@ END_IF;
             <BOOL />
           </type>
           <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">手动下降</xhtml>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">面板下 → HMI_xJogZNeg</xhtml>
           </documentation>
         </variable>
         <variable name="JogRight">
@@ -1003,7 +1048,7 @@ END_IF;
             <BOOL />
           </type>
           <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">手动右移</xhtml>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">面板右 → HMI_xJogYPos</xhtml>
           </documentation>
         </variable>
         <variable name="JogLeft">
@@ -1011,7 +1056,7 @@ END_IF;
             <BOOL />
           </type>
           <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">手动左移</xhtml>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">面板左 → HMI_xJogYNeg</xhtml>
           </documentation>
         </variable>
         <variable name="JogClockAdd">
@@ -1035,7 +1080,7 @@ END_IF;
             <REAL />
           </type>
           <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">手动加速度</xhtml>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">点动加速度 → AxisCmd_rAcc</xhtml>
           </documentation>
         </variable>
         <variable name="JogDEC">
@@ -1043,7 +1088,7 @@ END_IF;
             <REAL />
           </type>
           <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">手动减速度</xhtml>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">点动减速度 → AxisCmd_rDec</xhtml>
           </documentation>
         </variable>
         <variable name="HomeReq">
@@ -1051,7 +1096,7 @@ END_IF;
             <BOOL />
           </type>
           <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">回零请求</xhtml>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">面板回零 → HMI_xHomeReqY/Z</xhtml>
           </documentation>
         </variable>
         <variable name="CaliForReq">
@@ -1075,7 +1120,7 @@ END_IF;
             <REAL />
           </type>
           <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">跨距/Y长度 4..6</xhtml>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">龙门跨距/Y长度设定 4..6m → HMI_rWheelBase</xhtml>
           </documentation>
         </variable>
         <variable name="HMI_xEStop">
@@ -1083,7 +1128,7 @@ END_IF;
             <BOOL />
           </type>
           <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">TRUE=OK FALSE=EStop</xhtml>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【急停】TRUE=未按下(正常)；FALSE=急停按下。可按可松，锁存由Logic保持</xhtml>
           </documentation>
         </variable>
         <variable name="HMI_xStop">
@@ -1091,7 +1136,7 @@ END_IF;
             <BOOL />
           </type>
           <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">Stop</xhtml>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【设备停止】短按RUN→STOP；长按3s故障复位</xhtml>
           </documentation>
         </variable>
         <variable name="HMI_xStopHold3s">
@@ -1099,7 +1144,7 @@ END_IF;
             <BOOL />
           </type>
           <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">Hold3s reset pulse</xhtml>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【停止长按满3s脉冲】清急停锁存+轴错误复位+下使能</xhtml>
           </documentation>
         </variable>
         <variable name="HMI_xEnable">
@@ -1107,7 +1152,87 @@ END_IF;
             <BOOL />
           </type>
           <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">Rising edge toggles power latch</xhtml>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【使能/启动别名】与HMI_xStart等效；上升沿STOP→RUN</xhtml>
+          </documentation>
+        </variable>
+        <variable name="Dev_xError">
+          <type>
+            <BOOL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【内部故障态】</xhtml>
+          </documentation>
+        </variable>
+        <variable name="Dev_xRun">
+          <type>
+            <BOOL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【内部运行态】</xhtml>
+          </documentation>
+        </variable>
+        <variable name="Dev_xStop">
+          <type>
+            <BOOL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【内部停机态】</xhtml>
+          </documentation>
+        </variable>
+        <variable name="eDevState">
+          <type>
+            <INT />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【设备状态】0STOP 1RUN 2ERROR</xhtml>
+          </documentation>
+        </variable>
+        <variable name="HMI_xDevError">
+          <type>
+            <BOOL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【故障灯设备级】</xhtml>
+          </documentation>
+        </variable>
+        <variable name="HMI_xDevRun">
+          <type>
+            <BOOL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【运行灯】</xhtml>
+          </documentation>
+        </variable>
+        <variable name="HMI_xDevStop">
+          <type>
+            <BOOL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【停机灯】</xhtml>
+          </documentation>
+        </variable>
+        <variable name="HMI_eOpMode">
+          <type>
+            <INT />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【运行方式】0手动 1自动；配合Run灯</xhtml>
+          </documentation>
+        </variable>
+        <variable name="HMI_eDevState">
+          <type>
+            <INT />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【设备状态码】0=STOP 1=RUN 2=ERROR</xhtml>
+          </documentation>
+        </variable>
+        <variable name="HMI_xStart">
+          <type>
+            <BOOL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【设备启动】瞬时；上升沿STOP→RUN</xhtml>
           </documentation>
         </variable>
         <variable name="HMI_eXMode">
@@ -1115,7 +1240,7 @@ END_IF;
             <INT />
           </type>
           <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">0Indep 1Sync 2Diff</xhtml>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【X模式】0=独立Indep；1=同步Sync；2=差速Diff</xhtml>
           </documentation>
         </variable>
         <variable name="HMI_eDiffFunc">
@@ -1123,93 +1248,144 @@ END_IF;
             <INT />
           </type>
           <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">0corr 1spin 2turn</xhtml>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Diff子功能】0=纠偏；1=原地旋转；2=差速拐弯</xhtml>
           </documentation>
         </variable>
         <variable name="HMI_xJogM1Pos">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【M1点动+】仅Indep；TRUE移动 FALSE暂停</xhtml>
+          </documentation>
         </variable>
         <variable name="HMI_xJogM1Neg">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【M1点动-】仅Indep；TRUE移动 FALSE暂停</xhtml>
+          </documentation>
         </variable>
         <variable name="HMI_xJogM2Pos">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【M2点动+】仅Indep；TRUE移动 FALSE暂停</xhtml>
+          </documentation>
         </variable>
         <variable name="HMI_xJogM2Neg">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【M2点动-】仅Indep；TRUE移动 FALSE暂停</xhtml>
+          </documentation>
         </variable>
         <variable name="HMI_xJogXSyncPos">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【同步点动+】仅Sync；M1=M2同速正向</xhtml>
+          </documentation>
         </variable>
         <variable name="HMI_xJogXSyncNeg">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【同步点动-】仅Sync；M1=M2同速反向</xhtml>
+          </documentation>
         </variable>
         <variable name="HMI_xJogXDiffPos">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【差速点动+】仅Diff；按eDiffFunc合成</xhtml>
+          </documentation>
         </variable>
         <variable name="HMI_xJogXDiffNeg">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【差速点动-】仅Diff；按eDiffFunc合成</xhtml>
+          </documentation>
         </variable>
         <variable name="HMI_xJogYPos">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Y点动+】TRUE移动 FALSE暂停；受限位/Z忙</xhtml>
+          </documentation>
         </variable>
         <variable name="HMI_xJogYNeg">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Y点动-】TRUE移动 FALSE暂停</xhtml>
+          </documentation>
         </variable>
         <variable name="HMI_xJogZPos">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Z点动+】TRUE移动 FALSE暂停</xhtml>
+          </documentation>
         </variable>
         <variable name="HMI_xJogZNeg">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Z点动-】TRUE移动 FALSE暂停</xhtml>
+          </documentation>
         </variable>
         <variable name="HMI_xJogRPos">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【R点动+】预留；M5未就绪无效</xhtml>
+          </documentation>
         </variable>
         <variable name="HMI_xJogRNeg">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【R点动-】预留</xhtml>
+          </documentation>
         </variable>
         <variable name="HMI_xHomeReqY">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Y回零请求】须已使能</xhtml>
+          </documentation>
         </variable>
         <variable name="HMI_xHomeReqZ">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Z回零请求】须已使能</xhtml>
+          </documentation>
         </variable>
         <variable name="HMI_xHomeReqR">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【R回零请求】预留</xhtml>
+          </documentation>
         </variable>
         <variable name="HMI_rJogVelX">
           <type>
@@ -1218,6 +1394,9 @@ END_IF;
           <initialValue>
             <simpleValue value="0.4" />
           </initialValue>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【X点动速度】龙门X基速设定</xhtml>
+          </documentation>
         </variable>
         <variable name="HMI_rJogVelY">
           <type>
@@ -1226,6 +1405,9 @@ END_IF;
           <initialValue>
             <simpleValue value="0.4" />
           </initialValue>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Y点动速度】</xhtml>
+          </documentation>
         </variable>
         <variable name="HMI_rJogVelZ">
           <type>
@@ -1234,6 +1416,9 @@ END_IF;
           <initialValue>
             <simpleValue value="0.4" />
           </initialValue>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Z点动速度】</xhtml>
+          </documentation>
         </variable>
         <variable name="HMI_rDiffDelta">
           <type>
@@ -1242,6 +1427,9 @@ END_IF;
           <initialValue>
             <simpleValue value="0.08" />
           </initialValue>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【差速Δ】纠偏/拐弯辅助差速</xhtml>
+          </documentation>
         </variable>
         <variable name="HMI_rTurnOmega">
           <type>
@@ -1250,6 +1438,9 @@ END_IF;
           <initialValue>
             <simpleValue value="0.2" />
           </initialValue>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【拐弯角速度ω】Diff原地旋/差速弯</xhtml>
+          </documentation>
         </variable>
         <variable name="HMI_rWheelBase">
           <type>
@@ -1259,93 +1450,135 @@ END_IF;
             <simpleValue value="5.0" />
           </initialValue>
           <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">4..6</xhtml>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【龙门跨距L】单位m，合法范围4..6</xhtml>
           </documentation>
         </variable>
         <variable name="xEStopLatched">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【急停锁存】按下急停置位；仅长按停止复位可清</xhtml>
+          </documentation>
         </variable>
         <variable name="xEnablePermit">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【使能许可】急停未触发且无锁存且无故障；≠已上使能</xhtml>
+          </documentation>
         </variable>
         <variable name="xFaultAggregate">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【故障汇总】任轴Fault</xhtml>
+          </documentation>
         </variable>
         <variable name="xIlk_BlockYPlus">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【联锁禁Y+】由Y+限位派生</xhtml>
+          </documentation>
         </variable>
         <variable name="xIlk_BlockYNeg">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【联锁禁Y-】由Y-限位派生</xhtml>
+          </documentation>
         </variable>
         <variable name="xIlk_BlockZPlus">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【联锁禁Z+】由Z+限位派生</xhtml>
+          </documentation>
         </variable>
         <variable name="xIlk_BlockZNeg">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【联锁禁Z-】由Z-限位派生</xhtml>
+          </documentation>
         </variable>
         <variable name="xIlk_BlockYWhenZ">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Z动禁Y】Z运动中禁止Y点动</xhtml>
+          </documentation>
         </variable>
         <variable name="xM5Ready">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【第5轴就绪】FALSE=忽略R轴</xhtml>
+          </documentation>
         </variable>
         <variable name="HMI_xLampEStop">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【急停灯】HMI读；锁存或按钮仍按下</xhtml>
+          </documentation>
         </variable>
         <variable name="HMI_xLampEnableOk">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【使能/运行灯】=设备RUN</xhtml>
+          </documentation>
         </variable>
         <variable name="HMI_xLampFault">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【轴故障灯】</xhtml>
+          </documentation>
         </variable>
         <variable name="eOpMode">
           <type>
             <INT />
           </type>
           <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">0=Manual</xhtml>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【运行模式】0=手动Manual（本期固定）</xhtml>
           </documentation>
         </variable>
         <variable name="iAlarmID">
           <type>
             <INT />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【内部报警号】Logic判定后拷贝到HMI_iAlarmShow</xhtml>
+          </documentation>
         </variable>
         <variable name="HMI_iAlarmShow">
           <type>
             <INT />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【报警号】0无；1001急停；1002故障；1003限位；1004无许可；1099R未就绪</xhtml>
+          </documentation>
         </variable>
         <variable name="I_xLimYPos">
           <type>
             <BOOL />
           </type>
           <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">IO TBD</xhtml>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Y正限位】物理输入，地址%I* TBD</xhtml>
           </documentation>
         </variable>
         <variable name="I_xLimYNeg">
@@ -1353,7 +1586,7 @@ END_IF;
             <BOOL />
           </type>
           <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">IO TBD</xhtml>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Y负限位】物理输入</xhtml>
           </documentation>
         </variable>
         <variable name="I_xHomeY">
@@ -1361,7 +1594,7 @@ END_IF;
             <BOOL />
           </type>
           <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">IO TBD</xhtml>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Y原点】物理输入</xhtml>
           </documentation>
         </variable>
         <variable name="I_xLimZPos">
@@ -1369,7 +1602,7 @@ END_IF;
             <BOOL />
           </type>
           <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">IO TBD</xhtml>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Z正限位】物理输入</xhtml>
           </documentation>
         </variable>
         <variable name="I_xLimZNeg">
@@ -1377,7 +1610,7 @@ END_IF;
             <BOOL />
           </type>
           <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">IO TBD</xhtml>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Z负限位】物理输入</xhtml>
           </documentation>
         </variable>
         <variable name="I_xHomeZ">
@@ -1385,7 +1618,7 @@ END_IF;
             <BOOL />
           </type>
           <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">IO TBD</xhtml>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Z原点】物理输入</xhtml>
           </documentation>
         </variable>
         <variable name="I_xLimRPos">
@@ -1393,7 +1626,7 @@ END_IF;
             <BOOL />
           </type>
           <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">IO TBD</xhtml>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【R正限位】预留</xhtml>
           </documentation>
         </variable>
         <variable name="I_xLimRNeg">
@@ -1401,7 +1634,7 @@ END_IF;
             <BOOL />
           </type>
           <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">IO TBD</xhtml>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【R负限位】预留</xhtml>
           </documentation>
         </variable>
         <variable name="I_xHomeR">
@@ -1409,318 +1642,504 @@ END_IF;
             <BOOL />
           </type>
           <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">IO TBD</xhtml>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【R原点】预留</xhtml>
           </documentation>
         </variable>
         <variable name="AxisCmd_xPower">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【轴使能命令】仅设备RUN时TRUE</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisCmd_eXMode">
           <type>
             <INT />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【X模式命令】0独立1同步2差速</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisCmd_eDiffFunc">
           <type>
             <INT />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Diff子功能命令】0纠偏1原地旋2差速弯</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisCmd_xJogM1Pos">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【M1点动+命令】已门控</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisCmd_xJogM1Neg">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【M1点动-命令】</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisCmd_xJogM2Pos">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【M2点动+命令】</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisCmd_xJogM2Neg">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【M2点动-命令】</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisCmd_xJogXSyncPos">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【同步点动+命令】</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisCmd_xJogXSyncNeg">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【同步点动-命令】</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisCmd_xJogXDiffPos">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【差速点动+命令】</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisCmd_xJogXDiffNeg">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【差速点动-命令】</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisCmd_xJogYPos">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Y点动+命令】含限位/Z忙门控</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisCmd_xJogYNeg">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Y点动-命令】</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisCmd_xJogZPos">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Z点动+命令】</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisCmd_xJogZNeg">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Z点动-命令】</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisCmd_xJogRPos">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【R点动+命令】预留</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisCmd_xJogRNeg">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【R点动-命令】预留</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisCmd_xStopAll">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【全停】急停/停止/故障时TRUE</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisCmd_xResetFault">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【错误复位脉冲】一拍TRUE→各轴MC_Reset</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisCmd_xHomeY">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Y回零命令】</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisCmd_xHomeZ">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Z回零命令】</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisCmd_xHomeR">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【R回零命令】预留</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisCmd_rDiffDelta">
           <type>
             <REAL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【差速Δ命令】</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisCmd_rTurnOmega">
           <type>
             <REAL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【拐弯ω命令】</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisCmd_rWheelBase">
           <type>
             <REAL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【跨距L命令】限幅4..6m</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisCmd_rJogVelX">
           <type>
             <REAL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【X点动速度命令】</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisCmd_rJogVelY">
           <type>
             <REAL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Y点动速度命令】</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisCmd_rJogVelZ">
           <type>
             <REAL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Z点动速度命令】</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisCmd_rJogVelR">
           <type>
             <REAL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【R点动速度命令】预留</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisCmd_rAcc">
           <type>
             <REAL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【加速度】</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisCmd_rDec">
           <type>
             <REAL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【减速度】</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisFb_rVelCmdM1">
           <type>
             <REAL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【M1速度指令反馈】供HMI显示</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisFb_rVelCmdM2">
           <type>
             <REAL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【M2速度指令反馈】</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisFb_rPosM1">
           <type>
             <REAL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【M1实际位置】</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisFb_rPosM2">
           <type>
             <REAL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【M2实际位置】</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisFb_rPosY">
           <type>
             <REAL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Y实际位置】</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisFb_rPosZ">
           <type>
             <REAL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Z实际位置】</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisFb_rPosR">
           <type>
             <REAL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【R实际位置】预留</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisFb_xStandstill1">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【M1静止】</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisFb_xStandstill2">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【M2静止】</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisFb_xStandstillY">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Y静止】</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisFb_xStandstillZ">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Z静止】</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisFb_xStandstillR">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【R静止】预留</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisFb_xMovingM1">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【M1运动中】</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisFb_xMovingM2">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【M2运动中】</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisFb_xMovingY">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Y运动中】</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisFb_xMovingZ">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Z运动中】</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisFb_xMovingR">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【R运动中】预留</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisFb_xPoweredM1">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【M1已使能】驱动功率级就绪，HMI灯</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisFb_xPoweredM2">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【M2已使能】</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisFb_xPoweredY">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Y已使能】</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisFb_xPoweredZ">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Z已使能】</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisFb_xPoweredR">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【R已使能】预留</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisFb_xHomedY">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Y已回零】</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisFb_xHomedZ">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Z已回零】</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisFb_xHomedR">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【R已回零】预留</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisFb_xFaultM1">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【M1故障】</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisFb_xFaultM2">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【M2故障】</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisFb_xFaultY">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Y故障】</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisFb_xFaultZ">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Z故障】</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisFb_xFaultR">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【R故障】预留</xhtml>
+          </documentation>
         </variable>
         <variable name="AxisFb_xReady">
           <type>
             <BOOL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【轴就绪】四轴无故障、可参与运动</xhtml>
+          </documentation>
         </variable>
         <addData>
           <data name="http://www.3s-software.com/plcopenxml/pathstructure" handleUnknown="discard">
@@ -1736,7 +2155,311 @@ END_IF;
             <ObjectId>5efdcb87-523c-4708-aac8-457600d7cdba</ObjectId>
           </data>
         </addData>
-      </globalVars>
+              <variable name="HMI_xAutoMode">
+          <type>
+            <BOOL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【自动模式】TRUE自动 FALSE手动</xhtml>
+          </documentation>
+        </variable>
+        <variable name="HMI_xJogXPos">
+          <type>
+            <BOOL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【X+】同步直行</xhtml>
+          </documentation>
+        </variable>
+        <variable name="HMI_xJogXNeg">
+          <type>
+            <BOOL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【X-】</xhtml>
+          </documentation>
+        </variable>
+        <variable name="HMI_xSpinLeft">
+          <type>
+            <BOOL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【左旋转】</xhtml>
+          </documentation>
+        </variable>
+        <variable name="HMI_xSpinRight">
+          <type>
+            <BOOL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【右旋转】</xhtml>
+          </documentation>
+        </variable>
+        <variable name="HMI_xAutoStart">
+          <type>
+            <BOOL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【自动启动】</xhtml>
+          </documentation>
+        </variable>
+        <variable name="HMI_xAutoAbort">
+          <type>
+            <BOOL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【自动中止】</xhtml>
+          </documentation>
+        </variable>
+        <variable name="HMI_rAutoDistX">
+          <type>
+            <REAL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【自动X距离】</xhtml>
+          </documentation>
+        </variable>
+        <variable name="HMI_rAutoVelX">
+          <type>
+            <REAL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【自动X速度】</xhtml>
+          </documentation>
+        </variable>
+        <variable name="HMI_rAutoDistY">
+          <type>
+            <REAL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【自动Y距离】</xhtml>
+          </documentation>
+        </variable>
+        <variable name="HMI_rAutoVelY">
+          <type>
+            <REAL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【自动Y速度】</xhtml>
+          </documentation>
+        </variable>
+        <variable name="HMI_rAutoVelZ">
+          <type>
+            <REAL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【自动Z速度】</xhtml>
+          </documentation>
+        </variable>
+        <variable name="HMI_rForceSet">
+          <type>
+            <REAL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【力设定N】</xhtml>
+          </documentation>
+        </variable>
+        <variable name="HMI_xForceSimEnable">
+          <type>
+            <BOOL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【力模拟使能】</xhtml>
+          </documentation>
+        </variable>
+        <variable name="HMI_rForceSim">
+          <type>
+            <REAL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【力模拟值N】</xhtml>
+          </documentation>
+        </variable>
+        <variable name="HMI_iAutoStepShow">
+          <type>
+            <INT />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【自动步号】</xhtml>
+          </documentation>
+        </variable>
+        <variable name="HMI_xAutoBusy">
+          <type>
+            <BOOL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【自动忙】</xhtml>
+          </documentation>
+        </variable>
+        <variable name="HMI_xAutoDone">
+          <type>
+            <BOOL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【自动完成】</xhtml>
+          </documentation>
+        </variable>
+        <variable name="HMI_rForceShow">
+          <type>
+            <REAL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【力实际N】</xhtml>
+          </documentation>
+        </variable>
+        <variable name="iAutoStep">
+          <type>
+            <INT />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【自动步】0Idle..5Done</xhtml>
+          </documentation>
+        </variable>
+        <variable name="rForceAct">
+          <type>
+            <REAL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【实际力N】</xhtml>
+          </documentation>
+        </variable>
+        <variable name="rForceKp">
+          <type>
+            <REAL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【恒力Kp】</xhtml>
+          </documentation>
+        </variable>
+        <variable name="AxisCmd_xJogXPos">
+          <type>
+            <BOOL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Axis X+】</xhtml>
+          </documentation>
+        </variable>
+        <variable name="AxisCmd_xJogXNeg">
+          <type>
+            <BOOL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Axis X-】</xhtml>
+          </documentation>
+        </variable>
+        <variable name="AxisCmd_xSpinLeft">
+          <type>
+            <BOOL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Axis 左旋】</xhtml>
+          </documentation>
+        </variable>
+        <variable name="AxisCmd_xSpinRight">
+          <type>
+            <BOOL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Axis 右旋】</xhtml>
+          </documentation>
+        </variable>
+        <variable name="AxisCmd_xMoveRelX">
+          <type>
+            <BOOL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Axis X相对】</xhtml>
+          </documentation>
+        </variable>
+        <variable name="AxisCmd_rMoveDistX">
+          <type>
+            <REAL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【X相对距离】</xhtml>
+          </documentation>
+        </variable>
+        <variable name="AxisCmd_rMoveVelX">
+          <type>
+            <REAL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【X相对速度】</xhtml>
+          </documentation>
+        </variable>
+        <variable name="AxisCmd_xMoveRelY">
+          <type>
+            <BOOL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Axis Y相对】</xhtml>
+          </documentation>
+        </variable>
+        <variable name="AxisCmd_rMoveDistY">
+          <type>
+            <REAL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Y相对距离】</xhtml>
+          </documentation>
+        </variable>
+        <variable name="AxisCmd_rMoveVelY">
+          <type>
+            <REAL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Y相对速度】</xhtml>
+          </documentation>
+        </variable>
+        <variable name="AxisCmd_rZVelCmd">
+          <type>
+            <REAL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Z速度指令】</xhtml>
+          </documentation>
+        </variable>
+        <variable name="AxisCmd_xUseZVelCmd">
+          <type>
+            <BOOL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【使用Z速度指令】</xhtml>
+          </documentation>
+        </variable>
+        <variable name="AxisCmd_xHoldR">
+          <type>
+            <BOOL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【R保持】</xhtml>
+          </documentation>
+        </variable>
+        <variable name="AxisCmd_rRHoldPos">
+          <type>
+            <REAL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【R保持角】</xhtml>
+          </documentation>
+        </variable>
+        <variable name="AxisFb_xMoveDoneX">
+          <type>
+            <BOOL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【X相对到位】</xhtml>
+          </documentation>
+        </variable>
+        <variable name="AxisFb_xMoveDoneY">
+          <type>
+            <BOOL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Y相对到位】</xhtml>
+          </documentation>
+        </variable>
+</globalVars>
     </data>
     <data name="http://www.3s-software.com/plcopenxml/application" handleUnknown="implementation">
       <resource name="Application">

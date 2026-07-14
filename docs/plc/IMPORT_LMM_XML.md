@@ -20,7 +20,8 @@
 2. 编译：若 `AXIS_REF_SM3` / `MC_*` 类型名与库版本不符，在库管理器确认 **SM3_Basic** 已加入，按本机类型名微调 `FB_Servo`
 3. 确认任务：`MainTask`→PLC_PRG；`AxisTask`→PRG_Axis_Control；**不要**在 Main 里 CALL Axis 程序
 4. 映射限位 `I_xLim*`（地址 TBD）
-5. 极性：面板 `EStop` 按按下=TRUE 桥接为 `HMI_xEStop:=NOT EStop`；若现场相反，改 `PRG_Logic` 一行即可
+5. 极性：面板 `EStop AT %IX0.4` **正常=TRUE / 按下=FALSE**，桥接 `HMI_xEStop:=EStop`（不取反）；灯：`StopLamp %QX0.6←Dev_xStop`，`StartLamp %QX0.7←Dev_xRun`  
+6. 面板键：`StartBtn %IX1.6`、`StopBtn %IX1.4`、`ResetBtn`（→StopHold3s）— **地址固定勿改**
 
 ## 与 Web v2
 

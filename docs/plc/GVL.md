@@ -1,175 +1,155 @@
 # GVL.md — LMM 全局变量契约
 
-> Writer 以 S5 为准。地址 `%I/%Q` 可 TBD，导入前补齐。  
-> Axis 与 Logic **仅通过本文件分组交换**，禁止跨任务 CALL。
-> X=龙门双驱（运动方向**与 Y 垂直**）；M1/M2 相对编码器，上电相对 0；跨距 4~6m 可变。
-> 功能对齐见 [WEB_PLC_ALIGN.md](WEB_PLC_ALIGN.md)（以 Web v2 为准）。
+> Writer 以 S5 为准。Axis 与 Logic **仅 GVL 交换**，禁止跨任务 CALL。  
+> 轴：X=M1+M2，Y=M3，Z=M4，R=M5。X⊥Y。  
+> HMI 面向设备操作（手动简洁键 + 自动参数）；力单位默认 **N**，本期可模拟。  
+> 面板物理 IO 地址**固定**（见 GVL_Panel）。EStop：**正常 TRUE / 按下 FALSE**。
 
 ## 分组
 
-### GVL_HMI（HMI 写 request）
+### GVL_Panel（面板物理 IO — 勿改地址）
 
 ```iecst
 VAR_GLOBAL
-    (* 急停按钮极性：未按下=TRUE，按下触发=FALSE；可按可松，松后信号回到 TRUE。
-       Logic 在信号为 FALSE 时置急停锁存；松开按钮不会自动清锁存。 *)
-    HMI_xEStop          : BOOL;   (* TRUE=未触发 OK；FALSE=急停按下 *)
-    HMI_xStop           : BOOL;   (* 点按/按住：停止请求 *)
-    HMI_xStopHold3s     : BOOL;   (* 长按满 3s 脉冲：复位锁存 + 各轴错误复位请求 *)
-    HMI_xEnable         : BOOL;   (* 使能触发：上升沿切换上/下使能；复位/急停/故障后强制下使能，须再触发 *)
+    StartBtn            : BOOL;   (* AT %IX1.6 【启动】→ HMI_xStart / HMI_xEnable *)
+    StopBtn             : BOOL;   (* AT %IX1.4 【停止】→ HMI_xStop *)
+    ResetBtn            : BOOL;   (* 【复位】→ HMI_xStopHold3s *)
+    EStop               : BOOL;   (* AT %IX0.4 【急停】正常TRUE 按下FALSE → 直通 HMI_xEStop *)
+    StopLamp            : BOOL;   (* AT %QX0.6 【停止灯】← Dev_xStop *)
+    StartLamp           : BOOL;   (* AT %QX0.7 【运行灯】← Dev_xRun *)
+END_VAR
+```
 
-    HMI_eXMode          : INT;    (* 0=Indep 1=Sync 2=Diff *)
-    HMI_eDiffFunc       : INT;    (* Diff：0纠偏 1原地旋转(一正一反) 2差速拐弯 *)
-    HMI_xJogM1Pos       : BOOL;
-    HMI_xJogM1Neg       : BOOL;
-    HMI_xJogM2Pos       : BOOL;
-    HMI_xJogM2Neg       : BOOL;
-    HMI_xJogXSyncPos    : BOOL;   (* 同步直行 + *)
-    HMI_xJogXSyncNeg    : BOOL;
-    HMI_xJogXDiffPos    : BOOL;   (* Diff 方向 + *)
-    HMI_xJogXDiffNeg    : BOOL;
+### GVL_HMI（HMI / 面板桥接写 request）
+
+```iecst
+VAR_GLOBAL
+    (* —— 安全 / 设备 —— *)
+    HMI_xEStop          : BOOL;   (* 【急停】TRUE正常 FALSE按下 *)
+    HMI_xStop           : BOOL;   (* 【停止】短按停机；长按3s复位 *)
+    HMI_xStopHold3s     : BOOL;   (* 【复位脉冲】 *)
+    HMI_xStart          : BOOL;   (* 【启动】上升沿 STOP→RUN *)
+    HMI_xEnable         : BOOL;   (* 【启动别名】与 Start 等效 *)
+    HMI_xAutoMode       : BOOL;   (* 【自动模式】TRUE=自动；FALSE=手动 *)
+
+    (* —— 手动点动（电平）；仅 RUN+手动 —— *)
+    HMI_xJogXPos        : BOOL;   (* 【X+】M1=M2 同速同向 *)
+    HMI_xJogXNeg        : BOOL;   (* 【X-】 *)
+    HMI_xSpinLeft       : BOOL;   (* 【左旋转】M1/M2 一正一反 *)
+    HMI_xSpinRight      : BOOL;   (* 【右旋转】与左旋反向互斥 *)
     HMI_xJogYPos        : BOOL;
     HMI_xJogYNeg        : BOOL;
     HMI_xJogZPos        : BOOL;
     HMI_xJogZNeg        : BOOL;
-    HMI_xJogRPos        : BOOL;   (* 预留 *)
+    HMI_xJogRPos        : BOOL;
     HMI_xJogRNeg        : BOOL;
-    HMI_xHomeReqY       : BOOL;
-    HMI_xHomeReqZ       : BOOL;
-    HMI_xHomeReqR       : BOOL;   (* 预留 *)
-    HMI_rJogVelX        : REAL;   (* X 基速，对齐 Web JogVel *)
+    HMI_rJogVelX        : REAL;   (* X直行与左/右旋共用 *)
     HMI_rJogVelY        : REAL;
     HMI_rJogVelZ        : REAL;
-    HMI_rDiffDelta      : REAL;   (* 差速 Δ，单位与轴速度一致 *)
-    HMI_rTurnOmega      : REAL;   (* Diff 拐弯角速度 *)
-    HMI_rWheelBase      : REAL;   (* 龙门跨距 m，4..6 *)
+    HMI_rJogVelR        : REAL;
+
+    (* —— 自动 —— *)
+    HMI_xAutoStart      : BOOL;   (* 上升沿启动；须 RUN+自动 *)
+    HMI_xAutoAbort      : BOOL;
+    HMI_rAutoDistX      : REAL;
+    HMI_rAutoVelX       : REAL;
+    HMI_rAutoDistY      : REAL;
+    HMI_rAutoVelY       : REAL;
+    HMI_rAutoVelZ       : REAL;
+    HMI_rForceSet       : REAL;   (* F_set 单位N *)
+    HMI_xForceSimEnable : BOOL;
+    HMI_rForceSim       : REAL;
 END_VAR
 ```
 
-### GVL_Logic（Logic 写）
+### GVL_HMI_Status（Logic 写 · HMI 读）
 
 ```iecst
 VAR_GLOBAL
+    HMI_eDevState       : INT;    (* 0停止/待机 1运行中 2错误 *)
+    HMI_xDevStop        : BOOL;
+    HMI_xDevRun         : BOOL;
+    HMI_xDevError       : BOOL;
+    HMI_eOpMode         : INT;    (* 0手动 1自动 *)
+    HMI_xLampEStop      : BOOL;
+    HMI_xLampEnableOk   : BOOL;
+    HMI_xLampFault      : BOOL;
+    HMI_iAlarmShow      : INT;
+    HMI_iAutoStepShow   : INT;
+    HMI_xAutoBusy       : BOOL;
+    HMI_xAutoDone       : BOOL;
+    HMI_rForceShow      : REAL;
+END_VAR
+```
+
+### GVL_Logic
+
+```iecst
+VAR_GLOBAL
+    eDevState           : INT;
+    Dev_xStop           : BOOL;
+    Dev_xRun            : BOOL;
+    Dev_xError          : BOOL;
     xEStopLatched       : BOOL;
     xEnablePermit       : BOOL;
     xFaultAggregate     : BOOL;
-    eOpMode             : INT;    (* 0=Manual 本期固定 *)
-    iAlarmID            : INT;    (* 0=无；1001..1099 见 S5 *)
+    eOpMode             : INT;
+    iAlarmID            : INT;
+    iAutoStep           : INT;    (* 0Idle 1MoveX 2PressZ 3MoveY 4RWobble 5Done *)
+    rForceAct           : REAL;
+    rForceKp            : REAL;
     xIlk_BlockYPlus     : BOOL;
     xIlk_BlockYNeg      : BOOL;
     xIlk_BlockZPlus     : BOOL;
     xIlk_BlockZNeg      : BOOL;
-    xIlk_BlockYWhenZ    : BOOL;   (* Z 运动中禁 Y，可参数化 *)
-    xM5Ready            : BOOL;   (* FALSE：忽略 R *)
+    xIlk_BlockYWhenZ    : BOOL;
+    xM5Ready            : BOOL;
 END_VAR
 ```
 
-### GVL_IO（映射层写 / 物理输入）
+### GVL_IO
 
 ```iecst
 VAR_GLOBAL
-    I_xLimYPos          : BOOL;   (* AT %I* TBD *)
-    I_xLimYNeg          : BOOL;
-    I_xHomeY            : BOOL;
-    I_xLimZPos          : BOOL;
-    I_xLimZNeg          : BOOL;
-    I_xHomeZ            : BOOL;
-    I_xLimRPos          : BOOL;   (* 预留 *)
-    I_xLimRNeg          : BOOL;
-    I_xHomeR            : BOOL;
+    I_xLimYPos, I_xLimYNeg, I_xHomeY : BOOL;
+    I_xLimZPos, I_xLimZNeg, I_xHomeZ : BOOL;
+    I_xLimRPos, I_xLimRNeg, I_xHomeR : BOOL;
 END_VAR
 ```
 
-### GVL_AxisCmd（Logic → Axis 任务，唯一命令入口）
+### GVL_AxisCmd（Logic → Axis）
 
 ```iecst
 VAR_GLOBAL
-    AxisCmd_xPower      : BOOL;   (* 使能请求，受 xEnablePermit 门控后写入 *)
-    AxisCmd_eXMode      : INT;    (* 透传/裁定后的 X 模式 *)
-    AxisCmd_eDiffFunc   : INT;    (* 0纠偏 1原地旋转 2差速拐弯 *)
-    AxisCmd_xJogM1Pos   : BOOL;
-    AxisCmd_xJogM1Neg   : BOOL;
-    AxisCmd_xJogM2Pos   : BOOL;
-    AxisCmd_xJogM2Neg   : BOOL;
-    AxisCmd_xJogXSyncPos: BOOL;
-    AxisCmd_xJogXSyncNeg: BOOL;
-    AxisCmd_xJogXDiffPos: BOOL;
-    AxisCmd_xJogXDiffNeg: BOOL;
-    AxisCmd_xJogYPos    : BOOL;
-    AxisCmd_xJogYNeg    : BOOL;
-    AxisCmd_xJogZPos    : BOOL;
-    AxisCmd_xJogZNeg    : BOOL;
-    AxisCmd_xJogRPos    : BOOL;
-    AxisCmd_xJogRNeg    : BOOL;
-    AxisCmd_xStopAll    : BOOL;   (* 立即停所有轴运动 *)
-    AxisCmd_xResetFault : BOOL;   (* 脉冲：各轴错误复位 MC_Reset *)
-    AxisCmd_xHomeY      : BOOL;
-    AxisCmd_xHomeZ      : BOOL;
-    AxisCmd_xHomeR      : BOOL;
-    AxisCmd_rDiffDelta  : REAL;
-    AxisCmd_rTurnOmega  : REAL;
-    AxisCmd_rWheelBase  : REAL;   (* 龙门当前跨距 m，4..6 *)
-    AxisCmd_rJogVelX    : REAL;
-    AxisCmd_rJogVelY    : REAL;
-    AxisCmd_rJogVelZ    : REAL;
-    AxisCmd_rJogVelR    : REAL;
+    AxisCmd_xPower, AxisCmd_xStopAll, AxisCmd_xResetFault : BOOL;
+    AxisCmd_xJogXPos, AxisCmd_xJogXNeg : BOOL;
+    AxisCmd_xSpinLeft, AxisCmd_xSpinRight : BOOL;
+    AxisCmd_xJogYPos, AxisCmd_xJogYNeg : BOOL;
+    AxisCmd_xJogZPos, AxisCmd_xJogZNeg : BOOL;
+    AxisCmd_xJogRPos, AxisCmd_xJogRNeg : BOOL;
+    AxisCmd_rJogVelX, AxisCmd_rJogVelY, AxisCmd_rJogVelZ, AxisCmd_rJogVelR : REAL;
+    AxisCmd_xMoveRelX : BOOL;
+    AxisCmd_rMoveDistX, AxisCmd_rMoveVelX : REAL;
+    AxisCmd_xMoveRelY : BOOL;
+    AxisCmd_rMoveDistY, AxisCmd_rMoveVelY : REAL;
+    AxisCmd_rZVelCmd : REAL;
+    AxisCmd_xUseZVelCmd : BOOL;
+    AxisCmd_xHoldR : BOOL;
+    AxisCmd_rRHoldPos : REAL;
+    AxisCmd_rAcc, AxisCmd_rDec, AxisCmd_rWheelBase : REAL;
 END_VAR
 ```
 
-### GVL_AxisFb（Axis 任务 → Logic/HMI，禁止 Logic 写）
+### GVL_AxisFb（Axis only 写）
 
 ```iecst
 VAR_GLOBAL
-    AxisFb_rVelCmdM1    : REAL;   (* FB_XDiff/独立 JOG 当前速度指令，供 HMI *)
-    AxisFb_rVelCmdM2    : REAL;
-    AxisFb_rPosM1       : REAL;
-    AxisFb_rPosM2       : REAL;
-    AxisFb_rPosY        : REAL;
-    AxisFb_rPosZ        : REAL;
-    AxisFb_rPosR        : REAL;
-    AxisFb_xStandstill1 : BOOL;
-    AxisFb_xStandstill2 : BOOL;
-    AxisFb_xStandstillY : BOOL;
-    AxisFb_xStandstillZ : BOOL;
-    AxisFb_xStandstillR : BOOL;
-    AxisFb_xMovingM1    : BOOL;
-    AxisFb_xMovingM2    : BOOL;
-    AxisFb_xMovingY     : BOOL;
-    AxisFb_xMovingZ     : BOOL;
-    AxisFb_xMovingR     : BOOL;
-    AxisFb_xPoweredM1   : BOOL;
-    AxisFb_xPoweredM2   : BOOL;
-    AxisFb_xPoweredY    : BOOL;
-    AxisFb_xPoweredZ    : BOOL;
-    AxisFb_xPoweredR    : BOOL;
-    AxisFb_xHomedY      : BOOL;
-    AxisFb_xHomedZ      : BOOL;
-    AxisFb_xHomedR      : BOOL;
-    AxisFb_xFaultM1     : BOOL;
-    AxisFb_xFaultM2     : BOOL;
-    AxisFb_xFaultY      : BOOL;
-    AxisFb_xFaultZ      : BOOL;
-    AxisFb_xFaultR      : BOOL;
-    AxisFb_xReady       : BOOL;   (* 四轴通讯/状态可动 *)
+    AxisFb_rVelCmdM1, AxisFb_rVelCmdM2 : REAL;
+    AxisFb_rPosM1, AxisFb_rPosM2, AxisFb_rPosY, AxisFb_rPosZ, AxisFb_rPosR : REAL;
+    AxisFb_xMovingM1, AxisFb_xMovingM2, AxisFb_xMovingY, AxisFb_xMovingZ, AxisFb_xMovingR : BOOL;
+    AxisFb_xPoweredM1, AxisFb_xPoweredM2, AxisFb_xPoweredY, AxisFb_xPoweredZ, AxisFb_xPoweredR : BOOL;
+    AxisFb_xFaultM1, AxisFb_xFaultM2, AxisFb_xFaultY, AxisFb_xFaultZ, AxisFb_xFaultR : BOOL;
+    AxisFb_xReady : BOOL;
+    AxisFb_xMoveDoneX, AxisFb_xMoveDoneY : BOOL;
 END_VAR
 ```
-
-### GVL_HMI_Status（Logic 写，HMI 读灯）
-
-```iecst
-VAR_GLOBAL
-    HMI_xLampEStop     : BOOL;
-    HMI_xLampEnableOk  : BOOL;   (* = xPowerLatched AND xEnablePermit *)
-    HMI_xLampFault     : BOOL;
-    HMI_iAlarmShow     : INT;
-END_VAR
-```
-
-## 写者矩阵摘要
-
-| 组 | Writer |
-|----|--------|
-| GVL_HMI | HMI |
-| GVL_Logic / HMI_Status / AxisCmd | Logic |
-| GVL_IO | IO 映射 |
-| GVL_AxisFb | **Axis_Control 任务 only** |
