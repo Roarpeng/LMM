@@ -1,11 +1,10 @@
 # Web v2 ↔ MD checklist
 
-- [x] Module list matches S4（GVL / FB_Servo / FB_XDiff / Axis_Control / PRG_Logic / HMI / PLC_PRG）
-- [x] Step chart matches Logic/process MD（本期无自动步；Manual only — N/A）
-- [x] Interlocks match MD（Y±/Z± 限位、Fault、Z 动禁 Y；见 PRG_Logic.md）
-- [x] HMI request bits labeled as in GVL/HMI MD（EStop 极性、Stop 点按/长按、eMode、eDiffFunc、JOG）
-- [x] X 完整动作：Indep / Sync 同速⊥Y / Diff（纠偏·原地旋转一正一反·差速拐弯）+ 跨距 4~6
-- [x] Alarm/Step IDs match S5（1001/1002/1003/1004/1099）
+- [x] Module list matches S4（GVL / FB_Servo / FB_XDiff / Axis_Control / PRG_Logic / HMI）
+- [x] Step chart matches Logic MD：0 Idle → 1 MoveX → 2 PressZ → 3 MoveY+恒力 → 4 RWobble占位 → 5 Done
+- [x] Interlocks match MD（Y/Z 限位、Fault、急停；自动中禁手动 JOG）
+- [x] HMI 请求位按 HMI.md：JogX / SpinL/R / JogYZR · AutoStart/Abort · ForceSim
+- [x] 设备三态灯：Stop / Run / Error（HMI_xDev*）
+- [x] Alarm IDs：1001 急停 · 1002 故障 · 1003 限位 · 1004 无许可
 - [x] DIFF_FROM_V1.md filled
-- [x] WEB_PLC_ALIGN.md 与 Web v2 / MD 公式一致
-- [x] User confirmation: 「web2 理解是正确的了」— 2026-07-13；并要求与 PLC 功能对齐
+- [ ] User confirmation: 「Web v2 通过」— quote/date:

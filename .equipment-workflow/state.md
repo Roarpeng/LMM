@@ -6,8 +6,8 @@
 - Updated: 2026-07-14
 
 ## Current
-- Stage: S6/S7 in_progress（契约已按新 HMI/自动重写）
-- Next: 导入 LMM.xml；触摸屏按 HMI.md；力先模拟
+- Stage: S7 Web v2 已按现行 MD 重做（待「Web v2 通过」）
+- Next: 用户确认 Gate D；导入 LMM.xml；触摸屏按 HMI.md
 
 ## Locked decisions
 - 手动：X±、左/右旋转、Y±、Z±、R± + 各轴速度
