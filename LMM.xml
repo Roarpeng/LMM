@@ -55,6 +55,26 @@
                 <BOOL />
               </type>
             </variable>
+            <variable name="eModeX">
+              <type>
+                <INT />
+              </type>
+            </variable>
+            <variable name="xDiffPos">
+              <type>
+                <BOOL />
+              </type>
+            </variable>
+            <variable name="xDiffNeg">
+              <type>
+                <BOOL />
+              </type>
+            </variable>
+            <variable name="rXVel">
+              <type>
+                <REAL />
+              </type>
+            </variable>
           </localVars>
         </interface>
         <body>
@@ -65,19 +85,33 @@
  * 轴绑定：Axis=M1, Axis_1=M2, Axis_2=Y, Axis_3=Z
  *============================================================================*)
 
-(* X 双驱速度合成 *)
+(* X：同步直行 / 左右旋；VelX 与 SpinVel 分开 *)
+eModeX := 0;
+xDiffPos := FALSE; xDiffNeg := FALSE;
+IF AxisCmd_xSpinLeft XOR AxisCmd_xSpinRight THEN
+	eModeX := 2;
+	xDiffPos := AxisCmd_xSpinLeft;
+	xDiffNeg := AxisCmd_xSpinRight;
+	rXVel := AxisCmd_rSpinVel;
+ELSIF AxisCmd_xJogXPos XOR AxisCmd_xJogXNeg THEN
+	eModeX := 1;
+	rXVel := AxisCmd_rJogVelX;
+ELSE
+	rXVel := 0.0;
+END_IF;
+
 fbXDiff(
-	eMode := AxisCmd_eXMode,
-	eDiffFunc := AxisCmd_eDiffFunc,
-	xJogSyncPos := AxisCmd_xJogXSyncPos,
-	xJogSyncNeg := AxisCmd_xJogXSyncNeg,
-	xJogDiffPos := AxisCmd_xJogXDiffPos,
-	xJogDiffNeg := AxisCmd_xJogXDiffNeg,
+	eMode := eModeX,
+	eDiffFunc := 1,
+	xJogSyncPos := AxisCmd_xJogXPos,
+	xJogSyncNeg := AxisCmd_xJogXNeg,
+	xJogDiffPos := xDiffPos,
+	xJogDiffNeg := xDiffNeg,
 	xStop := AxisCmd_xStopAll,
 	xEnable := AxisCmd_xPower,
-	rJogVel := AxisCmd_rJogVelX,
-	rDiffDelta := AxisCmd_rDiffDelta,
-	rTurnOmega := AxisCmd_rTurnOmega,
+	rJogVel := rXVel,
+	rDiffDelta := 0.0,
+	rTurnOmega := 0.0,
 	rWheelBase := AxisCmd_rWheelBase
 );
 xPair := fbXDiff.xUsePairVel;
@@ -93,7 +127,7 @@ IF xPair THEN
 		xHome := FALSE,
 		xUseVelCmd := TRUE,
 		rVelCmd := fbXDiff.rVelCmdM1,
-		rJogVel := AxisCmd_rJogVelX,
+		rJogVel := rXVel,
 		rAcc := AxisCmd_rAcc,
 		rDec := AxisCmd_rDec
 	);
@@ -106,19 +140,18 @@ IF xPair THEN
 		xHome := FALSE,
 		xUseVelCmd := TRUE,
 		rVelCmd := fbXDiff.rVelCmdM2,
-		rJogVel := AxisCmd_rJogVelX,
+		rJogVel := rXVel,
 		rAcc := AxisCmd_rAcc,
 		rDec := AxisCmd_rDec
 	);
 	AxisFb_rVelCmdM1 := fbXDiff.rVelCmdM1;
 	AxisFb_rVelCmdM2 := fbXDiff.rVelCmdM2;
 ELSE
-	(* 独立模式：两侧各自 JOG *)
+	(* 无 X 命令：两侧保持上电待机 *)
 	fbM1(
 		Axis := _MC_Axis[1],
 		xEnable := AxisCmd_xPower,
-		xJogPos := AxisCmd_xJogM1Pos,
-		xJogNeg := AxisCmd_xJogM1Neg,
+		xJogPos := FALSE, xJogNeg := FALSE,
 		xStop := AxisCmd_xStopAll,
 		xResetFault := AxisCmd_xResetFault,
 		xHome := FALSE,
@@ -131,8 +164,7 @@ ELSE
 	fbM2(
 		Axis := _MC_Axis[2],
 		xEnable := AxisCmd_xPower,
-		xJogPos := AxisCmd_xJogM2Pos,
-		xJogNeg := AxisCmd_xJogM2Neg,
+		xJogPos := FALSE, xJogNeg := FALSE,
 		xStop := AxisCmd_xStopAll,
 		xResetFault := AxisCmd_xResetFault,
 		xHome := FALSE,
@@ -144,10 +176,6 @@ ELSE
 	);
 	AxisFb_rVelCmdM1 := 0.0;
 	AxisFb_rVelCmdM2 := 0.0;
-	IF AxisCmd_xJogM1Pos THEN AxisFb_rVelCmdM1 := AxisCmd_rJogVelX; END_IF;
-	IF AxisCmd_xJogM1Neg THEN AxisFb_rVelCmdM1 := -AxisCmd_rJogVelX; END_IF;
-	IF AxisCmd_xJogM2Pos THEN AxisFb_rVelCmdM2 := AxisCmd_rJogVelX; END_IF;
-	IF AxisCmd_xJogM2Neg THEN AxisFb_rVelCmdM2 := -AxisCmd_rJogVelX; END_IF;
 END_IF;
 
 (* Y / Z *)
@@ -158,7 +186,7 @@ fbY(
 	xJogNeg := AxisCmd_xJogYNeg,
 	xStop := AxisCmd_xStopAll,
 	xResetFault := AxisCmd_xResetFault,
-	xHome := AxisCmd_xHomeY,
+	xHome := FALSE,
 	xUseVelCmd := FALSE,
 	rVelCmd := 0.0,
 	rJogVel := AxisCmd_rJogVelY,
@@ -172,7 +200,7 @@ fbZ(
 	xJogNeg := AxisCmd_xJogZNeg,
 	xStop := AxisCmd_xStopAll,
 	xResetFault := AxisCmd_xResetFault,
-	xHome := AxisCmd_xHomeZ,
+	xHome := FALSE,
 	xUseVelCmd := FALSE,
 	rVelCmd := 0.0,
 	rJogVel := AxisCmd_rJogVelZ,
@@ -566,10 +594,11 @@ xIlk_BlockYWhenZ := FALSE;
 AxisCmd_xStopAll := (eDevState &lt;&gt; 1) OR HMI_xStop OR HMI_xAutoAbort;
 AxisCmd_xPower := (eDevState = 1);
 AxisCmd_rJogVelX := HMI_rJogVelX;
+AxisCmd_rSpinVel := HMI_rSpinVel;
 AxisCmd_rJogVelY := HMI_rJogVelY;
 AxisCmd_rJogVelZ := HMI_rJogVelZ;
 AxisCmd_rJogVelR := HMI_rJogVelR;
-AxisCmd_rWheelBase := LIMIT(4.0, 5.0, 6.0);
+AxisCmd_rWheelBase := LIMIT(4.0, HMI_rWheelBase, 6.0);
 AxisCmd_rAcc := JogACC;
 AxisCmd_rDec := JogDEC;
 IF AxisCmd_rAcc &lt; 1.0 THEN AxisCmd_rAcc := 100.0; END_IF;
@@ -646,7 +675,7 @@ IF Dev_xRun AND (eOpMode = 1) AND NOT HMI_xStop THEN
 		3: (* MoveY + 恒力 *)
 			AxisCmd_xHoldR := TRUE;
 			AxisCmd_rRHoldPos := rRHold;
-			AxisCmd_rMoveDistY := HMI_rAutoDistY;
+			AxisCmd_rMoveDistY := AxisCmd_rWheelBase;
 			AxisCmd_rMoveVelY := HMI_rAutoVelY;
 			AxisCmd_xMoveRelY := TRUE;
 			AxisCmd_xUseZVelCmd := TRUE;
@@ -1235,87 +1264,7 @@ END_IF;
             <xhtml xmlns="http://www.w3.org/1999/xhtml">【设备启动】瞬时；上升沿STOP→RUN</xhtml>
           </documentation>
         </variable>
-        <variable name="HMI_eXMode">
-          <type>
-            <INT />
-          </type>
-          <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">【X模式】0=独立Indep；1=同步Sync；2=差速Diff</xhtml>
-          </documentation>
-        </variable>
-        <variable name="HMI_eDiffFunc">
-          <type>
-            <INT />
-          </type>
-          <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Diff子功能】0=纠偏；1=原地旋转；2=差速拐弯</xhtml>
-          </documentation>
-        </variable>
-        <variable name="HMI_xJogM1Pos">
-          <type>
-            <BOOL />
-          </type>
-          <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">【M1点动+】仅Indep；TRUE移动 FALSE暂停</xhtml>
-          </documentation>
-        </variable>
-        <variable name="HMI_xJogM1Neg">
-          <type>
-            <BOOL />
-          </type>
-          <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">【M1点动-】仅Indep；TRUE移动 FALSE暂停</xhtml>
-          </documentation>
-        </variable>
-        <variable name="HMI_xJogM2Pos">
-          <type>
-            <BOOL />
-          </type>
-          <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">【M2点动+】仅Indep；TRUE移动 FALSE暂停</xhtml>
-          </documentation>
-        </variable>
-        <variable name="HMI_xJogM2Neg">
-          <type>
-            <BOOL />
-          </type>
-          <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">【M2点动-】仅Indep；TRUE移动 FALSE暂停</xhtml>
-          </documentation>
-        </variable>
-        <variable name="HMI_xJogXSyncPos">
-          <type>
-            <BOOL />
-          </type>
-          <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">【同步点动+】仅Sync；M1=M2同速正向</xhtml>
-          </documentation>
-        </variable>
-        <variable name="HMI_xJogXSyncNeg">
-          <type>
-            <BOOL />
-          </type>
-          <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">【同步点动-】仅Sync；M1=M2同速反向</xhtml>
-          </documentation>
-        </variable>
-        <variable name="HMI_xJogXDiffPos">
-          <type>
-            <BOOL />
-          </type>
-          <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">【差速点动+】仅Diff；按eDiffFunc合成</xhtml>
-          </documentation>
-        </variable>
-        <variable name="HMI_xJogXDiffNeg">
-          <type>
-            <BOOL />
-          </type>
-          <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">【差速点动-】仅Diff；按eDiffFunc合成</xhtml>
-          </documentation>
-        </variable>
-        <variable name="HMI_xJogYPos">
+<variable name="HMI_xJogYPos">
           <type>
             <BOOL />
           </type>
@@ -1363,31 +1312,7 @@ END_IF;
             <xhtml xmlns="http://www.w3.org/1999/xhtml">【R点动-】预留</xhtml>
           </documentation>
         </variable>
-        <variable name="HMI_xHomeReqY">
-          <type>
-            <BOOL />
-          </type>
-          <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Y回零请求】须已使能</xhtml>
-          </documentation>
-        </variable>
-        <variable name="HMI_xHomeReqZ">
-          <type>
-            <BOOL />
-          </type>
-          <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Z回零请求】须已使能</xhtml>
-          </documentation>
-        </variable>
-        <variable name="HMI_xHomeReqR">
-          <type>
-            <BOOL />
-          </type>
-          <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">【R回零请求】预留</xhtml>
-          </documentation>
-        </variable>
-        <variable name="HMI_rJogVelX">
+<variable name="HMI_rJogVelX">
           <type>
             <REAL />
           </type>
@@ -1398,6 +1323,33 @@ END_IF;
             <xhtml xmlns="http://www.w3.org/1999/xhtml">【X点动速度】龙门X基速设定</xhtml>
           </documentation>
         </variable>
+        <variable name="AxisCmd_rSpinVel">
+          <type>
+            <REAL />
+          </type>
+          <initialValue>
+            <simpleValue value="0.0" />
+          </initialValue>
+        </variable>
+
+        <variable name="HMI_rJogVelR">
+          <type>
+            <REAL />
+          </type>
+          <initialValue>
+            <simpleValue value="0.2" />
+          </initialValue>
+        </variable>
+
+        <variable name="HMI_rSpinVel">
+          <type>
+            <REAL />
+          </type>
+          <initialValue>
+            <simpleValue value="0.3" />
+          </initialValue>
+        </variable>
+
         <variable name="HMI_rJogVelY">
           <type>
             <REAL />
@@ -1420,29 +1372,7 @@ END_IF;
             <xhtml xmlns="http://www.w3.org/1999/xhtml">【Z点动速度】</xhtml>
           </documentation>
         </variable>
-        <variable name="HMI_rDiffDelta">
-          <type>
-            <REAL />
-          </type>
-          <initialValue>
-            <simpleValue value="0.08" />
-          </initialValue>
-          <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">【差速Δ】纠偏/拐弯辅助差速</xhtml>
-          </documentation>
-        </variable>
-        <variable name="HMI_rTurnOmega">
-          <type>
-            <REAL />
-          </type>
-          <initialValue>
-            <simpleValue value="0.2" />
-          </initialValue>
-          <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">【拐弯角速度ω】Diff原地旋/差速弯</xhtml>
-          </documentation>
-        </variable>
-        <variable name="HMI_rWheelBase">
+<variable name="HMI_rWheelBase">
           <type>
             <REAL />
           </type>
@@ -1450,7 +1380,7 @@ END_IF;
             <simpleValue value="5.0" />
           </initialValue>
           <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">【龙门跨距L】单位m，合法范围4..6</xhtml>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【龙门跨距=Y行程】单位m，合法范围4..6；自动Y走距用此值</xhtml>
           </documentation>
         </variable>
         <variable name="xEStopLatched">
@@ -1653,87 +1583,7 @@ END_IF;
             <xhtml xmlns="http://www.w3.org/1999/xhtml">【轴使能命令】仅设备RUN时TRUE</xhtml>
           </documentation>
         </variable>
-        <variable name="AxisCmd_eXMode">
-          <type>
-            <INT />
-          </type>
-          <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">【X模式命令】0独立1同步2差速</xhtml>
-          </documentation>
-        </variable>
-        <variable name="AxisCmd_eDiffFunc">
-          <type>
-            <INT />
-          </type>
-          <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Diff子功能命令】0纠偏1原地旋2差速弯</xhtml>
-          </documentation>
-        </variable>
-        <variable name="AxisCmd_xJogM1Pos">
-          <type>
-            <BOOL />
-          </type>
-          <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">【M1点动+命令】已门控</xhtml>
-          </documentation>
-        </variable>
-        <variable name="AxisCmd_xJogM1Neg">
-          <type>
-            <BOOL />
-          </type>
-          <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">【M1点动-命令】</xhtml>
-          </documentation>
-        </variable>
-        <variable name="AxisCmd_xJogM2Pos">
-          <type>
-            <BOOL />
-          </type>
-          <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">【M2点动+命令】</xhtml>
-          </documentation>
-        </variable>
-        <variable name="AxisCmd_xJogM2Neg">
-          <type>
-            <BOOL />
-          </type>
-          <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">【M2点动-命令】</xhtml>
-          </documentation>
-        </variable>
-        <variable name="AxisCmd_xJogXSyncPos">
-          <type>
-            <BOOL />
-          </type>
-          <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">【同步点动+命令】</xhtml>
-          </documentation>
-        </variable>
-        <variable name="AxisCmd_xJogXSyncNeg">
-          <type>
-            <BOOL />
-          </type>
-          <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">【同步点动-命令】</xhtml>
-          </documentation>
-        </variable>
-        <variable name="AxisCmd_xJogXDiffPos">
-          <type>
-            <BOOL />
-          </type>
-          <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">【差速点动+命令】</xhtml>
-          </documentation>
-        </variable>
-        <variable name="AxisCmd_xJogXDiffNeg">
-          <type>
-            <BOOL />
-          </type>
-          <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">【差速点动-命令】</xhtml>
-          </documentation>
-        </variable>
-        <variable name="AxisCmd_xJogYPos">
+<variable name="AxisCmd_xJogYPos">
           <type>
             <BOOL />
           </type>
@@ -1797,47 +1647,7 @@ END_IF;
             <xhtml xmlns="http://www.w3.org/1999/xhtml">【错误复位脉冲】一拍TRUE→各轴MC_Reset</xhtml>
           </documentation>
         </variable>
-        <variable name="AxisCmd_xHomeY">
-          <type>
-            <BOOL />
-          </type>
-          <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Y回零命令】</xhtml>
-          </documentation>
-        </variable>
-        <variable name="AxisCmd_xHomeZ">
-          <type>
-            <BOOL />
-          </type>
-          <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Z回零命令】</xhtml>
-          </documentation>
-        </variable>
-        <variable name="AxisCmd_xHomeR">
-          <type>
-            <BOOL />
-          </type>
-          <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">【R回零命令】预留</xhtml>
-          </documentation>
-        </variable>
-        <variable name="AxisCmd_rDiffDelta">
-          <type>
-            <REAL />
-          </type>
-          <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">【差速Δ命令】</xhtml>
-          </documentation>
-        </variable>
-        <variable name="AxisCmd_rTurnOmega">
-          <type>
-            <REAL />
-          </type>
-          <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">【拐弯ω命令】</xhtml>
-          </documentation>
-        </variable>
-        <variable name="AxisCmd_rWheelBase">
+<variable name="AxisCmd_rWheelBase">
           <type>
             <REAL />
           </type>
@@ -2227,15 +2037,7 @@ END_IF;
             <xhtml xmlns="http://www.w3.org/1999/xhtml">【自动X速度】</xhtml>
           </documentation>
         </variable>
-        <variable name="HMI_rAutoDistY">
-          <type>
-            <REAL />
-          </type>
-          <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">【自动Y距离】</xhtml>
-          </documentation>
-        </variable>
-        <variable name="HMI_rAutoVelY">
+<variable name="HMI_rAutoVelY">
           <type>
             <REAL />
           </type>

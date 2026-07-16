@@ -19,7 +19,7 @@
 | 0 | Idle | 等待 AutoStart |
 | 1 | MoveX | 相对走 DistX；HoldR=当前角 |
 | 2 | PressZ | Z 下行 VelZ；力≥F_set 停 |
-| 3 | MoveY | 相对走 DistY；Z 恒力闭环 |
+| 3 | MoveY | 相对走 **WheelBase(=Y行程)**；Z 恒力闭环 |
 | 4 | RWobble | **占位跳过** |
 | 5 | Done | 置 Done，回 Idle |
 
@@ -117,10 +117,11 @@ xIlk_BlockYWhenZ := FALSE; (* 自动跟力时允许 Y+Z 同动 *)
 AxisCmd_xStopAll := (eDevState <> 1) OR HMI_xStop OR HMI_xAutoAbort;
 AxisCmd_xPower := (eDevState = 1);
 AxisCmd_rJogVelX := HMI_rJogVelX;
+AxisCmd_rSpinVel := HMI_rSpinVel;
 AxisCmd_rJogVelY := HMI_rJogVelY;
 AxisCmd_rJogVelZ := HMI_rJogVelZ;
 AxisCmd_rJogVelR := HMI_rJogVelR;
-AxisCmd_rWheelBase := LIMIT(4.0, 5.0, 6.0);
+AxisCmd_rWheelBase := LIMIT(4.0, HMI_rWheelBase, 6.0);
 
 (* 清手动/自动命令 *)
 AxisCmd_xJogXPos := FALSE; AxisCmd_xJogXNeg := FALSE;
@@ -194,7 +195,7 @@ IF Dev_xRun AND (eOpMode = 1) AND NOT HMI_xStop THEN
         3: (* MoveY + 恒力 *)
             AxisCmd_xHoldR := TRUE;
             AxisCmd_rRHoldPos := rRHold;
-            AxisCmd_rMoveDistY := HMI_rAutoDistY;
+            AxisCmd_rMoveDistY := AxisCmd_rWheelBase; (* 跨距=Y行程 *)
             AxisCmd_rMoveVelY := HMI_rAutoVelY;
             AxisCmd_xMoveRelY := TRUE;
             AxisCmd_xUseZVelCmd := TRUE;

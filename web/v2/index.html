@@ -235,9 +235,12 @@
       <section id="panel-manual">
         <h2>手动 · 电平 TRUE=动</h2>
         <div class="params">
-          <span title="HMI_rJogVelX">VelX（直行/旋）</span>
+          <span title="HMI_rJogVelX">VelX 直行</span>
           <input type="range" id="p-velx" min="0.05" max="2" step="0.05" value="0.4" />
           <span class="val" id="v-velx">0.40</span>
+          <span title="HMI_rSpinVel">SpinVel 旋转</span>
+          <input type="range" id="p-spin" min="0.05" max="2" step="0.05" value="0.3" />
+          <span class="val" id="v-spin">0.30</span>
           <span title="HMI_rJogVelY">VelY</span>
           <input type="range" id="p-vely" min="0.05" max="2" step="0.05" value="0.3" />
           <span class="val" id="v-vely">0.30</span>
@@ -290,7 +293,7 @@
         <div class="params">
           <span>DistX</span><input type="range" id="p-dx" min="0.1" max="5" step="0.1" value="1.0" /><span class="val" id="v-dx">1.0</span>
           <span>VelX</span><input type="range" id="p-avx" min="0.05" max="2" step="0.05" value="0.4" /><span class="val" id="v-avx">0.40</span>
-          <span>DistY</span><input type="range" id="p-dy" min="0.1" max="5" step="0.1" value="1.5" /><span class="val" id="v-dy">1.5</span>
+          <span title="HMI_rWheelBase">跨距=Y行程</span><input type="range" id="p-base" min="4" max="6" step="0.1" value="5.0" /><span class="val" id="v-base">5.0</span>
           <span>VelY</span><input type="range" id="p-avy" min="0.05" max="2" step="0.05" value="0.3" /><span class="val" id="v-avy">0.30</span>
           <span>VelZ</span><input type="range" id="p-avz" min="0.05" max="1" step="0.05" value="0.15" /><span class="val" id="v-avz">0.15</span>
           <span>F_set (N)</span><input type="range" id="p-fset" min="10" max="500" step="5" value="100" /><span class="val" id="v-fset">100</span>
@@ -323,7 +326,7 @@
           <div class="step" data-s="0"><span class="n">0</span><span>Idle 等待 AutoStart</span></div>
           <div class="step" data-s="1"><span class="n">1</span><span>MoveX 相对距 · HoldR</span></div>
           <div class="step" data-s="2"><span class="n">2</span><span>PressZ 下压至 F≥F_set</span></div>
-          <div class="step" data-s="3"><span class="n">3</span><span>MoveY + Z 恒力闭环</span></div>
+          <div class="step" data-s="3"><span class="n">3</span><span>MoveY(=跨距) + Z 恒力</span></div>
           <div class="step" data-s="4"><span class="n">4</span><span>RWobble 占位跳过</span></div>
           <div class="step" data-s="5"><span class="n">5</span><span>Done → Idle</span></div>
         </div>
@@ -359,19 +362,19 @@
     alarm: 0,
     autoMode: false,
     m5Ready: true,
-    velX: 0.4, velY: 0.3, velZ: 0.2, velR: 0.2,
+    velX: 0.4, spinVel: 0.3, velY: 0.3, velZ: 0.2, velR: 0.2,
     limYP: false, limYN: false, limZP: false, limZN: false,
     hold: null,
     v1: 0, v2: 0, vy: 0, vz: 0, vr: 0,
     p1: 0, p2: 0, py: 0, pz: 0, pr: 0, yaw: 0,
-    base: 5.0,
+    base: 5.0, // same as wheelBase for yaw viz
     stopHold: null, stopMs: 0,
     // auto
     iAutoStep: 0,
     autoBusy: false,
     autoDone: false,
     distX: 1, autoVelX: 0.4,
-    distY: 1.5, autoVelY: 0.3, autoVelZ: 0.15,
+    wheelBase: 5.0, autoVelY: 0.3, autoVelZ: 0.15,
     fSet: 100, forceSimEn: true, forceSim: 0, forceClimb: true,
     forceAct: 0, forceKp: 1.0,
     rHold: 0, moveProg: 0, moveDoneX: false, moveDoneY: false,
@@ -437,9 +440,9 @@
       log(`JogX ${dir > 0 ? '+' : '−'} Sync V=${S.velX}`);
     } else if (act === 'spinL' || act === 'spinR') {
       const dir = act === 'spinL' ? 1 : -1;
-      S.v1 = S.velX * dir;
-      S.v2 = -S.velX * dir;
-      log(`Spin ${act === 'spinL' ? 'Left' : 'Right'}`);
+      S.v1 = S.spinVel * dir;
+      S.v2 = -S.spinVel * dir;
+      log(`Spin ${act === 'spinL' ? 'Left' : 'Right'} V=${S.spinVel}`);
     } else if (act === 'y+' || act === 'y-') {
       const dir = act === 'y+' ? 1 : -1;
       if (dir > 0 && S.limYP) { S.alarm = 1003; log('1003 Y+ limit'); return render(); }
@@ -521,11 +524,11 @@
         document.getElementById('v-fsim').textContent = S.forceSim.toFixed(0);
       }
       S.moveProg += S.autoVelY * dt;
-      if (S.moveProg >= S.distY) {
+      if (S.moveProg >= S.wheelBase) {
         S.vy = S.vz = 0;
         S.moveProg = 0;
         S.iAutoStep = 4;
-        log('Step3 Done → RWobble(占位)');
+        log('Step3 Done → RWobble(占位) DistY=WheelBase=' + S.wheelBase);
       }
     } else if (S.iAutoStep === 4) {
       S.iAutoStep = 5;
@@ -630,12 +633,13 @@
     sync();
   };
   bindRange('p-velx', 'velX', v => v.toFixed(2));
+  bindRange('p-spin', 'spinVel', v => v.toFixed(2));
   bindRange('p-vely', 'velY', v => v.toFixed(2));
   bindRange('p-velz', 'velZ', v => v.toFixed(2));
   bindRange('p-velr', 'velR', v => v.toFixed(2));
   bindRange('p-dx', 'distX', v => v.toFixed(1));
   bindRange('p-avx', 'autoVelX', v => v.toFixed(2));
-  bindRange('p-dy', 'distY', v => v.toFixed(1));
+  bindRange('p-base', 'wheelBase', v => v.toFixed(1) + ' m');
   bindRange('p-avy', 'autoVelY', v => v.toFixed(2));
   bindRange('p-avz', 'autoVelZ', v => v.toFixed(2));
   bindRange('p-fset', 'fSet', v => v.toFixed(0));
@@ -806,10 +810,10 @@
       S.pz += S.vz * dt;
       S.pr += S.vr * dt;
       if (Math.abs(S.v1 + S.v2) < 1e-4 && Math.abs(S.v1 - S.v2) > 1e-4) {
-        const w = (S.v1 - S.v2) / Math.max(S.base, 0.1);
+        const w = (S.v1 - S.v2) / Math.max(S.wheelBase, 0.1);
         S.yaw += (w * dt) * (180 / Math.PI) * 0.5;
       } else if (Math.abs(S.v1 - S.v2) > 1e-4) {
-        const w = (S.v1 - S.v2) / Math.max(S.base, 0.1);
+        const w = (S.v1 - S.v2) / Math.max(S.wheelBase, 0.1);
         S.yaw += (w * dt) * (180 / Math.PI) * 0.25;
       }
     } else if (!permit() || S.eDevState !== 1) {

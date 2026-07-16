@@ -125,16 +125,14 @@ ELSE
 END_CASE;
 ```
 
-## HMI 输入
+## 输入来源（现行）
 
-| 输入 | 含义 |
-|------|------|
-| `HMI_eXMode=2` | Diff |
-| `HMI_eDiffFunc` | 0 纠偏 / **1 原地旋转** / 2 差速拐弯 |
-| `HMI_xJogXDiff±` | 方向（旋转正反 / 拐弯左右） |
-| `HMI_rWheelBase` | 跨距 4~6 |
-| `HMI_rJogVelX` / `HMI_rTurnOmega` / `HMI_rDiffDelta` | 速度参数 |
+HMI **不直接** 选 eMode/eDiffFunc。由 Axis 根据 `AxisCmd_xJogX*` / `AxisCmd_xSpin*` 置位：
 
-## 互斥
+| AxisCmd | FB_XDiff |
+|---------|----------|
+| JogX± | Sync，`rJogVel`←`AxisCmd_rJogVelX` |
+| Spin± | Diff 原地转，`rJogVel`←`AxisCmd_rSpinVel` |
+| `rWheelBase` | 跨距(=Y行程) 4~6 |
 
-Sync / Diff / Indep 互斥；Diff 内同一时刻仅一种 `eDiffFunc`。  
+纠偏 / 差速拐弯 / Indep **本期不用**。

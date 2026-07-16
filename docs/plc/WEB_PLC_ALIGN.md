@@ -1,6 +1,6 @@
-# Web v2 ↔ PLC 对齐（简化版）
+# Web v2 ↔ PLC 对齐（精简）
 
-> 权威：`docs/plc/HMI.md` + `GVL.md`。手动无 Indep/Diff 菜单。
+> 权威：`docs/plc/HMI.md` + `GVL.md`
 
 ## 轴
 
@@ -8,21 +8,27 @@ X=M1+M2 · Y=M3 · Z=M4 · R=M5
 
 ## 手动
 
-| 操作 | HMI | Axis |
-|------|-----|------|
-| X± | JogXPos/Neg | Sync 同速 |
-| 左/右旋转 | SpinLeft/Right | Diff 原地一正一反 |
-| Y/Z/R± | Jog* | FB_Servo |
-| 速度 | rJogVel* | （旋转用 VelX） |
+| 操作 | HMI |
+|------|-----|
+| X± | `JogXPos/Neg` + `rJogVelX` |
+| 左/右旋 | `SpinLeft/Right` + `rSpinVel` |
+| Y/Z/R± | `Jog*` + 各轴 Vel |
 
-## 自动步序
+## 自动
 
-1 MoveX → 2 PressZ(力≥F_set) → 3 MoveY+恒力 → 4 RWobble占位 → 5 Done
+| 参数 | HMI |
+|------|-----|
+| X 距/速 | `rAutoDistX` / `rAutoVelX` |
+| **跨距=Y行程** | `rWheelBase`（4~6） |
+| Y/Z 速 | `rAutoVelY` / `rAutoVelZ` |
+| 力 | `rForceSet` |
+
+步序：1 MoveX → 2 PressZ → 3 MoveY(=WheelBase)+恒力 → 4 R占位 → 5 Done
 
 ## 设备态
 
-0 Stop停止/待机 · 1 Run运行中 · 2 Error错误
+0 Stop · 1 Run · 2 Error
 
-## 面板 IO（固定）
+## 面板 IO
 
 Start %IX1.6 · Stop %IX1.4 · EStop %IX0.4（TRUE正常）· StopLamp %QX0.6 · StartLamp %QX0.7

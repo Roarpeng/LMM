@@ -25,6 +25,7 @@ VAR
     xPair : BOOL;
     eMode : INT;
     xDiffPos, xDiffNeg : BOOL;
+    rXVel : REAL;
 END_VAR
 
 (* X：同步直行 / 左旋 / 右旋 *)
@@ -38,16 +39,18 @@ ELSIF AxisCmd_xJogXPos XOR AxisCmd_xJogXNeg THEN
     eMode := 1;
 END_IF;
 
+(* 直行用 JogVelX；旋转用 SpinVel *)
+rXVel := SEL(eMode = 2, AxisCmd_rSpinVel, AxisCmd_rJogVelX);
 fbXDiff(
     eMode := eMode,
-    eDiffFunc := 1, (* 固定原地旋转子功能 *)
+    eDiffFunc := 1, (* 固定原地旋转 *)
     xJogSyncPos := AxisCmd_xJogXPos,
     xJogSyncNeg := AxisCmd_xJogXNeg,
     xJogDiffPos := xDiffPos,
     xJogDiffNeg := xDiffNeg,
     xStop := AxisCmd_xStopAll,
     xEnable := AxisCmd_xPower,
-    rJogVel := AxisCmd_rJogVelX,
+    rJogVel := rXVel,
     rDiffDelta := 0.0,
     rTurnOmega := 0.0,
     rWheelBase := AxisCmd_rWheelBase
