@@ -93,6 +93,39 @@ VAR_GLOBAL
 END_VAR
 ```
 
+### GVL_Force（PRG_Force485 写状态 · Logic 读故障）
+
+> 详见 [FB_Force485.md](FB_Force485.md) / [PRG_Force485.md](PRG_Force485.md)。  
+> `rForceAct`：模拟时 Logic 写；实传感时 **仅** Force 任务写。
+
+| Variable | Writer | Readers | Notes |
+|----------|--------|---------|-------|
+| Force_xEnable / Force_bySlave / Force_rScale | 常量或 HMI | PRG_Force485 | 默认 Enable=TRUE, Slave=1, Scale=0.01 |
+| HMI_xForceTare | HMI/TCP | PRG_Force485 | 脉冲去皮 |
+| Force_xCommOk / Force_xTimeout | PRG_Force485 | Logic/HMI | 通讯 |
+| Force_iRaw / Force_iState | PRG_Force485 | 诊断 | |
+| Force_abyTx/Rx · uiTx/RxLen · xTxReq · xRxNew | PRG_Force485 ↔ 串口层 | SoftComm/SysCom | 自由协议缓冲 |
+| rForceAct（非模拟） | PRG_Force485 | Logic | |
+
+```iecst
+VAR_GLOBAL
+    Force_xEnable       : BOOL := TRUE;
+    Force_bySlave       : BYTE := 1;
+    Force_rScale        : REAL := 0.01;
+    HMI_xForceTare      : BOOL;
+    Force_xCommOk       : BOOL;
+    Force_xTimeout      : BOOL;
+    Force_iRaw          : INT;
+    Force_iState        : INT;
+    Force_abyTx         : ARRAY[0..63] OF BYTE;
+    Force_uiTxLen       : UINT;
+    Force_xTxReq        : BOOL;
+    Force_abyRx         : ARRAY[0..63] OF BYTE;
+    Force_uiRxLen       : UINT;
+    Force_xRxNew        : BOOL;
+END_VAR
+```
+
 ### GVL_IO
 
 ```iecst
@@ -140,5 +173,32 @@ VAR_GLOBAL
     AxisFb_xFaultM1, AxisFb_xFaultM2, AxisFb_xFaultY, AxisFb_xFaultZ, AxisFb_xFaultR : BOOL;
     AxisFb_xReady : BOOL;
     AxisFb_xMoveDoneX, AxisFb_xMoveDoneY : BOOL;
+END_VAR
+```
+
+### GVL_Tcp（PRG_TcpHmi 写影子 · Logic 合成到 HMI）
+
+> 详见 [TCP_HMI.md](TCP_HMI.md)。`Tcp_xEStop` 上电默认 TRUE。
+
+| Variable | Writer | Readers | Notes |
+|----------|--------|---------|-------|
+| Tcp_xConnected / Tcp_xTimeout / Tcp_xOnline | PRG_TcpHmi | HMI/Web | 链路 |
+| Tcp_xEStop … Tcp_rForceSim（与 HMI request 同名后缀） | PRG_TcpHmi | PRG_Logic | 影子 |
+| HMI_*（合成后） | PRG_Logic | 全机 | 面板∨Tcp |
+
+```iecst
+VAR_GLOBAL
+    Tcp_xConnected, Tcp_xTimeout, Tcp_xOnline : BOOL;
+    Tcp_xEStop : BOOL := TRUE;
+    Tcp_xStop, Tcp_xStopHold3s, Tcp_xStart, Tcp_xEnable : BOOL;
+    Tcp_xAutoMode : BOOL;
+    Tcp_xJogXPos, Tcp_xJogXNeg, Tcp_xSpinLeft, Tcp_xSpinRight : BOOL;
+    Tcp_xJogYPos, Tcp_xJogYNeg, Tcp_xJogZPos, Tcp_xJogZNeg : BOOL;
+    Tcp_xJogRPos, Tcp_xJogRNeg : BOOL;
+    Tcp_rJogVelX, Tcp_rSpinVel, Tcp_rJogVelY, Tcp_rJogVelZ, Tcp_rJogVelR : REAL;
+    Tcp_xAutoStart, Tcp_xAutoAbort : BOOL;
+    Tcp_rAutoDistX, Tcp_rAutoVelX, Tcp_rAutoVelY, Tcp_rAutoVelZ : REAL;
+    Tcp_rWheelBase, Tcp_rForceSet, Tcp_rForceSim : REAL;
+    Tcp_xForceSimEnable : BOOL;
 END_VAR
 ```

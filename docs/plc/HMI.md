@@ -1,6 +1,7 @@
-# HMI.md — 设备操作触摸屏绑定
+# HMI.md — 设备操作触摸屏 / WebHMI 绑定
 
-> 只写 `GVL_HMI`；读 `GVL_HMI_Status` / `GVL_AxisFb`。契约：[GVL.md](GVL.md)
+> 只写 `GVL_HMI`（或经 TCP 影子 `Tcp_*` 再由 Logic 合成）；读 `GVL_HMI_Status` / `GVL_AxisFb`。  
+> 契约：[GVL.md](GVL.md) · TCP：[TCP_HMI.md](TCP_HMI.md) · 实控页：`web/live/`
 
 ## 设备三态灯
 
@@ -41,7 +42,9 @@
 | Y 速 / Z 速 | `HMI_rAutoVelY` / `HMI_rAutoVelZ` |
 | 力设定 | `HMI_rForceSet`（N） |
 | 力模拟 | `HMI_xForceSimEnable` + `HMI_rForceSim` |
+| 去皮 | `HMI_xForceTare`（脉冲；实传感时有效） |
 | 步号/忙/完成/力 | `HMI_iAutoStepShow` / `HMI_xAutoBusy` / `HMI_xAutoDone` / `HMI_rForceShow` |
+| 力通讯 | `Force_xCommOk` / `Force_xTimeout`（诊断） |
 
 ### 自动主序
 

@@ -7,6 +7,7 @@ PROGRAM PLC_PRG
 VAR
 END_VAR
 
+PRG_TcpHmi();
 PRG_Logic();
 (* 可选：PRG_HMI(); 若触摸屏逻辑放 PLC 侧 *)
 ```
@@ -15,8 +16,9 @@ PRG_Logic();
 
 | 任务 | 程序 | 周期 | 说明 |
 |------|------|------|------|
-| Main / Logic | `PLC_PRG` → `PRG_Logic` | TBD | 联锁与命令裁定 |
+| Main / Logic | `PLC_PRG` → `PRG_TcpHmi` + `PRG_Logic` | TBD | TCP HMI + 联锁与命令裁定 |
 | Axis（独立） | `PRG_Axis_Control` | TBD（与 EC 同步） | 仅 GVL I/O，无外部 CALL |
+| Force（独立） | `PRG_Force485` | 10–20 ms | LE 力传感 RS485；无外部 CALL |
 | EtherCAT | 系统 | — | 已有工程配置 |
 
 ## 导入顺序建议

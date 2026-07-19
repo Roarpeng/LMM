@@ -6,6 +6,10 @@ graphflow-out/
 # Backups
 *.bak
 LMM.xml.bak
+LMM.xml.bak.tcp
+
+# Gateway
+gateway/node_modules/
 
 # OS
 .DS_Store

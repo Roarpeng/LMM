@@ -10,7 +10,7 @@
 | 1 | Run | 正在运行（手动或自动） |
 | 2 | Error | 错误 |
 
-复位当拍强制 0；面板 `EStop` 直通 `HMI_xEStop`（正常 TRUE）。
+复位当拍强制 0；急停：`HMI_xEStop := EStop AND Tcp_xEStop`（正常 TRUE / 按下 FALSE）。
 
 ## 自动步序 iAutoStep
 
@@ -37,12 +37,47 @@ VAR
     xMoveXSent, xMoveYSent : BOOL;
 END_VAR
 
-(* —— 面板桥：地址固定 —— *)
-HMI_xEStop := EStop;
-HMI_xStop := StopBtn;
-HMI_xStart := StartBtn;
-HMI_xEnable := StartBtn;
-HMI_xStopHold3s := ResetBtn;
+(* —— 面板 ∨ TCP 影子 → HMI（见 TCP_HMI.md）—— *)
+Tcp_xOnline := Tcp_xConnected AND NOT Tcp_xTimeout;
+HMI_xEStop := EStop AND Tcp_xEStop;
+HMI_xStop := StopBtn OR Tcp_xStop;
+HMI_xStart := StartBtn OR Tcp_xStart;
+HMI_xEnable := StartBtn OR Tcp_xEnable OR Tcp_xStart;
+HMI_xStopHold3s := ResetBtn OR Tcp_xStopHold3s;
+IF Tcp_xOnline THEN
+    HMI_xAutoMode := Tcp_xAutoMode;
+    HMI_xForceSimEnable := Tcp_xForceSimEnable;
+END_IF;
+HMI_xJogXPos := JogFwd OR Tcp_xJogXPos;
+HMI_xJogXNeg := JogBwd OR Tcp_xJogXNeg;
+HMI_xSpinLeft := Tcp_xSpinLeft;
+HMI_xSpinRight := Tcp_xSpinRight;
+HMI_xJogYPos := JogRight OR Tcp_xJogYPos;
+HMI_xJogYNeg := JogLeft OR Tcp_xJogYNeg;
+HMI_xJogZPos := JogUp OR Tcp_xJogZPos;
+HMI_xJogZNeg := JogDown OR Tcp_xJogZNeg;
+HMI_xJogRPos := Tcp_xJogRPos;
+HMI_xJogRNeg := Tcp_xJogRNeg;
+HMI_xAutoStart := Tcp_xAutoStart;
+HMI_xAutoAbort := Tcp_xAutoAbort;
+IF Tcp_xOnline THEN
+    HMI_rJogVelX := Tcp_rJogVelX;
+    HMI_rSpinVel := Tcp_rSpinVel;
+    HMI_rJogVelY := Tcp_rJogVelY;
+    HMI_rJogVelZ := Tcp_rJogVelZ;
+    HMI_rJogVelR := Tcp_rJogVelR;
+    HMI_rAutoDistX := Tcp_rAutoDistX;
+    HMI_rAutoVelX := Tcp_rAutoVelX;
+    HMI_rAutoVelY := Tcp_rAutoVelY;
+    HMI_rAutoVelZ := Tcp_rAutoVelZ;
+    HMI_rWheelBase := Tcp_rWheelBase;
+    HMI_rForceSet := Tcp_rForceSet;
+    HMI_rForceSim := Tcp_rForceSim;
+ELSE
+    HMI_rJogVelX := JogVel;
+    HMI_rJogVelY := JogVel;
+    HMI_rJogVelZ := JogVel;
+END_IF;
 
 (* —— 急停 / 复位 —— *)
 IF NOT HMI_xEStop THEN xEStopLatched := TRUE; END_IF;
@@ -60,7 +95,8 @@ ELSE
 END_IF;
 
 xFaultAggregate := AxisFb_xFaultM1 OR AxisFb_xFaultM2 OR AxisFb_xFaultY OR AxisFb_xFaultZ
-                   OR (xM5Ready AND AxisFb_xFaultR);
+                   OR (xM5Ready AND AxisFb_xFaultR)
+                   OR (NOT HMI_xForceSimEnable AND Force_xTimeout);
 xEnablePermit := HMI_xEStop AND NOT xEStopLatched AND NOT xFaultAggregate;
 eOpMode := SEL(HMI_xAutoMode, 0, 1);
 HMI_eOpMode := eOpMode;
@@ -102,10 +138,10 @@ HMI_xDevStop := Dev_xStop;
 HMI_xDevRun := Dev_xRun;
 HMI_xDevError := Dev_xError;
 
-(* —— 力：模拟或后补通讯 —— *)
+(* —— 力：模拟或 485 任务 —— *)
 IF HMI_xForceSimEnable THEN
     rForceAct := HMI_rForceSim;
-(* ELSE：rForceAct 由 485 任务写入 *)
+(* ELSE：rForceAct 由 PRG_Force485 写入 *)
 END_IF;
 HMI_rForceShow := rForceAct;
 IF rForceKp < 1.0E-6 THEN rForceKp := 1.0; END_IF;
@@ -219,6 +255,8 @@ END_IF;
 IF Dev_xError THEN
     IF xEStopLatched OR NOT HMI_xEStop THEN
         iAlarmID := 1001;
+    ELSIF NOT HMI_xForceSimEnable AND Force_xTimeout THEN
+        iAlarmID := 1005;
     ELSE
         iAlarmID := 1002;
     END_IF;

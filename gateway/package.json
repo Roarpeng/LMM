@@ -1,0 +1,14 @@
+{
+  "name": "lmm-webhmi-gateway",
+  "private": true,
+  "version": "1.0.0",
+  "description": "TCP↔WebSocket bridge for LMM WebHMI",
+  "main": "server.js",
+  "scripts": {
+    "start": "MOCK_PLC=1 node server.js",
+    "start:plc": "MOCK_PLC=0 node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
