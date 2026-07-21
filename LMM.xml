@@ -1,7 +1,7 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <project xmlns="http://www.plcopen.org/xml/tc6_0200">
-  <fileHeader companyName="Inovance company" productName="InoProShop(V1.9.1.6)" productVersion="InoProShop(V1.9.1.6)" creationDateTime="2026-07-18T21:50:26.7510147" />
-  <contentHeader name="LMM.project" modificationDateTime="2026-07-18T21:49:33.7617885">
+  <fileHeader companyName="Inovance company" productName="InoProShop(V1.9.1.6)" productVersion="InoProShop(V1.9.1.6)" creationDateTime="2026-07-21T19:15:43.4083413" />
+  <contentHeader name="LMM.project" modificationDateTime="2026-07-21T18:29:38.2749635">
     <coordinateInfo>
       <fbd>
         <scaling x="1" y="1" />
@@ -22,434 +22,6 @@
   <types>
     <dataTypes />
     <pous>
-      <pou name="FB_Force485" pouType="functionBlock">
-        <interface>
-          <inputVars>
-            <variable name="i_xEnable">
-              <type>
-                <BOOL />
-              </type>
-            </variable>
-            <variable name="i_bySlave">
-              <type>
-                <BYTE />
-              </type>
-              <initialValue>
-                <simpleValue value="1" />
-              </initialValue>
-            </variable>
-            <variable name="i_rScale">
-              <type>
-                <REAL />
-              </type>
-              <initialValue>
-                <simpleValue value="0.01" />
-              </initialValue>
-            </variable>
-            <variable name="i_xTare">
-              <type>
-                <BOOL />
-              </type>
-            </variable>
-            <variable name="i_tTimeout">
-              <type>
-                <TIME />
-              </type>
-              <initialValue>
-                <simpleValue value="TIME#200ms" />
-              </initialValue>
-            </variable>
-            <variable name="i_tPoll">
-              <type>
-                <TIME />
-              </type>
-              <initialValue>
-                <simpleValue value="TIME#20ms" />
-              </initialValue>
-            </variable>
-            <variable name="i_abyRx">
-              <type>
-                <array>
-                  <dimension lower="0" upper="63" />
-                  <baseType>
-                    <BYTE />
-                  </baseType>
-                </array>
-              </type>
-            </variable>
-            <variable name="i_uiRxLen">
-              <type>
-                <UINT />
-              </type>
-            </variable>
-            <variable name="i_xRxNew">
-              <type>
-                <BOOL />
-              </type>
-            </variable>
-          </inputVars>
-          <outputVars>
-            <variable name="o_abyTx">
-              <type>
-                <array>
-                  <dimension lower="0" upper="63" />
-                  <baseType>
-                    <BYTE />
-                  </baseType>
-                </array>
-              </type>
-            </variable>
-            <variable name="o_uiTxLen">
-              <type>
-                <UINT />
-              </type>
-            </variable>
-            <variable name="o_xTxReq">
-              <type>
-                <BOOL />
-              </type>
-            </variable>
-            <variable name="o_rForce">
-              <type>
-                <REAL />
-              </type>
-            </variable>
-            <variable name="o_iRaw">
-              <type>
-                <INT />
-              </type>
-            </variable>
-            <variable name="o_xOk">
-              <type>
-                <BOOL />
-              </type>
-            </variable>
-            <variable name="o_xTimeout">
-              <type>
-                <BOOL />
-              </type>
-            </variable>
-            <variable name="o_iState">
-              <type>
-                <INT />
-              </type>
-            </variable>
-          </outputVars>
-          <localVars>
-            <variable name="iState">
-              <type>
-                <INT />
-              </type>
-            </variable>
-            <variable name="tonTO">
-              <type>
-                <derived name="TON" />
-              </type>
-            </variable>
-            <variable name="tonPoll">
-              <type>
-                <derived name="TON" />
-              </type>
-            </variable>
-            <variable name="xTarePrev">
-              <type>
-                <BOOL />
-              </type>
-            </variable>
-            <variable name="xTareReq">
-              <type>
-                <BOOL />
-              </type>
-            </variable>
-            <variable name="xWaiting">
-              <type>
-                <BOOL />
-              </type>
-            </variable>
-            <variable name="xRxEdge">
-              <type>
-                <BOOL />
-              </type>
-            </variable>
-            <variable name="xRxNewPrev">
-              <type>
-                <BOOL />
-              </type>
-            </variable>
-            <variable name="iFailCnt">
-              <type>
-                <INT />
-              </type>
-            </variable>
-            <variable name="wCrc">
-              <type>
-                <WORD />
-              </type>
-            </variable>
-            <variable name="i">
-              <type>
-                <INT />
-              </type>
-            </variable>
-            <variable name="j">
-              <type>
-                <INT />
-              </type>
-            </variable>
-            <variable name="nPayload">
-              <type>
-                <INT />
-              </type>
-            </variable>
-            <variable name="diRaw">
-              <type>
-                <DINT />
-              </type>
-            </variable>
-          </localVars>
-        </interface>
-        <body>
-          <ST>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">(* FB_Force485 — LE Modbus-RTU 协议层；串口经 i_abyRx/o_abyTx *)
-o_xTxReq := FALSE;
-
-IF NOT i_xEnable THEN
-	iState := 0;
-	xWaiting := FALSE;
-	tonTO(IN := FALSE, PT := i_tTimeout);
-	tonPoll(IN := FALSE, PT := i_tPoll);
-	o_iState := 0;
-	RETURN;
-END_IF;
-
-IF i_xTare AND NOT xTarePrev THEN
-	xTareReq := TRUE;
-END_IF;
-xTarePrev := i_xTare;
-
-xRxEdge := i_xRxNew AND NOT xRxNewPrev;
-xRxNewPrev := i_xRxNew;
-
-CASE iState OF
-	0:
-		iFailCnt := 0;
-		o_xTimeout := FALSE;
-		iState := 1;
-
-	1:
-		o_abyTx[0] := i_bySlave;
-		o_abyTx[1] := 16#06;
-		o_abyTx[2] := 16#00;
-		o_abyTx[3] := 16#02;
-		o_abyTx[4] := 16#00;
-		o_abyTx[5] := 16#05;
-		nPayload := 6;
-		wCrc := 16#FFFF;
-		FOR i := 0 TO (nPayload - 1) DO
-			wCrc := wCrc XOR BYTE_TO_WORD(o_abyTx[i]);
-			FOR j := 0 TO 7 DO
-				IF (wCrc AND 16#0001) &lt;&gt; 0 THEN
-					wCrc := SHR(wCrc, 1) XOR WORD#16#A001;
-				ELSE
-					wCrc := SHR(wCrc, 1);
-				END_IF;
-			END_FOR;
-		END_FOR;
-		o_abyTx[nPayload] := INT_TO_BYTE(WORD_TO_INT(wCrc AND 16#00FF));
-		o_abyTx[nPayload + 1] := INT_TO_BYTE(WORD_TO_INT(SHR(wCrc, 8)));
-		o_uiTxLen := INT_TO_UINT(nPayload + 2);
-		o_xTxReq := TRUE;
-		xWaiting := TRUE;
-		tonTO(IN := FALSE, PT := i_tTimeout);
-		tonTO(IN := TRUE, PT := i_tTimeout);
-		iState := 2;
-
-	2:
-		tonTO(IN := xWaiting, PT := i_tTimeout);
-		IF xRxEdge AND xWaiting THEN
-			xWaiting := FALSE;
-			IF (i_uiRxLen &gt;= 8) AND (i_abyRx[0] = i_bySlave) AND (i_abyRx[1] = 16#06) THEN
-				iFailCnt := 0;
-				o_xOk := TRUE;
-				o_xTimeout := FALSE;
-				IF xTareReq THEN
-					iState := 5;
-				ELSE
-					iState := 3;
-				END_IF;
-			ELSE
-				iFailCnt := iFailCnt + 1;
-				iState := 1;
-			END_IF;
-		ELSIF tonTO.Q THEN
-			xWaiting := FALSE;
-			iFailCnt := iFailCnt + 1;
-			IF iFailCnt &gt;= 3 THEN
-				o_xTimeout := TRUE;
-				o_xOk := FALSE;
-			END_IF;
-			iState := 1;
-		END_IF;
-
-	3:
-		IF xTareReq THEN
-			iState := 5;
-		ELSE
-			o_abyTx[0] := i_bySlave;
-			o_abyTx[1] := 16#03;
-			o_abyTx[2] := 16#00;
-			o_abyTx[3] := 16#00;
-			o_abyTx[4] := 16#00;
-			o_abyTx[5] := 16#01;
-			nPayload := 6;
-			wCrc := 16#FFFF;
-			FOR i := 0 TO (nPayload - 1) DO
-				wCrc := wCrc XOR BYTE_TO_WORD(o_abyTx[i]);
-				FOR j := 0 TO 7 DO
-					IF (wCrc AND 16#0001) &lt;&gt; 0 THEN
-						wCrc := SHR(wCrc, 1) XOR WORD#16#A001;
-					ELSE
-						wCrc := SHR(wCrc, 1);
-					END_IF;
-				END_FOR;
-			END_FOR;
-			o_abyTx[nPayload] := INT_TO_BYTE(WORD_TO_INT(wCrc AND 16#00FF));
-			o_abyTx[nPayload + 1] := INT_TO_BYTE(WORD_TO_INT(SHR(wCrc, 8)));
-			o_uiTxLen := INT_TO_UINT(nPayload + 2);
-			o_xTxReq := TRUE;
-			xWaiting := TRUE;
-			tonTO(IN := FALSE, PT := i_tTimeout);
-			tonTO(IN := TRUE, PT := i_tTimeout);
-			tonPoll(IN := FALSE, PT := i_tPoll);
-			iState := 4;
-		END_IF;
-
-	4:
-		tonTO(IN := xWaiting, PT := i_tTimeout);
-		IF xRxEdge AND xWaiting THEN
-			xWaiting := FALSE;
-			IF (i_uiRxLen &gt;= 7) AND (i_abyRx[0] = i_bySlave) AND (i_abyRx[1] = 16#03) AND (i_abyRx[2] = 16#02) THEN
-				wCrc := 16#FFFF;
-				FOR i := 0 TO 4 DO
-					wCrc := wCrc XOR BYTE_TO_WORD(i_abyRx[i]);
-					FOR j := 0 TO 7 DO
-						IF (wCrc AND 16#0001) &lt;&gt; 0 THEN
-							wCrc := SHR(wCrc, 1) XOR WORD#16#A001;
-						ELSE
-							wCrc := SHR(wCrc, 1);
-						END_IF;
-					END_FOR;
-				END_FOR;
-				IF (i_abyRx[5] = INT_TO_BYTE(WORD_TO_INT(wCrc AND 16#00FF))) AND (i_abyRx[6] = INT_TO_BYTE(WORD_TO_INT(SHR(wCrc, 8)))) THEN
-					diRaw := DWORD_TO_DINT(SHL(BYTE_TO_DWORD(i_abyRx[3]), 8) OR BYTE_TO_DWORD(i_abyRx[4]));
-					IF diRaw &gt; 32767 THEN
-						diRaw := diRaw - 65536;
-					END_IF;
-					o_iRaw := DINT_TO_INT(diRaw);
-					IF i_rScale &lt; 1.0E-12 THEN
-						o_rForce := INT_TO_REAL(o_iRaw);
-					ELSE
-						o_rForce := INT_TO_REAL(o_iRaw) * i_rScale;
-					END_IF;
-					iFailCnt := 0;
-					o_xOk := TRUE;
-					o_xTimeout := FALSE;
-				ELSE
-					iFailCnt := iFailCnt + 1;
-				END_IF;
-			ELSE
-				iFailCnt := iFailCnt + 1;
-			END_IF;
-			IF iFailCnt &gt;= 3 THEN
-				o_xTimeout := TRUE;
-				o_xOk := FALSE;
-			END_IF;
-			tonPoll(IN := TRUE, PT := i_tPoll);
-			iState := 6;
-		ELSIF tonTO.Q THEN
-			xWaiting := FALSE;
-			iFailCnt := iFailCnt + 1;
-			IF iFailCnt &gt;= 3 THEN
-				o_xTimeout := TRUE;
-				o_xOk := FALSE;
-			END_IF;
-			iState := 3;
-		END_IF;
-
-	5:
-		o_abyTx[0] := i_bySlave;
-		o_abyTx[1] := 16#06;
-		o_abyTx[2] := 16#00;
-		o_abyTx[3] := 16#11;
-		o_abyTx[4] := 16#00;
-		o_abyTx[5] := 16#01;
-		nPayload := 6;
-		wCrc := 16#FFFF;
-		FOR i := 0 TO (nPayload - 1) DO
-			wCrc := wCrc XOR BYTE_TO_WORD(o_abyTx[i]);
-			FOR j := 0 TO 7 DO
-				IF (wCrc AND 16#0001) &lt;&gt; 0 THEN
-					wCrc := SHR(wCrc, 1) XOR WORD#16#A001;
-				ELSE
-					wCrc := SHR(wCrc, 1);
-				END_IF;
-			END_FOR;
-		END_FOR;
-		o_abyTx[nPayload] := INT_TO_BYTE(WORD_TO_INT(wCrc AND 16#00FF));
-		o_abyTx[nPayload + 1] := INT_TO_BYTE(WORD_TO_INT(SHR(wCrc, 8)));
-		o_uiTxLen := INT_TO_UINT(nPayload + 2);
-		o_xTxReq := TRUE;
-		xWaiting := TRUE;
-		xTareReq := FALSE;
-		tonTO(IN := FALSE, PT := i_tTimeout);
-		tonTO(IN := TRUE, PT := i_tTimeout);
-		iState := 7;
-
-	6:
-		tonPoll(IN := TRUE, PT := i_tPoll);
-		IF xTareReq THEN
-			tonPoll(IN := FALSE, PT := i_tPoll);
-			iState := 5;
-		ELSIF tonPoll.Q THEN
-			tonPoll(IN := FALSE, PT := i_tPoll);
-			iState := 3;
-		END_IF;
-
-	7:
-		tonTO(IN := xWaiting, PT := i_tTimeout);
-		IF xRxEdge AND xWaiting THEN
-			xWaiting := FALSE;
-			iState := 3;
-		ELSIF tonTO.Q THEN
-			xWaiting := FALSE;
-			iState := 3;
-		END_IF;
-
-ELSE
-	iState := 0;
-END_CASE;
-
-o_iState := iState;
-</xhtml>
-          </ST>
-        </body>
-        <addData>
-          <data name="http://www.3s-software.com/plcopenxml/pathstructure" handleUnknown="discard">
-            <pathStructure isFolder="False" name="Device" namespace="1ee21fdd-5562-44a0-a3ce-665d74916d50" factoryName="Inovance.InoPro.InoDeviceObject.DeviceObjectFactory" factoryGuid="{84d12aa5-3225-473b-9df6-18af40889bdf}" objectGuid="d7de5ac3-3f30-45ac-8468-ec250b4e523b">
-              <pathStructure isFolder="False" name="Plc Logic" namespace="00000000-0000-0000-0000-000000000000" factoryName="_3S.CoDeSys.PlcLogicObject.PlcLogicObjectFactory" factoryGuid="{8ceeba4e-ac7a-4fbd-9415-bfb2d98668ab}" objectGuid="8a291c6e-c5c5-4a07-8c04-1100df0e1491">
-                <pathStructure isFolder="False" name="Application" namespace="e5b60c93-5445-4e40-ada9-cd9c005549b4" factoryName="_3S.CoDeSys.ApplicationObject.ApplicationObjectFactory" factoryGuid="{ECADC42E-716E-4ff3-A93C-0CD143F9743F}" objectGuid="69822df8-b9c0-4a01-9450-b2cdc030688c">
-                  <pathStructure isFolder="True" name="FB" namespace="00000000-0000-0000-0000-000000000000" factoryName="Inovance.InoPro.InoNavigators.FolderObjectFactory" factoryGuid="{BA66A801-C738-4176-B072-DFE26ACE36D3}" objectGuid="2dc75837-520f-43d9-90dd-47cded0212a2">
-                    <pathStructure isFolder="False" name="FB_Force485" namespace="e5b60c93-5445-4e40-ada9-cd9c005549b4" factoryName="Inovance.InoPro.InoPOUObject.POUObjectFactory" factoryGuid="{39C4ED2B-903C-464c-9041-7DF4ECEE9609}" objectGuid="a1b2c3d4-e5f6-4789-a012-666666666666" />
-                  </pathStructure>
-                </pathStructure>
-              </pathStructure>
-            </pathStructure>
-          </data>
-          <data name="http://www.3s-software.com/plcopenxml/objectid" handleUnknown="discard">
-            <ObjectId>a1b2c3d4-e5f6-4789-a012-666666666666</ObjectId>
-          </data>
-        </addData>
-      </pou>
       <pou name="PRG_Axis_Control" pouType="program">
         <interface>
           <localVars>
@@ -846,10 +418,7 @@ AxisFb_xReady := NOT (fbM1.xFault OR fbM2.xFault OR fbY.xFault OR fbZ.xFault);
         <body>
           <ST>
             <xhtml xmlns="http://www.w3.org/1999/xhtml">(*==============================================================================
- * FB_TCPServer — 手册场景1 状态机（AC702 TCP Server）
- * 19011700-SC_A08 §6.1 自由TCP 样例：
- *   SktTCPServer / SktTCPGetStatus / SktTCPRecv / SktTCPSend / SktClose
- * 差异：不 echo；Recv→o_strRecv；i_xSendTrig→Send JSON
+ TCP 服务
  *============================================================================*)
 o_xRecvNew := FALSE;
 o_xSendDone := FALSE;
@@ -1040,74 +609,6 @@ END_CASE;
           </data>
         </addData>
       </pou>
-
-      <pou name="PRG_Force485" pouType="program">
-        <interface>
-          <localVars>
-            <variable name="fbForce">
-              <type>
-                <derived name="FB_Force485" />
-              </type>
-            </variable>
-            <variable name="i">
-              <type>
-                <INT />
-              </type>
-            </variable>
-          </localVars>
-        </interface>
-        <body>
-          <ST>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">(* PRG_Force485 — ForceTask 独立；串口经 Force_aby* 对接 SoftComm *)
-fbForce(
-	i_xEnable := Force_xEnable,
-	i_bySlave := Force_bySlave,
-	i_rScale := Force_rScale,
-	i_xTare := HMI_xForceTare,
-	i_tTimeout := T#200MS,
-	i_tPoll := T#20MS,
-	i_abyRx := Force_abyRx,
-	i_uiRxLen := Force_uiRxLen,
-	i_xRxNew := Force_xRxNew);
-
-FOR i := 0 TO 63 DO
-	Force_abyTx[i] := fbForce.o_abyTx[i];
-END_FOR;
-Force_uiTxLen := fbForce.o_uiTxLen;
-Force_xTxReq := fbForce.o_xTxReq;
-
-Force_xCommOk := fbForce.o_xOk;
-Force_xTimeout := fbForce.o_xTimeout;
-Force_iRaw := fbForce.o_iRaw;
-Force_iState := fbForce.o_iState;
-
-IF NOT HMI_xForceSimEnable THEN
-	IF fbForce.o_xOk THEN
-		rForceAct := fbForce.o_rForce;
-	END_IF;
-END_IF;
-
-IF Force_xRxNew THEN
-	Force_xRxNew := FALSE;
-END_IF;
-</xhtml>
-          </ST>
-        </body>
-        <addData>
-          <data name="http://www.3s-software.com/plcopenxml/pathstructure" handleUnknown="discard">
-            <pathStructure isFolder="False" name="Device" namespace="1ee21fdd-5562-44a0-a3ce-665d74916d50" factoryName="Inovance.InoPro.InoDeviceObject.DeviceObjectFactory" factoryGuid="{84d12aa5-3225-473b-9df6-18af40889bdf}" objectGuid="d7de5ac3-3f30-45ac-8468-ec250b4e523b">
-              <pathStructure isFolder="False" name="Plc Logic" namespace="00000000-0000-0000-0000-000000000000" factoryName="_3S.CoDeSys.PlcLogicObject.PlcLogicObjectFactory" factoryGuid="{8ceeba4e-ac7a-4fbd-9415-bfb2d98668ab}" objectGuid="8a291c6e-c5c5-4a07-8c04-1100df0e1491">
-                <pathStructure isFolder="False" name="Application" namespace="e5b60c93-5445-4e40-ada9-cd9c005549b4" factoryName="_3S.CoDeSys.ApplicationObject.ApplicationObjectFactory" factoryGuid="{ECADC42E-716E-4ff3-A93C-0CD143F9743F}" objectGuid="69822df8-b9c0-4a01-9450-b2cdc030688c">
-                  <pathStructure isFolder="False" name="PRG_Force485" namespace="e5b60c93-5445-4e40-ada9-cd9c005549b4" factoryName="Inovance.InoPro.InoPOUObject.POUObjectFactory" factoryGuid="{39C4ED2B-903C-464c-9041-7DF4ECEE9609}" objectGuid="a1b2c3d4-e5f6-4789-a012-777777777777" />
-                </pathStructure>
-              </pathStructure>
-            </pathStructure>
-          </data>
-          <data name="http://www.3s-software.com/plcopenxml/objectid" handleUnknown="discard">
-            <ObjectId>a1b2c3d4-e5f6-4789-a012-777777777777</ObjectId>
-          </data>
-        </addData>
-      </pou>
       <pou name="PRG_TcpHmi" pouType="program">
         <interface>
           <localVars>
@@ -1265,6 +766,12 @@ IF fbTcp.o_xRecvNew THEN
 	ELSIF FIND(strLine, '"HMI_xAutoAbort":false') &gt; 0 THEN Tcp_xAutoAbort := FALSE; END_IF;
 	IF FIND(strLine, '"HMI_xForceSimEnable":true') &gt; 0 THEN Tcp_xForceSimEnable := TRUE;
 	ELSIF FIND(strLine, '"HMI_xForceSimEnable":false') &gt; 0 THEN Tcp_xForceSimEnable := FALSE; END_IF;
+	IF FIND(strLine, '"HMI_xForceTare":true') &gt; 0 THEN Tcp_xForceTare := TRUE;
+	ELSIF FIND(strLine, '"HMI_xForceTare":false') &gt; 0 THEN Tcp_xForceTare := FALSE; END_IF;
+	IF FIND(strLine, '"HMI_xForceUntare":true') &gt; 0 THEN Tcp_xForceUntare := TRUE;
+	ELSIF FIND(strLine, '"HMI_xForceUntare":false') &gt; 0 THEN Tcp_xForceUntare := FALSE; END_IF;
+	IF FIND(strLine, '"HMI_xForceGuide":true') &gt; 0 THEN Tcp_xForceGuide := TRUE;
+	ELSIF FIND(strLine, '"HMI_xForceGuide":false') &gt; 0 THEN Tcp_xForceGuide := FALSE; END_IF;
 	(* REAL：网关保证无空格；键后直接数字 *)
 	p := FIND(strLine, '"HMI_rJogVelX":');
 	IF p &gt; 0 THEN Tcp_rJogVelX := STRING_TO_REAL(MID(strLine, p + 15, 16)); END_IF;
@@ -1304,6 +811,7 @@ IF Tcp_xTimeout OR NOT Tcp_xConnected THEN
 	Tcp_xJogZPos := FALSE; Tcp_xJogZNeg := FALSE;
 	Tcp_xJogRPos := FALSE; Tcp_xJogRNeg := FALSE;
 	Tcp_xAutoStart := FALSE; Tcp_xAutoAbort := FALSE;
+	Tcp_xForceTare := FALSE; Tcp_xForceUntare := FALSE;
 	IF Tcp_xTimeout OR NOT Tcp_xConnected THEN Tcp_xEStop := TRUE; END_IF;
 END_IF;
 
@@ -1336,6 +844,16 @@ IF tonSend.Q AND Tcp_xConnected THEN
 	strOut := CONCAT(strOut, SEL(HMI_xLampFault, 'false', 'true'));
 	strOut := CONCAT(strOut, ',"HMI_rForceShow":');
 	strOut := CONCAT(strOut, REAL_TO_STRING(HMI_rForceShow));
+	strOut := CONCAT(strOut, ',"Force_xCommOk":');
+	strOut := CONCAT(strOut, SEL(Force_xCommOk, 'false', 'true'));
+	strOut := CONCAT(strOut, ',"Force_xTareBusy":');
+	strOut := CONCAT(strOut, SEL(Force_xTareBusy, 'false', 'true'));
+	strOut := CONCAT(strOut, ',"Force_xTareDone":');
+	strOut := CONCAT(strOut, SEL(Force_xTareDone, 'false', 'true'));
+	strOut := CONCAT(strOut, ',"HMI_xForceGuide":');
+	strOut := CONCAT(strOut, SEL(HMI_xForceGuide, 'false', 'true'));
+	strOut := CONCAT(strOut, ',"Force_xSlaveFail":');
+	strOut := CONCAT(strOut, SEL(Force_xSlaveFail, 'false', 'true'));
 	strOut := CONCAT(strOut, ',"Tcp_xConnected":true,"Tcp_xTimeout":');
 	strOut := CONCAT(strOut, SEL(Tcp_xTimeout, 'false', 'true'));
 	strOut := CONCAT(strOut, ',"AxisFb_rPosY":');
@@ -1567,14 +1085,258 @@ END_CASE;
           </data>
         </addData>
       </pou>
+      <pou name="PRG_Force485" pouType="program">
+        <interface>
+          <localVars>
+            <variable name="iSlaveStep">
+              <type><INT /></type>
+            </variable>
+            <variable name="iSlaveTry">
+              <type><INT /></type>
+            </variable>
+            <variable name="tonSlave">
+              <type><derived name="TON" /></type>
+            </variable>
+            <variable name="wSnap">
+              <type><WORD /></type>
+            </variable>
+            <variable name="wRawLast">
+              <type><WORD /></type>
+            </variable>
+            <variable name="xTarePrev">
+              <type><BOOL /></type>
+            </variable>
+            <variable name="xUntarePrev">
+              <type><BOOL /></type>
+            </variable>
+            <variable name="xUnitInit">
+              <type><BOOL /></type>
+            </variable>
+            <variable name="diRaw">
+              <type><DINT /></type>
+            </variable>
+            <variable name="rTmp">
+              <type><REAL /></type>
+            </variable>
+            <variable name="xTareReq">
+              <type><BOOL /></type>
+            </variable>
+          </localVars>
+        </interface>
+        <body>
+          <ST>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">(*==============================================================================
+ * PRG_Force485 — SM1001 使能 + 发读等回文（最多3次）+ 去皮/换算
+ *
+ * 流程（严格按需求）：
+ *   1) 使能 Modbus 从站 SM1001
+ *   2) 发送一次读（破坏 Force_wInRaw 快照，等组态 FC03 通道写回 = 有回文）
+ *   3) 有回文 → Force_xCommOk，进入成功态，不再重试
+ *   4) 无回文 → 关闭 SM1001，重新使能，再读
+ *   5) 3 次均无回文 → Force_xSlaveFail / 报警 1006
+ *
+ * 组态：读通道 FC03 0x0000 → Force_wInRaw（循环或由 Force_xReadTrig 触发均可）
+ *============================================================================*)
+
+Force_xTareDone := FALSE;
+
+IF NOT Force_xEnable THEN
+	SM1001 := FALSE;
+	Force_xReadTrig := FALSE;
+	Force_xCommOk := FALSE;
+	Force_xTimeout := FALSE;
+	Force_xTareBusy := FALSE;
+	Force_xSlaveFail := FALSE;
+	Force_iState := 0;
+	iSlaveStep := 0;
+	iSlaveTry := 0;
+	RETURN;
+END_IF;
+
+CASE iSlaveStep OF
+	0: (* 准备：先关从站，再进入使能 *)
+		IF iSlaveTry &gt;= 3 THEN
+			SM1001 := FALSE;
+			Force_xReadTrig := FALSE;
+			Force_xSlaveFail := TRUE;
+			Force_xTimeout := TRUE;
+			Force_xCommOk := FALSE;
+			Force_iState := -2;
+			iSlaveStep := 99;
+		ELSE
+			SM1001 := FALSE;
+			Force_xReadTrig := FALSE;
+			Force_xCommOk := FALSE;
+			tonSlave(IN := FALSE);
+			tonSlave(IN := TRUE, PT := T#200MS);
+			Force_iState := 0;
+			iSlaveStep := 1;
+		END_IF;
+
+	1: (* 关断保持 *)
+		SM1001 := FALSE;
+		Force_xReadTrig := FALSE;
+		tonSlave();
+		IF tonSlave.Q THEN
+			tonSlave(IN := FALSE);
+			iSlaveStep := 2;
+		END_IF;
+
+	2: (* ① 使能从站 *)
+		SM1001 := TRUE;
+		Force_xReadTrig := FALSE;
+		iSlaveTry := iSlaveTry + 1;
+		tonSlave(IN := FALSE);
+		tonSlave(IN := TRUE, PT := T#100MS);
+		Force_iState := 1;
+		iSlaveStep := 3;
+
+	3: (* 使能稳定后：② 发读命令（破坏快照 + 读触发） *)
+		SM1001 := TRUE;
+		tonSlave();
+		IF tonSlave.Q THEN
+			(* 破坏映射值：有回文时通道会写回真实寄存器 *)
+			wSnap := Force_wInRaw XOR 16#FFFF;
+			Force_wInRaw := wSnap;
+			Force_xReadTrig := FALSE;
+			tonSlave(IN := FALSE);
+			tonSlave(IN := TRUE, PT := T#20MS);
+			Force_iState := 2;
+			iSlaveStep := 4;
+		END_IF;
+
+	4: (* 读触发上升沿 *)
+		SM1001 := TRUE;
+		tonSlave();
+		IF tonSlave.Q THEN
+			Force_xReadTrig := TRUE;
+			tonSlave(IN := FALSE);
+			tonSlave(IN := TRUE, PT := T#500MS);
+			Force_iState := 3;
+			iSlaveStep := 5;
+		END_IF;
+
+	5: (* ③ 等回文：Force_wInRaw 被总线写回且不等于破坏值 *)
+		SM1001 := TRUE;
+		Force_xReadTrig := TRUE;
+		tonSlave();
+		IF Force_wInRaw &lt;&gt; wSnap THEN
+			(* 有回文 → 成功，不再尝试 *)
+			Force_xReadTrig := FALSE;
+			Force_xCommOk := TRUE;
+			Force_xTimeout := FALSE;
+			Force_xSlaveFail := FALSE;
+			wRawLast := Force_wInRaw;
+			Force_iState := 4;
+			tonSlave(IN := FALSE);
+			iSlaveStep := 10;
+		ELSIF tonSlave.Q THEN
+			(* 无回文 → 关从站，回到 0 重新使能 *)
+			Force_xReadTrig := FALSE;
+			SM1001 := FALSE;
+			Force_xCommOk := FALSE;
+			Force_iState := 5;
+			tonSlave(IN := FALSE);
+			iSlaveStep := 0;
+		END_IF;
+
+	10: (* 成功：保持使能，不再重试使能 *)
+		SM1001 := TRUE;
+		Force_xReadTrig := FALSE;
+		Force_xCommOk := TRUE;
+		Force_xTimeout := FALSE;
+		IF Force_wInRaw &lt;&gt; wRawLast THEN
+			wRawLast := Force_wInRaw;
+		END_IF;
+
+	99: (* 3 次失败；复位清 Force_xSlaveFail 后从 0 重来 *)
+		SM1001 := FALSE;
+		Force_xReadTrig := FALSE;
+		IF Force_xSlaveFail THEN
+			Force_xTimeout := TRUE;
+			Force_xCommOk := FALSE;
+		ELSE
+			iSlaveTry := 0;
+			Force_xTimeout := FALSE;
+			iSlaveStep := 0;
+		END_IF;
+END_CASE;
+
+(* ----- 原始值换算（成功后持续；探测中也换算便于监视） ----- *)
+diRaw := DWORD_TO_DINT(WORD_TO_DWORD(Force_wInRaw));
+IF diRaw &gt; 32767 THEN
+	diRaw := diRaw - 65536;
+END_IF;
+Force_iRaw := DINT_TO_INT(diRaw);
+IF Force_rScale &lt; 1.0E-12 THEN
+	rTmp := INT_TO_REAL(Force_iRaw);
+ELSE
+	rTmp := INT_TO_REAL(Force_iRaw) * Force_rScale;
+END_IF;
+IF NOT HMI_xForceSimEnable AND iSlaveStep = 10 THEN
+	rForceAct := rTmp;
+END_IF;
+
+IF NOT xUnitInit AND iSlaveStep = 10 THEN
+	Force_wOutUnit := 5;
+	xUnitInit := TRUE;
+END_IF;
+
+xTareReq := FALSE;
+IF iSlaveStep = 10 THEN
+	IF ((HMI_xForceTare OR Tcp_xForceTare OR Logic_xForceTare) AND NOT xTarePrev) THEN
+		Force_wOutTare := 1;
+		xTareReq := TRUE;
+		Force_xTareDone := TRUE;
+	END_IF;
+	xTarePrev := HMI_xForceTare OR Tcp_xForceTare OR Logic_xForceTare;
+	IF Tcp_xForceTare THEN
+		Tcp_xForceTare := FALSE;
+	END_IF;
+	IF Logic_xForceTare THEN
+		Logic_xForceTare := FALSE;
+	END_IF;
+
+	IF ((HMI_xForceUntare OR Tcp_xForceUntare) AND NOT xUntarePrev) THEN
+		Force_wOutTare := 2;
+		xTareReq := TRUE;
+		Force_xTareDone := TRUE;
+	END_IF;
+	xUntarePrev := HMI_xForceUntare OR Tcp_xForceUntare;
+	IF Tcp_xForceUntare THEN
+		Tcp_xForceUntare := FALSE;
+	END_IF;
+END_IF;
+
+Force_xTareBusy := xTareReq;
+</xhtml>
+          </ST>
+        </body>
+        <addData>
+          <data name="http://www.3s-software.com/plcopenxml/pathstructure" handleUnknown="discard">
+            <pathStructure isFolder="False" name="Device" namespace="1ee21fdd-5562-44a0-a3ce-665d74916d50" factoryName="Inovance.InoPro.InoDeviceObject.DeviceObjectFactory" factoryGuid="{84d12aa5-3225-473b-9df6-18af40889bdf}" objectGuid="d7de5ac3-3f30-45ac-8468-ec250b4e523b">
+              <pathStructure isFolder="False" name="Plc Logic" namespace="00000000-0000-0000-0000-000000000000" factoryName="_3S.CoDeSys.PlcLogicObject.PlcLogicObjectFactory" factoryGuid="{8ceeba4e-ac7a-4fbd-9415-bfb2d98668ab}" objectGuid="8a291c6e-c5c5-4a07-8c04-1100df0e1491">
+                <pathStructure isFolder="False" name="Application" namespace="e5b60c93-5445-4e40-ada9-cd9c005549b4" factoryName="_3S.CoDeSys.ApplicationObject.ApplicationObjectFactory" factoryGuid="{ECADC42E-716E-4ff3-A93C-0CD143F9743F}" objectGuid="69822df8-b9c0-4a01-9450-b2cdc030688c">
+                  <pathStructure isFolder="False" name="PRG_Force485" namespace="e5b60c93-5445-4e40-ada9-cd9c005549b4" factoryName="Inovance.InoPro.InoPOUObject.POUObjectFactory" factoryGuid="{39C4ED2B-903C-464c-9041-7DF4ECEE9609}" objectGuid="a1b2c3d4-e5f6-4789-a012-777777777777" />
+                </pathStructure>
+              </pathStructure>
+            </pathStructure>
+          </data>
+          <data name="http://www.3s-software.com/plcopenxml/objectid" handleUnknown="discard">
+            <ObjectId>a1b2c3d4-e5f6-4789-a012-777777777777</ObjectId>
+          </data>
+        </addData>
+      </pou>
       <pou name="PLC_PRG" pouType="program">
         <interface />
         <body>
           <ST>
             <xhtml xmlns="http://www.w3.org/1999/xhtml">(*==============================================================================
  * PLC_PRG — 主任务入口（MainTask）
- * 只调用逻辑程序；禁止在此 CALL PRG_Axis_Control（轴控在独立 AxisTask）
+ * SM1001 由 PRG_Force485 管理；禁止在此 CALL PRG_Axis_Control
  *============================================================================*)
+PRG_Force485();
+PRG_TcpHmi();
 PRG_Logic();
 </xhtml>
           </ST>
@@ -1667,6 +1429,21 @@ PRG_Logic();
                 <BOOL />
               </type>
             </variable>
+            <variable name="xGuidePrev">
+              <type>
+                <BOOL />
+              </type>
+            </variable>
+            <variable name="xAutoTareSent">
+              <type>
+                <BOOL />
+              </type>
+            </variable>
+            <variable name="xDoForceFollow">
+              <type>
+                <BOOL />
+              </type>
+            </variable>
             <variable name="xBridgeInited">
               <type>
                 <BOOL />
@@ -1677,7 +1454,7 @@ PRG_Logic();
         <body>
           <ST>
             <xhtml xmlns="http://www.w3.org/1999/xhtml">(*==============================================================================
- * PRG_Logic — 设备态 / 手动裁定 / 自动步序 / 恒力
+ * PRG_Logic — 设备态 / 手动裁定 / 自动步序 / 恒力 / 力引导
  * 禁止 CALL Axis / FB_Servo / FB_XDiff
  *============================================================================*)
 
@@ -1691,6 +1468,7 @@ HMI_xStopHold3s := ResetBtn OR Tcp_xStopHold3s;
 IF Tcp_xOnline THEN
 	HMI_xAutoMode := Tcp_xAutoMode;
 	HMI_xForceSimEnable := Tcp_xForceSimEnable;
+	HMI_xForceGuide := Tcp_xForceGuide;
 END_IF;
 HMI_xJogXPos := JogFwd OR Tcp_xJogXPos;
 HMI_xJogXNeg := JogBwd OR Tcp_xJogXNeg;
@@ -1704,6 +1482,7 @@ HMI_xJogRPos := Tcp_xJogRPos;
 HMI_xJogRNeg := Tcp_xJogRNeg;
 HMI_xAutoStart := Tcp_xAutoStart;
 HMI_xAutoAbort := Tcp_xAutoAbort;
+(* 去皮：面板绑 HMI_xForceTare/Untare；TCP 写 Tcp_xForce*，由 PRG_Force485 采沿，勿在此覆盖 HMI *)
 IF Tcp_xOnline THEN
 	HMI_rJogVelX := Tcp_rJogVelX;
 	HMI_rSpinVel := Tcp_rSpinVel;
@@ -1734,13 +1513,15 @@ IF xResetPulse THEN
 	eDevState := 0;
 	xPostResetHold := TRUE;
 	iAutoStep := 0;
+	Force_xSlaveFail := FALSE;
 ELSE
 	AxisCmd_xResetFault := FALSE;
 END_IF;
 
 xFaultAggregate := AxisFb_xFaultM1 OR AxisFb_xFaultM2 OR AxisFb_xFaultY OR AxisFb_xFaultZ
 	OR (xM5Ready AND AxisFb_xFaultR)
-	OR (NOT HMI_xForceSimEnable AND Force_xTimeout);
+	OR (NOT HMI_xForceSimEnable AND Force_xTimeout)
+	OR (NOT HMI_xForceSimEnable AND Force_xSlaveFail);
 xEnablePermit := HMI_xEStop AND NOT xEStopLatched AND NOT xFaultAggregate;
 IF HMI_xAutoMode THEN eOpMode := 1; ELSE eOpMode := 0; END_IF;
 HMI_eOpMode := eOpMode;
@@ -1861,31 +1642,28 @@ IF Dev_xRun AND (eOpMode = 1) AND NOT HMI_xStop THEN
 			AxisCmd_xMoveRelX := TRUE;
 			IF AxisFb_xMoveDoneX THEN
 				AxisCmd_xMoveRelX := FALSE;
+				xAutoTareSent := FALSE;
 				iAutoStep := 2;
 			END_IF;
-		2: (* PressZ *)
+		2: (* PressZ：进入时内部去皮；Z 由力引导驱动 *)
+			IF NOT xAutoTareSent THEN
+				Logic_xForceTare := TRUE;
+				xAutoTareSent := TRUE;
+			END_IF;
 			AxisCmd_xHoldR := TRUE;
 			AxisCmd_rRHoldPos := rRHold;
-			AxisCmd_xUseZVelCmd := TRUE;
-			IF rForceAct &gt;= HMI_rForceSet THEN
-				AxisCmd_rZVelCmd := 0.0;
+			IF rForceAct &gt;= HMI_rForceSet AND HMI_xForceGuide THEN
 				iAutoStep := 3;
 				xMoveYSent := FALSE;
-			ELSE
-				AxisCmd_rZVelCmd := -ABS(HMI_rAutoVelZ);
 			END_IF;
-		3: (* MoveY + 恒力 *)
+		3: (* MoveY；Z 恒力由力引导 *)
 			AxisCmd_xHoldR := TRUE;
 			AxisCmd_rRHoldPos := rRHold;
 			AxisCmd_rMoveDistY := AxisCmd_rWheelBase;
 			AxisCmd_rMoveVelY := HMI_rAutoVelY;
 			AxisCmd_xMoveRelY := TRUE;
-			AxisCmd_xUseZVelCmd := TRUE;
-			AxisCmd_rZVelCmd := LIMIT(-ABS(HMI_rAutoVelZ),
-				rForceKp * (HMI_rForceSet - rForceAct), ABS(HMI_rAutoVelZ));
 			IF AxisFb_xMoveDoneY THEN
 				AxisCmd_xMoveRelY := FALSE;
-				AxisCmd_rZVelCmd := 0.0;
 				iAutoStep := 4;
 			END_IF;
 		4: (* RWobble 占位 *)
@@ -1897,9 +1675,25 @@ IF Dev_xRun AND (eOpMode = 1) AND NOT HMI_xStop THEN
 	END_CASE;
 END_IF;
 
+(* ===== 力引导：HMI_xForceGuide 电平；手动/自动均可 ===== *)
+xDoForceFollow := HMI_xForceGuide AND Dev_xRun AND NOT HMI_xStop AND NOT Dev_xError
+	AND (HMI_xForceSimEnable OR Force_xCommOk);
+IF xDoForceFollow THEN
+	IF NOT (HMI_xJogZPos OR HMI_xJogZNeg) THEN
+		AxisCmd_xUseZVelCmd := TRUE;
+		AxisCmd_rZVelCmd := LIMIT(-ABS(HMI_rAutoVelZ),
+			rForceKp * (HMI_rForceSet - rForceAct), ABS(HMI_rAutoVelZ));
+		IF ABS(HMI_rForceSet - rForceAct) &lt; 0.5 THEN
+			AxisCmd_rZVelCmd := 0.0;
+		END_IF;
+	END_IF;
+END_IF;
+
 IF Dev_xError THEN
 	IF xEStopLatched OR NOT HMI_xEStop THEN
 		iAlarmID := 1001;
+	ELSIF NOT HMI_xForceSimEnable AND Force_xSlaveFail THEN
+		iAlarmID := 1006;
 	ELSIF NOT HMI_xForceSimEnable AND Force_xTimeout THEN
 		iAlarmID := 1005;
 	ELSE
@@ -23195,7 +22989,7 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
         <addData>
           <data name="http://www.3s-software.com/plcopenxml/pathstructure" handleUnknown="discard">
             <pathStructure isFolder="False" name="Device" namespace="1ee21fdd-5562-44a0-a3ce-665d74916d50" factoryName="Inovance.InoPro.InoDeviceObject.DeviceObjectFactory" factoryGuid="{84d12aa5-3225-473b-9df6-18af40889bdf}" objectGuid="d7de5ac3-3f30-45ac-8468-ec250b4e523b">
-              <pathStructure isFolder="False" name="MODBUS_COM0" namespace="1ee21fdd-5562-44a0-a3ce-665d74916d50" factoryName="Inovance.InoPro.InoDeviceObject.DeviceObjectFactory" factoryGuid="{84d12aa5-3225-473b-9df6-18af40889bdf}" objectGuid="a02885fa-0871-440c-90fe-6d2000c90846" />
+              <pathStructure isFolder="False" name="MODBUS_COM0" namespace="1ee21fdd-5562-44a0-a3ce-665d74916d50" factoryName="Inovance.InoPro.InoDeviceObject.DeviceObjectFactory" factoryGuid="{84d12aa5-3225-473b-9df6-18af40889bdf}" objectGuid="63f393c1-643e-45c4-8942-e46db1e4b23f" />
             </pathStructure>
           </data>
           <data name="Device" handleUnknown="discard">
@@ -23497,7 +23291,7 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
                     <Parameter ParameterId="393217" type="localTypes:MODBUSMASTERCOMPORT" IndexInDevDesc="1">
                       <Attributes offlineaccess="write" onlineaccess="read" />
                       <Value name="_x0033_93217" visiblename="modbus master com port" offlineaccess="write" onlineaccess="read" desc="modbus master com port">
-                        <Element name="SlaveNum" visiblename="SlaveNum">0</Element>
+                        <Element name="SlaveNum" visiblename="SlaveNum">1</Element>
                         <Element name="ChannelNum" visiblename="ChannelNum">0</Element>
                         <Element name="REV" visiblename="REV">0</Element>
                         <Element name="AckDelay" visiblename="AckDelay">1000</Element>
@@ -23540,7 +23334,170 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
             </Device>
           </data>
           <data name="http://www.3s-software.com/plcopenxml/objectid" handleUnknown="discard">
-            <ObjectId>a02885fa-0871-440c-90fe-6d2000c90846</ObjectId>
+            <ObjectId>63f393c1-643e-45c4-8942-e46db1e4b23f</ObjectId>
+          </data>
+        </addData>
+      </configuration>
+      <configuration name="modbus_protocol">
+        <addData>
+          <data name="http://www.3s-software.com/plcopenxml/pathstructure" handleUnknown="discard">
+            <pathStructure isFolder="False" name="Device" namespace="1ee21fdd-5562-44a0-a3ce-665d74916d50" factoryName="Inovance.InoPro.InoDeviceObject.DeviceObjectFactory" factoryGuid="{84d12aa5-3225-473b-9df6-18af40889bdf}" objectGuid="d7de5ac3-3f30-45ac-8468-ec250b4e523b">
+              <pathStructure isFolder="False" name="MODBUS_COM0" namespace="1ee21fdd-5562-44a0-a3ce-665d74916d50" factoryName="Inovance.InoPro.InoDeviceObject.DeviceObjectFactory" factoryGuid="{84d12aa5-3225-473b-9df6-18af40889bdf}" objectGuid="63f393c1-643e-45c4-8942-e46db1e4b23f">
+                <pathStructure isFolder="False" name="modbus_protocol" namespace="1ee21fdd-5562-44a0-a3ce-665d74916d50" factoryName="Inovance.InoPro.InoDeviceObject.DeviceObjectFactory" factoryGuid="{84d12aa5-3225-473b-9df6-18af40889bdf}" objectGuid="c90e44dd-5e77-4397-9663-543306c00457" />
+              </pathStructure>
+            </pathStructure>
+          </data>
+          <data name="Device" handleUnknown="discard">
+            <Device xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="">
+              <DeviceType>
+                <DeviceIdentification>
+                  <Type>40402</Type>
+                  <Id>10F4 0402</Id>
+                  <Version>00.00.00.10</Version>
+                </DeviceIdentification>
+                <Connector moduleType="257" role="child" interface="Common.ModbusMasterComPort" connectorId="1" alwaymapping="false">
+                  <HostParameterSet />
+                  <DriverInfoType TaskName="" />
+                </Connector>
+                <Connector moduleType="40402" interface="Common.ModbusSlaveComPort" connectorId="2" hostpath="1">
+                  <HostParameterSet>
+                    <Parameter ParameterId="3" type="localTypes:ModbusFaultofSlave" IndexInDevDesc="1">
+                      <Attributes offlineaccess="write" onlineaccess="read" />
+                      <Value name="_x0033_" visiblename="modbus slave diag" offlineaccess="write" onlineaccess="read" desc="modbus slave diag">
+                        <Element name="ModbusFaultofChannelFlag" visiblename="ModbusFaultofChannelFlag" />
+                        <Element name="ModbusFaultofChannelErrorCodeArray" visiblename="ModbusFaultofChannelErrorCodeArray" />
+                      </Value>
+                      <Name>modbus slave diag</Name>
+                      <Description>modbus slave diag</Description>
+                    </Parameter>
+                    <Parameter ParameterId="1000" type="std: ARRAY[0..0] OF WORD">
+                      <Attributes channel="input" />
+                      <Value name="_x0031_000_0_0_0" visiblename="Channel 01[0]" desc="READ 16#0000(=0000)" />
+                      <Name>Channel 01</Name>
+                      <Description>读保持寄存器</Description>
+                    </Parameter>
+                    <Parameter ParameterId="2001" type="std: ARRAY[0..0] OF WORD">
+                      <Attributes channel="output" />
+                      <Value name="_x0032_001_0_0_0" visiblename="Channel 02[0]" desc="WRITE 16#0011(=0017)" />
+                      <Name>Channel 02</Name>
+                      <Description>写单个寄存器</Description>
+                    </Parameter>
+                    <Parameter ParameterId="2002" type="std: ARRAY[0..0] OF WORD">
+                      <Attributes channel="output" />
+                      <Value name="_x0032_002_0_0_0" visiblename="Channel 03[0]" desc="WRITE 16#0002(=0002)" />
+                      <Name>Channel 03</Name>
+                      <Description>写单个寄存器</Description>
+                    </Parameter>
+                    <Parameter ParameterId="5000" type="std:BOOL">
+                      <Attributes download="false" />
+                      <Value name="_x0035_000" visiblename="UseDec">False</Value>
+                      <Name>UseDec</Name>
+                    </Parameter>
+                    <Parameter ParameterId="393217" type="localTypes:MODBUSMASTERONESLAVE" IndexInDevDesc="0">
+                      <Attributes offlineaccess="write" onlineaccess="read" />
+                      <Value name="_x0033_93217" visiblename="modbus slave com port" offlineaccess="write" onlineaccess="read" desc="modbus slave com port">
+                        <Element name="ChannelNum" visiblename="ChannelNum">3</Element>
+                        <Element name="SlaveAddr" visiblename="SlaveAddr">1</Element>
+                        <Element name="ModbusComSet" visiblename="ModbusComSet">0</Element>
+                        <Element name="MasterNumSet" visiblename="MasterNumSet">0</Element>
+                        <Element name="EnableSlaveVariable" visiblename="EnableSlaveVariable">1001</Element>
+                        <Element name="DataFormat" visiblename="DataFormat">0</Element>
+                        <Element name="wRev" visiblename="wRev">1</Element>
+                        <Element name="AckDelay" visiblename="AckDelay">1000</Element>
+                      </Value>
+                      <Name>modbus slave com port</Name>
+                      <Description>modbus slave com port</Description>
+                    </Parameter>
+                    <Parameter ParameterId="393218" type="localTypes:MODBUSCHANNELSET">
+                      <Attributes />
+                      <Value name="_x0033_93218" visiblename="channel">
+                        <Element name="PremeterSet" visiblename="PremeterSet">
+                          <Element name="Bit0" visiblename="Bit0">FALSE</Element>
+                          <Element name="Bit1" visiblename="Bit1">FALSE</Element>
+                          <Element name="Bit2" visiblename="Bit2">FALSE</Element>
+                          <Element name="Bit3" visiblename="Bit3">TRUE</Element>
+                          <Element name="Bit4" visiblename="Bit4">FALSE</Element>
+                          <Element name="Bit5" visiblename="Bit5">FALSE</Element>
+                          <Element name="Bit6" visiblename="Bit6">FALSE</Element>
+                          <Element name="Bit7" visiblename="Bit7">TRUE</Element>
+                        </Element>
+                        <Element name="TrigRes" visiblename="TrigRes">0</Element>
+                        <Element name="CycleTimes" visiblename="CycleTimes">100</Element>
+                        <Element name="ReadRegOffSet" visiblename="ReadRegOffSet">0</Element>
+                        <Element name="ReadRegLeg" visiblename="ReadRegLeg">1</Element>
+                        <Element name="WriteRegOffSet" visiblename="WriteRegOffSet">0</Element>
+                        <Element name="WriteRegLeg" visiblename="WriteRegLeg">1</Element>
+                        <Element name="IOChannel" visiblename="IOChannel">0</Element>
+                        <Element name="ResendCount" visiblename="ResendCount">1</Element>
+                        <Element name="TriggerCondition" visiblename="TriggerCondition">0</Element>
+                        <Element name="ChannelName" visiblename="ChannelName">'Channel 01'</Element>
+                        <Element name="ChannelNote" visiblename="ChannelNote">''</Element>
+                      </Value>
+                      <Name>channel</Name>
+                    </Parameter>
+                    <Parameter ParameterId="393219" type="localTypes:MODBUSCHANNELSET">
+                      <Attributes />
+                      <Value name="_x0033_93219" visiblename="channel">
+                        <Element name="PremeterSet" visiblename="PremeterSet">
+                          <Element name="Bit0" visiblename="Bit0">TRUE</Element>
+                          <Element name="Bit1" visiblename="Bit1">FALSE</Element>
+                          <Element name="Bit2" visiblename="Bit2">TRUE</Element>
+                          <Element name="Bit3" visiblename="Bit3">FALSE</Element>
+                          <Element name="Bit4" visiblename="Bit4">TRUE</Element>
+                          <Element name="Bit5" visiblename="Bit5">FALSE</Element>
+                          <Element name="Bit6" visiblename="Bit6">FALSE</Element>
+                          <Element name="Bit7" visiblename="Bit7">TRUE</Element>
+                        </Element>
+                        <Element name="TrigRes" visiblename="TrigRes">0</Element>
+                        <Element name="CycleTimes" visiblename="CycleTimes">0</Element>
+                        <Element name="ReadRegOffSet" visiblename="ReadRegOffSet">0</Element>
+                        <Element name="ReadRegLeg" visiblename="ReadRegLeg">1</Element>
+                        <Element name="WriteRegOffSet" visiblename="WriteRegOffSet">17</Element>
+                        <Element name="WriteRegLeg" visiblename="WriteRegLeg">1</Element>
+                        <Element name="IOChannel" visiblename="IOChannel">1</Element>
+                        <Element name="ResendCount" visiblename="ResendCount">1</Element>
+                        <Element name="TriggerCondition" visiblename="TriggerCondition">1101</Element>
+                        <Element name="ChannelName" visiblename="ChannelName">'Channel 02'</Element>
+                        <Element name="ChannelNote" visiblename="ChannelNote">''</Element>
+                      </Value>
+                      <Name>channel</Name>
+                    </Parameter>
+                    <Parameter ParameterId="393220" type="localTypes:MODBUSCHANNELSET">
+                      <Attributes />
+                      <Value name="_x0033_93220" visiblename="channel">
+                        <Element name="PremeterSet" visiblename="PremeterSet">
+                          <Element name="Bit0" visiblename="Bit0">TRUE</Element>
+                          <Element name="Bit1" visiblename="Bit1">FALSE</Element>
+                          <Element name="Bit2" visiblename="Bit2">TRUE</Element>
+                          <Element name="Bit3" visiblename="Bit3">FALSE</Element>
+                          <Element name="Bit4" visiblename="Bit4">TRUE</Element>
+                          <Element name="Bit5" visiblename="Bit5">FALSE</Element>
+                          <Element name="Bit6" visiblename="Bit6">FALSE</Element>
+                          <Element name="Bit7" visiblename="Bit7">TRUE</Element>
+                        </Element>
+                        <Element name="TrigRes" visiblename="TrigRes">0</Element>
+                        <Element name="CycleTimes" visiblename="CycleTimes">0</Element>
+                        <Element name="ReadRegOffSet" visiblename="ReadRegOffSet">0</Element>
+                        <Element name="ReadRegLeg" visiblename="ReadRegLeg">1</Element>
+                        <Element name="WriteRegOffSet" visiblename="WriteRegOffSet">2</Element>
+                        <Element name="WriteRegLeg" visiblename="WriteRegLeg">1</Element>
+                        <Element name="IOChannel" visiblename="IOChannel">2</Element>
+                        <Element name="ResendCount" visiblename="ResendCount">1</Element>
+                        <Element name="TriggerCondition" visiblename="TriggerCondition">1102</Element>
+                        <Element name="ChannelName" visiblename="ChannelName">'Channel 03'</Element>
+                        <Element name="ChannelNote" visiblename="ChannelNote">''</Element>
+                      </Value>
+                      <Name>channel</Name>
+                    </Parameter>
+                  </HostParameterSet>
+                  <DriverInfoType TaskName="" />
+                </Connector>
+                <DeviceParameterSet />
+              </DeviceType>
+            </Device>
+          </data>
+          <data name="http://www.3s-software.com/plcopenxml/objectid" handleUnknown="discard">
+            <ObjectId>c90e44dd-5e77-4397-9663-543306c00457</ObjectId>
           </data>
         </addData>
       </configuration>
@@ -24615,7 +24572,7 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
             <REAL />
           </type>
           <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">【力设定N】</xhtml>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">目标力设定(N)，力引导/自动压下用</xhtml>
           </documentation>
         </variable>
         <variable name="HMI_xForceSimEnable">
@@ -24623,7 +24580,7 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
             <BOOL />
           </type>
           <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">【力模拟使能】</xhtml>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">力模拟使能：TRUE用HMI_rForceSim</xhtml>
           </documentation>
         </variable>
         <variable name="HMI_rForceSim">
@@ -24631,7 +24588,7 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
             <REAL />
           </type>
           <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">【力模拟值N】</xhtml>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">模拟力设定(N)，仅模拟使能时有效</xhtml>
           </documentation>
         </variable>
         <variable name="HMI_iAutoStepShow">
@@ -24663,7 +24620,7 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
             <REAL />
           </type>
           <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">【力实际N】</xhtml>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">力显示值(N)，供HMI/Web</xhtml>
           </documentation>
         </variable>
         <variable name="Tcp_xConnected">
@@ -24873,6 +24830,9 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
           <initialValue>
             <simpleValue value="100.0" />
           </initialValue>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">TCP影子：目标力(N)</xhtml>
+          </documentation>
         </variable>
         <variable name="Tcp_xForceSimEnable">
           <type>
@@ -24881,11 +24841,41 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
           <initialValue>
             <simpleValue value="TRUE" />
           </initialValue>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">TCP影子：力模拟使能</xhtml>
+          </documentation>
         </variable>
         <variable name="Tcp_rForceSim">
           <type>
             <REAL />
           </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">TCP影子：模拟力(N)</xhtml>
+          </documentation>
+        </variable>
+        <variable name="Tcp_xForceTare">
+          <type>
+            <BOOL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">TCP影子：去皮</xhtml>
+          </documentation>
+        </variable>
+        <variable name="Tcp_xForceUntare">
+          <type>
+            <BOOL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">TCP影子：取消去皮</xhtml>
+          </documentation>
+        </variable>
+        <variable name="Tcp_xForceGuide">
+          <type>
+            <BOOL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">TCP影子：力引导使能</xhtml>
+          </documentation>
         </variable>
         <variable name="Tcp_uiPort">
           <type>
@@ -24911,7 +24901,7 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
             <REAL />
           </type>
           <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">【实际力N】</xhtml>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">实际力(N)，力传感换算或模拟值</xhtml>
           </documentation>
         </variable>
         <variable name="rForceKp">
@@ -24919,7 +24909,7 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
             <REAL />
           </type>
           <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">【恒力Kp】</xhtml>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">恒力比例增益Kp，力引导Z轴用</xhtml>
           </documentation>
         </variable>
         <variable name="Force_xEnable">
@@ -24930,18 +24920,42 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
             <simpleValue value="TRUE" />
           </initialValue>
           <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Force】通讯使能</xhtml>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">力传感通讯总使能；FALSE时关闭SM1001</xhtml>
           </documentation>
         </variable>
-        <variable name="Force_bySlave">
+        <variable name="Force_wInRaw">
           <type>
-            <BYTE />
+            <WORD />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">Modbus读通道映射：保持寄存器0x0000原始力值</xhtml>
+          </documentation>
+        </variable>
+        <variable name="Force_xReadTrig">
+          <type>
+            <BOOL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">探测读触发；可绑通道上升沿，循环读可不绑</xhtml>
+          </documentation>
+        </variable>
+        <variable name="Force_wOutTare">
+          <type>
+            <WORD />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">Modbus写通道：寄存器0x0011去皮(1)/取消(2)</xhtml>
+          </documentation>
+        </variable>
+        <variable name="Force_wOutUnit">
+          <type>
+            <WORD />
           </type>
           <initialValue>
-            <simpleValue value="1" />
+            <simpleValue value="5" />
           </initialValue>
           <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Force】Modbus站号</xhtml>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">Modbus写通道：寄存器0x0002单位，5=牛顿N</xhtml>
           </documentation>
         </variable>
         <variable name="Force_rScale">
@@ -24952,7 +24966,7 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
             <simpleValue value="0.01" />
           </initialValue>
           <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Force】原始值倍率默认百分位</xhtml>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">原始值倍率，默认0.01(百分位)</xhtml>
           </documentation>
         </variable>
         <variable name="HMI_xForceTare">
@@ -24960,7 +24974,23 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
             <BOOL />
           </type>
           <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Force】去皮脉冲</xhtml>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">去皮触发(上升沿)，面板/外部</xhtml>
+          </documentation>
+        </variable>
+        <variable name="HMI_xForceUntare">
+          <type>
+            <BOOL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">取消去皮触发(上升沿)</xhtml>
+          </documentation>
+        </variable>
+        <variable name="HMI_xForceGuide">
+          <type>
+            <BOOL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">力引导使能：TRUE持续跟力，FALSE停止</xhtml>
           </documentation>
         </variable>
         <variable name="Force_xCommOk">
@@ -24968,7 +24998,7 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
             <BOOL />
           </type>
           <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Force】通讯OK</xhtml>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">通讯成功(已收到读回文)</xhtml>
           </documentation>
         </variable>
         <variable name="Force_xTimeout">
@@ -24976,7 +25006,39 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
             <BOOL />
           </type>
           <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Force】通讯超时</xhtml>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">通讯超时/失败标志</xhtml>
+          </documentation>
+        </variable>
+        <variable name="Force_xSlaveFail">
+          <type>
+            <BOOL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">SM1001使能探测失败3次，报警1006</xhtml>
+          </documentation>
+        </variable>
+        <variable name="Force_xTareBusy">
+          <type>
+            <BOOL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">去皮命令发送中</xhtml>
+          </documentation>
+        </variable>
+        <variable name="Force_xTareDone">
+          <type>
+            <BOOL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">去皮完成脉冲</xhtml>
+          </documentation>
+        </variable>
+        <variable name="Logic_xForceTare">
+          <type>
+            <BOOL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">自动步内部去皮脉冲(PRG_Logic写)</xhtml>
           </documentation>
         </variable>
         <variable name="Force_iRaw">
@@ -24984,7 +25046,7 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
             <INT />
           </type>
           <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Force】原始INT16</xhtml>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">有符号原始力计数</xhtml>
           </documentation>
         </variable>
         <variable name="Force_iState">
@@ -24992,48 +25054,8 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
             <INT />
           </type>
           <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">【Force】状态机步</xhtml>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">力任务状态：0闲置1使能2发读3等回文4成功-2失败</xhtml>
           </documentation>
-        </variable>
-        <variable name="Force_abyTx">
-          <type>
-            <array>
-              <dimension lower="0" upper="63" />
-              <baseType>
-                <BYTE />
-              </baseType>
-            </array>
-          </type>
-        </variable>
-        <variable name="Force_uiTxLen">
-          <type>
-            <UINT />
-          </type>
-        </variable>
-        <variable name="Force_xTxReq">
-          <type>
-            <BOOL />
-          </type>
-        </variable>
-        <variable name="Force_abyRx">
-          <type>
-            <array>
-              <dimension lower="0" upper="63" />
-              <baseType>
-                <BYTE />
-              </baseType>
-            </array>
-          </type>
-        </variable>
-        <variable name="Force_uiRxLen">
-          <type>
-            <UINT />
-          </type>
-        </variable>
-        <variable name="Force_xRxNew">
-          <type>
-            <BOOL />
-          </type>
         </variable>
         <variable name="AxisCmd_xJogXPos">
           <type>
@@ -25221,11 +25243,6 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
             <xhtml xmlns="http://www.w3.org/1999/xhtml" />
           </documentation>
         </pouInstance>
-        <pouInstance name="PRG_Force485" typeName="">
-          <documentation>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml" />
-          </documentation>
-        </pouInstance>
         <addData>
           <data name="http://www.3s-software.com/plcopenxml/pathstructure" handleUnknown="discard">
             <pathStructure isFolder="False" name="Device" namespace="1ee21fdd-5562-44a0-a3ce-665d74916d50" factoryName="Inovance.InoPro.InoDeviceObject.DeviceObjectFactory" factoryGuid="{84d12aa5-3225-473b-9df6-18af40889bdf}" objectGuid="d7de5ac3-3f30-45ac-8468-ec250b4e523b">
@@ -25304,6 +25321,12 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
         <Library Name="#SM3_Drive_ETC" Namespace="SM3_Drive_ETC" HideWhenReferencedAsDependency="false" PublishSymbolsInContainer="false" SystemLibrary="true" LinkAllContent="false" DefaultResolution="SM3_Drive_ETC, 4.9.3.0 (3S - Smart Software Solutions GmbH)" PlaceHolderRediretion="SM3_Drive_ETC, 4.9.3.0 (3S - Smart Software Solutions GmbH)" />
         <Library Name="#SM3_Drive_ETC_DS402_CyclicSync" Namespace="SM3_Drive_ETC_DS402_CyclicSync" HideWhenReferencedAsDependency="false" PublishSymbolsInContainer="false" SystemLibrary="true" LinkAllContent="false" DefaultResolution="SM3_Drive_ETC_DS402_CyclicSync, 4.6.6.0 (3S - Smart Software Solutions GmbH)" PlaceHolderRediretion="SM3_Drive_ETC_DS402_CyclicSync, 4.6.6.0 (3S - Smart Software Solutions GmbH)" />
         <Library Name="#CmpHCTCPIP" Namespace="CmpHCTCPIP" HideWhenReferencedAsDependency="false" PublishSymbolsInContainer="false" SystemLibrary="false" LinkAllContent="false" DefaultResolution="CmpHCTCPIP, 1.0.0.5 (Inovance)" PlaceHolderRediretion="CmpHCTCPIP, 1.0.0.5 (Inovance)" />
+        <Library Name="#TCP" Namespace="TCP" HideWhenReferencedAsDependency="false" PublishSymbolsInContainer="false" SystemLibrary="false" LinkAllContent="false" DefaultResolution="TCP, * (3S - Smart Software Solutions GmbH)" PlaceHolderRediretion="TCP, 3.5.9.50 (3S - Smart Software Solutions GmbH)" />
+        <Library Name="#HC_CommBus" Namespace="HC_CommBus" HideWhenReferencedAsDependency="false" PublishSymbolsInContainer="false" SystemLibrary="false" LinkAllContent="false" DefaultResolution="HC_CommBus, 1.3.13.2 (Inovance)" PlaceHolderRediretion="HC_CommBus, 1.3.13.2 (Inovance)">
+          <Parameters>
+            <Parameter Name="DWUUID" Value="2779097685" />
+          </Parameters>
+        </Library>
         <addData>
           <data name="http://www.3s-software.com/plcopenxml/pathstructure" handleUnknown="discard">
             <pathStructure isFolder="False" name="Device" namespace="1ee21fdd-5562-44a0-a3ce-665d74916d50" factoryName="Inovance.InoPro.InoDeviceObject.DeviceObjectFactory" factoryGuid="{84d12aa5-3225-473b-9df6-18af40889bdf}" objectGuid="d7de5ac3-3f30-45ac-8468-ec250b4e523b">
@@ -25325,7 +25348,6 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
         <Object Name="Device" ObjectId="d7de5ac3-3f30-45ac-8468-ec250b4e523b">
           <Object Name="Application" ObjectId="69822df8-b9c0-4a01-9450-b2cdc030688c">
             <Folder Name="FB">
-              <Object Name="FB_Force485" ObjectId="a1b2c3d4-e5f6-4789-a012-666666666666" />
               <Object Name="FB_TCPServer" ObjectId="7e0c956a-cfc2-4be8-b176-5148d3ef493a" />
               <Object Name="FB_XDiff" ObjectId="a1b2c3d4-e5f6-4789-a012-222222222222" />
               <Object Name="FB_Servo" ObjectId="095f55bd-5910-4f8e-b349-f7b40f09358c" />
@@ -25333,12 +25355,12 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
             <Object Name="PRG_Axis_Control" ObjectId="a1b2c3d4-e5f6-4789-a012-444444444444" />
             <Object Name="ETHERCAT" ObjectId="e0ea87e6-e4c2-4a3b-ba24-406b35fe0e37" />
             <Object Name="MainTask" ObjectId="c581ad1f-00ae-406a-b6a2-6e668ae5b04c" />
-            <Object Name="PRG_Force485" ObjectId="a1b2c3d4-e5f6-4789-a012-777777777777" />
             <Object Name="PRG_TcpHmi" ObjectId="a1b2c3d4-e5f6-4789-a012-555555555555" />
             <Object Name="库管理器" ObjectId="ad0436d6-6cec-4e4e-925c-e30bc36c75e4" />
             <Object Name="PLC_PRG" ObjectId="ff3e658d-23f1-4e79-9e6a-94708f19c17b" />
             <Object Name="GVL" ObjectId="5efdcb87-523c-4708-aac8-457600d7cdba" />
             <Object Name="PRG_Logic" ObjectId="a1b2c3d4-e5f6-4789-a012-333333333333" />
+            <Object Name="PRG_Force485" ObjectId="a1b2c3d4-e5f6-4789-a012-777777777777" />
           </Object>
           <Object Name="ETHERCAT" ObjectId="5da2d1f6-29ad-42f1-ab50-c5f30c9e97b0">
             <Object Name="MDX_EC_2" ObjectId="6cd616c7-2c84-4688-8a03-eece06df1466">
@@ -25358,7 +25380,9 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
             </Object>
           </Object>
           <Object Name="HIGH_SPEED_IO" ObjectId="5f8356e3-13dd-4980-9009-e109f35996b0" />
-          <Object Name="MODBUS_COM0" ObjectId="a02885fa-0871-440c-90fe-6d2000c90846" />
+          <Object Name="MODBUS_COM0" ObjectId="63f393c1-643e-45c4-8942-e46db1e4b23f">
+            <Object Name="modbus_protocol" ObjectId="c90e44dd-5e77-4397-9663-543306c00457" />
+          </Object>
         </Object>
       </ProjectStructure>
     </data>

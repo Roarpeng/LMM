@@ -41,10 +41,13 @@
 | 跨距(=Y行程) | `HMI_rWheelBase`（4~6 m） |
 | Y 速 / Z 速 | `HMI_rAutoVelY` / `HMI_rAutoVelZ` |
 | 力设定 | `HMI_rForceSet`（N） |
+| 力引导 | `HMI_xForceGuide`（TRUE 持续跟随 Z，FALSE 停止；手动/自动均可） |
 | 力模拟 | `HMI_xForceSimEnable` + `HMI_rForceSim` |
-| 去皮 | `HMI_xForceTare`（脉冲；实传感时有效） |
+| 去皮 | `HMI_xForceTare`（上升沿；自动压下步也会内部触发） |
+| 取消去皮 | `HMI_xForceUntare`（上升沿 → FC06 `0x11=2`） |
+| 去皮反馈 | `Force_xTareBusy` / `Force_xTareDone` |
 | 步号/忙/完成/力 | `HMI_iAutoStepShow` / `HMI_xAutoBusy` / `HMI_xAutoDone` / `HMI_rForceShow` |
-| 力通讯 | `Force_xCommOk` / `Force_xTimeout`（诊断） |
+| 力通讯 | `Force_xCommOk` / `Force_xTimeout` / `Force_xSlaveFail`（1006） |
 
 ### 自动主序
 

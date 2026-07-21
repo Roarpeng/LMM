@@ -303,6 +303,11 @@
         <div class="force-bar"><i id="force-fill"></i></div>
         <p class="hint" id="force-lab">F_act=0 / F_set=100 N</p>
         <div class="row">
+          <button type="button" id="btn-tare">去皮 HMI_xForceTare</button>
+          <button type="button" id="btn-untare">取消去皮 Untare</button>
+          <span class="pill" id="p-tare">Tare=—</span>
+        </div>
+        <div class="row">
           <button type="button" class="primary" id="btn-auto-start">自动启动 AutoStart</button>
           <button type="button" class="danger" id="btn-auto-abort">中止 AutoAbort</button>
         </div>
@@ -388,6 +393,9 @@
     busy: false,
     done: false,
     force: 0,
+    tareBusy: false,
+    tareDone: false,
+    forceOk: false,
     lampEStop: false,
     lampOk: false,
     lampFault: false,
@@ -476,6 +484,9 @@
         S.busy = !!msg.HMI_xAutoBusy;
         S.done = !!msg.HMI_xAutoDone;
         S.force = msg.HMI_rForceShow ?? S.force;
+        S.tareBusy = msg.Force_xTareBusy;
+        S.tareDone = msg.Force_xTareDone;
+        S.forceOk = msg.Force_xCommOk;
         S.lampEStop = !!msg.HMI_xLampEStop;
         S.lampOk = !!msg.HMI_xLampEnableOk;
         S.lampFault = !!msg.HMI_xLampFault;
@@ -514,6 +525,11 @@
     const fset = W.HMI_rForceSet || 1;
     $('force-fill').style.width = Math.min(100, (S.force / fset) * 100) + '%';
     $('force-lab').textContent = 'F_act=' + S.force.toFixed(0) + ' / F_set=' + fset + ' N';
+    const pt = $('p-tare');
+    if (pt) {
+      pt.textContent = S.tareBusy ? 'Tare=Busy' : (S.tareDone ? 'Tare=Done' : ('Comm=' + (S.forceOk ? 'OK' : '—')));
+      pt.className = 'pill' + (S.tareBusy ? ' warn' : (S.tareDone || S.forceOk ? ' on' : ''));
+    }
     $('panel-manual').classList.toggle('panel-hidden', W.HMI_xAutoMode);
     $('panel-auto').classList.toggle('panel-hidden', !W.HMI_xAutoMode);
     const gy = $('gantry');
@@ -623,6 +639,17 @@
     patch({ HMI_xAutoAbort: true });
     setTimeout(() => patch({ HMI_xAutoAbort: false }), 120);
     log('HMI_xAutoAbort');
+  });
+
+  $('btn-tare').addEventListener('click', () => {
+    patch({ HMI_xForceTare: true });
+    setTimeout(() => patch({ HMI_xForceTare: false }), 120);
+    log('HMI_xForceTare → FC06 0x11=1 去皮');
+  });
+  $('btn-untare').addEventListener('click', () => {
+    patch({ HMI_xForceUntare: true });
+    setTimeout(() => patch({ HMI_xForceUntare: false }), 120);
+    log('HMI_xForceUntare → FC06 0x11=2 取消去皮');
   });
 
   setInterval(() => {

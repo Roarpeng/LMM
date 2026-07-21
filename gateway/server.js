@@ -32,6 +32,7 @@ const WRITE_KEYS = new Set([
   'HMI_xAutoStart', 'HMI_xAutoAbort',
   'HMI_rAutoDistX', 'HMI_rAutoVelX', 'HMI_rAutoVelY', 'HMI_rAutoVelZ',
   'HMI_rWheelBase', 'HMI_rForceSet', 'HMI_xForceSimEnable', 'HMI_rForceSim',
+  'HMI_xForceTare', 'HMI_xForceUntare', 'HMI_xForceGuide',
 ]);
 
 function mime(p) {

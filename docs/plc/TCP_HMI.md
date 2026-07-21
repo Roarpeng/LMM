@@ -24,7 +24,7 @@
 模式：`HMI_xAutoMode`  
 手动：`HMI_xJogXPos/Neg` `HMI_xSpinLeft/Right` `HMI_xJogY/Z/R Pos/Neg`  
 速度：`HMI_rJogVelX` `HMI_rSpinVel` `HMI_rJogVelY/Z/R`  
-自动：`HMI_xAutoStart/Abort` `HMI_rAutoDistX` `HMI_rAutoVelX/Y/Z` `HMI_rWheelBase` `HMI_rForceSet` `HMI_xForceSimEnable` `HMI_rForceSim`
+自动：`HMI_xAutoStart/Abort` `HMI_rAutoDistX` `HMI_rAutoVelX/Y/Z` `HMI_rWheelBase` `HMI_rForceSet` `HMI_xForceSimEnable` `HMI_rForceSim` `HMI_xForceTare` `HMI_xForceUntare`
 
 禁止写：`AxisCmd_*` / `eDevState` / `iAutoStep` / 已删旧符号。
 
@@ -33,6 +33,7 @@
 `HMI_eDevState` `HMI_xDevStop/Run/Error` `HMI_eOpMode`  
 `HMI_xLampEStop/EnableOk/Fault` `HMI_iAlarmShow`  
 `HMI_iAutoStepShow` `HMI_xAutoBusy/Done` `HMI_rForceShow`  
+可选：`Force_xCommOk` `Force_xTareBusy` `Force_xTareDone`  
 可选：`AxisFb_rPosY/Z/R` `AxisFb_xReady` `AxisFb_xFault*` `AxisFb_xMoveDoneX/Y`  
 链路：`Tcp_xConnected` `Tcp_xTimeout`
 

@@ -93,36 +93,39 @@ VAR_GLOBAL
 END_VAR
 ```
 
-### GVL_Force（PRG_Force485 写状态 · Logic 读故障）
+### GVL_Force（PRG_Force485 · 组态 Modbus 通道）
 
-> 详见 [FB_Force485.md](FB_Force485.md) / [PRG_Force485.md](PRG_Force485.md)。  
-> `rForceAct`：模拟时 Logic 写；实传感时 **仅** Force 任务写。
+> 详见 [PRG_Force485.md](PRG_Force485.md)。站号/COM 在设备树组态；程序侧不再保留 `Force_bySlave` / `Force_wComID`。
 
-| Variable | Writer | Readers | Notes |
-|----------|--------|---------|-------|
-| Force_xEnable / Force_bySlave / Force_rScale | 常量或 HMI | PRG_Force485 | 默认 Enable=TRUE, Slave=1, Scale=0.01 |
-| HMI_xForceTare | HMI/TCP | PRG_Force485 | 脉冲去皮 |
-| Force_xCommOk / Force_xTimeout | PRG_Force485 | Logic/HMI | 通讯 |
-| Force_iRaw / Force_iState | PRG_Force485 | 诊断 | |
-| Force_abyTx/Rx · uiTx/RxLen · xTxReq · xRxNew | PRG_Force485 ↔ 串口层 | SoftComm/SysCom | 自由协议缓冲 |
-| rForceAct（非模拟） | PRG_Force485 | Logic | |
+| 变量 | 写者 | 说明 |
+|------|------|------|
+| `Force_xEnable` | 常量/HMI | 通讯总使能 |
+| `Force_wInRaw` | Modbus映射 `%IW` | 读 0x0000 原始力 |
+| `Force_xReadTrig` | PRG_Force485 | 探测读触发 |
+| `Force_wOutTare` / `Force_wOutUnit` | PRG_Force485→`%QW` | 去皮 0x11 / 单位 0x02 |
+| `Force_rScale` | 常量 | 默认 0.01 |
+| `HMI_xForceTare` / `Untare` / `Guide` | HMI/TCP | 去皮、力引导 |
+| `Logic_xForceTare` | PRG_Logic | 自动内部去皮 |
+| `Force_xCommOk` / `Timeout` / `SlaveFail` | PRG_Force485 | 通讯/1006 |
+| `Force_iRaw` / `Force_iState` | PRG_Force485 | 诊断 |
+| `rForceAct` / `rForceKp` | Force/Logic | 实际力、Kp |
 
 ```iecst
 VAR_GLOBAL
-    Force_xEnable       : BOOL := TRUE;
-    Force_bySlave       : BYTE := 1;
-    Force_rScale        : REAL := 0.01;
-    HMI_xForceTare      : BOOL;
-    Force_xCommOk       : BOOL;
-    Force_xTimeout      : BOOL;
-    Force_iRaw          : INT;
-    Force_iState        : INT;
-    Force_abyTx         : ARRAY[0..63] OF BYTE;
-    Force_uiTxLen       : UINT;
-    Force_xTxReq        : BOOL;
-    Force_abyRx         : ARRAY[0..63] OF BYTE;
-    Force_uiRxLen       : UINT;
-    Force_xRxNew        : BOOL;
+    Force_xEnable     : BOOL := TRUE;   (* 通讯总使能 *)
+    Force_wInRaw      : WORD;           (* 映射读：0x0000 *)
+    Force_xReadTrig   : BOOL;           (* 探测读触发 *)
+    Force_wOutTare    : WORD;           (* 映射写：去皮 *)
+    Force_wOutUnit    : WORD := 5;      (* 映射写：单位N *)
+    Force_rScale      : REAL := 0.01;
+    Force_xCommOk     : BOOL;
+    Force_xTimeout    : BOOL;
+    Force_xSlaveFail  : BOOL;           (* 3次失败→1006 *)
+    Force_iRaw        : INT;
+    Force_iState      : INT;
+    HMI_xForceGuide   : BOOL;           (* 力引导电平 *)
+    rForceAct         : REAL;
+    rForceKp          : REAL;
 END_VAR
 ```
 

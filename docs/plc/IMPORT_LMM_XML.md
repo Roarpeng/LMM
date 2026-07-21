@@ -11,10 +11,11 @@
 | `FB_Servo` | SoftMotion 单轴封装 |
 | `PRG_Logic` | MainTask：联锁/命令；**桥接**原 StopBtn/EStop/Jog* |
 | `PRG_Axis_Control` | **AxisTask 独立任务**：只读写 GVL |
-| `FB_Force485` / `PRG_Force485` | **ForceTask 独立任务**：LE 拉压 RS485 → `rForceAct` |
-| `PLC_PRG` | 调用 `PRG_TcpHmi` + `PRG_Logic`（**不** CALL Force/Axis） |
+| `PRG_Force485` | 组态通道换算 + `SM1001` 重试3次 + 去皮 |
+| `FB_Force485` | 停用 |
+| `PLC_PRG` | `PRG_Force485` → `PRG_TcpHmi` → `PRG_Logic` |
 | `AxisTask` | 4ms，运行 `PRG_Axis_Control` |
-| `ForceTask` | 10–20ms，运行 `PRG_Force485`（需在 InoProShop 新建） |
+| `ForceTask` | 建议 10–20ms 跑 `PRG_Force485`（当前可挂 MainTask） |
 
 ## 导入步骤
 
@@ -27,31 +28,30 @@
 8. **ST 方言**：XOR 用中缀 `a XOR b`；TCP 按手册：`abyData:=DataBuffer[1]`（`ARRAY[1..8192] OF BYTE`），`uiDataSize:=0`；连接判定用 `TCP_ESTABLISHED`
 9. **力传感 RS485（LE）** — 见下节
 
-## LE 拉压传感器 RS485
+## LE 拉压传感器 RS485（网络组态 Modbus 主站）
+
+`PRG_Force485` 读组态映射变量；**`SM1001` 自动使能从站**（失败重试 3 次 → 报警 **1006**）。
 
 | 项 | 值 |
 |----|-----|
 | 电气 | DC12V；485+绿 / 485-白 |
-| 串口 | **115200，8 数据位，1 停止，无校验** |
-| 站号 | 默认 `Force_bySlave=1` |
-| 协议 | Modbus-RTU；轮询读 `0x0000`；上电写单位 `0x02=5`（N） |
-| 换算 | `rForceAct = INT16_raw * Force_rScale`（默认 Scale=0.01） |
+| 串口 | COM0，**115200 8N1** |
+| 站号 | 1；使能 `SM1001` |
+| 读力 | 通道 FC03 `0x0000` → `Force_wInRaw` |
+| 去皮 | `HMI_xForceTare` / 自动步内部 → `Force_wOutTare` |
+| 力引导 | `HMI_xForceGuide` 电平；`HMI_rForceSet`；Z=`Axis_4` |
 
-### InoProShop 串口绑定
-
-1. 设备树选本体/扩展 **COM**（记下口号）
-2. 参数：115200 8N1
-3. 自由协议或小 ST：见 [PRG_Force485.md](PRG_Force485.md) — 发 `Force_abyTx`，收填 `Force_abyRx` + `Force_xRxNew`
-4. 新建任务 **ForceTask**（建议 20ms）→ `PRG_Force485`
-5. 联调：先 `HMI_xForceSimEnable=TRUE`；串口助手确认传感器应答 `01 03 00 00 00 01 84 0A`；再关模拟看 `Force_xCommOk` / `HMI_rForceShow`
+详见 [PRG_Force485.md](PRG_Force485.md)。
 
 ### 联调检查单
 
-- [ ] 12V 供电、A/B 极性
-- [ ] 串口助手能读到力值
-- [ ] `Force_xCommOk=TRUE`，`Force_xTimeout=FALSE`
-- [ ] 关模拟后 `HMI_rForceShow` 随手压力变化
-- [ ] 超时（拔线）→ Alarm **1005**、设备 Error（非模拟时）
+- [ ] 组态通道已映射 `Force_wInRaw` / `Force_wOutTare` / `Force_wOutUnit`
+- [ ] 12V、A/B、COM0；`SM1001` 自动为 TRUE
+- [ ] `Force_xCommOk=TRUE`；`Force_iState=4`
+- [ ] 关模拟后 `HMI_rForceShow` 随压力变化
+- [ ] `HMI_xForceTare` 去皮；自动进 step2 也会去皮
+- [ ] `HMI_xForceGuide=TRUE` 时 Z 跟力；FALSE 停止
+- [ ] 从站 3 次失败 → Alarm **1006**
 
 ## 与 Web / TCP
 
