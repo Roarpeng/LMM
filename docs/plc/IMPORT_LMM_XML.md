@@ -1,60 +1,44 @@
-# LMM.xml 导入说明（InoProShop / PLCopen TC6）
+# LMM.xml 导入与联调（InoProShop / PLCopen TC6）
 
-备份：`LMM.xml.bak`（写入前自动生成）
+> PLC 侧改动一律走 `plc/` 工作流（见 `plc/README.md`）：
+> 改 `.st` → `python3 tools/inject_st.py` → `python3 tools/check_lmm.py` → 导入本文件。
+> 注入前自动备份 `LMM.xml.bak.inject`；更多历史备份在 `attic/bak/`。
 
-## 已写入内容
+## 工程内容
 
-| 对象 | 说明 |
-|------|------|
-| `GVL` | 保留原 HMI 变量 + 对齐后的 HMI_/Logic/IO/AxisCmd/AxisFb |
-| `FB_XDiff` | Sync/Diff（纠偏·原地旋转·差速拐弯） |
-| `FB_Servo` | SoftMotion 单轴封装 |
-| `PRG_Logic` | MainTask：联锁/命令；**桥接**原 StopBtn/EStop/Jog* |
-| `PRG_Axis_Control` | **AxisTask 独立任务**：只读写 GVL |
-| `PRG_Force485` | 组态通道换算 + `SM1001` 重试3次 + 去皮 |
-| `FB_Force485` | 停用 |
-| `PLC_PRG` | `PRG_Force485` → `PRG_TcpHmi` → `PRG_Logic` |
-| `AxisTask` | 4ms，运行 `PRG_Axis_Control` |
-| `ForceTask` | 建议 10–20ms 跑 `PRG_Force485`（当前可挂 MainTask） |
+- POU（8 个）：`PLC_PRG` + `PRG_TcpHmi` / `PRG_Logic` / `PRG_Axis_Control` + `FB_Servo` / `FB_Force` / `FB_ForceFollow` / `FB_XLineTrack`
+- GVL：唯一全局变量表（`plc/GVL.st` 注入）
+- 任务：`ETHERCAT`(4ms, prio0)=EtherCAT_Task+PRG_Axis_Control；`MainTask`(4ms, prio1)=PLC_PRG
 
 ## 导入步骤
 
-1. InoProShop 打开/导入本 `LMM.xml`（或覆盖工程后重新加载）
-2. 编译：若 `AXIS_REF_SM3` / `MC_*` 类型名与库版本不符，在库管理器确认 **SM3_Basic** 已加入，按本机类型名微调 `FB_Servo`
-3. 确认任务：`MainTask`→PLC_PRG；`AxisTask`→PRG_Axis_Control；`ForceTask`→PRG_Force485；**不要**在 Main 里 CALL Axis/Force
-4. 映射限位 `I_xLim*`（地址 TBD）
-5. 极性：面板 `EStop AT %IX0.4` **正常=TRUE / 按下=FALSE**，桥接 `HMI_xEStop:=EStop`（不取反）；灯：`StopLamp %QX0.6←Dev_xStop`，`StartLamp %QX0.7←Dev_xRun`  
-6. 面板键：`StartBtn %IX1.6`、`StopBtn %IX1.4`、`ResetBtn`（→StopHold3s）— **地址固定勿改**
-8. **ST 方言**：XOR 用中缀 `a XOR b`；TCP 按手册：`abyData:=DataBuffer[1]`（`ARRAY[1..8192] OF BYTE`），`uiDataSize:=0`；连接判定用 `TCP_ESTABLISHED`
-9. **力传感 RS485（LE）** — 见下节
+1. 改完 `.st` 跑 `inject_st.py` + `check_lmm.py`（0 error）
+2. InoProShop 导入/覆盖 `LMM.xml`，编译
+3. 若 `AXIS_REF_SM3` / `MC_*` 类型名与库版本不符，库管理器确认 **SM3_Basic**，按本机类型名微调 `FB_Servo.st` 再注入
+4. 确认任务挂载（见上表，PLC_PRG 只在 MainTask）
+5. 映射限位输入 `I_xLim*`（地址 TBD）；面板 IO 地址固定勿改（Start %IX1.6 / Stop %IX1.4 / EStop %IX0.4 正常=TRUE / StopLamp %QX0.6 / StartLamp %QX0.7）
+6. 硬限位默认值在 GVL `Cfg_rLim*`，现场按机械行程改
 
-## LE 拉压传感器 RS485（网络组态 Modbus 主站）
+## LE 拉压传感器（组态 Modbus RTU 主站，COM0）
 
-`PRG_Force485` 读组态映射变量；**`SM1001` 自动使能从站**（失败重试 3 次 → 报警 **1006**）。
+程序侧只有 `FB_Force` 读组态映射变量；从站使能 `SM1001` 在组态里。
 
 | 项 | 值 |
 |----|-----|
 | 电气 | DC12V；485+绿 / 485-白 |
-| 串口 | COM0，**115200 8N1** |
-| 站号 | 1；使能 `SM1001` |
-| 读力 | 通道 FC03 `0x0000` → `Force_wInRaw` |
-| 去皮 | `HMI_xForceTare` / 自动步内部 → `Force_wOutTare` |
-| 力引导 | `HMI_xForceGuide` 电平；`HMI_rForceSet`；Z=`Axis_4` |
+| 串口 | COM0，115200 8N1 |
+| 站号 | 1；使能 `SM1001`（失败重试 3 次 → 报警 1006） |
+| 读力 | FC03 `0x0000` → `Force_wInRaw %IW102` |
+| 去皮 | 写 `0x0011` → `Force_wOutTare %QW42` |
+| 单位 | 写 `0x0002`=5(N) → `Force_wOutUnit %QW43` |
 
-详见 [PRG_Force485.md](PRG_Force485.md)。
+## 联调检查单
 
-### 联调检查单
-
-- [ ] 组态通道已映射 `Force_wInRaw` / `Force_wOutTare` / `Force_wOutUnit`
-- [ ] 12V、A/B、COM0；`SM1001` 自动为 TRUE
-- [ ] `Force_xCommOk=TRUE`；`Force_iState=4`
-- [ ] 关模拟后 `HMI_rForceShow` 随压力变化
-- [ ] `HMI_xForceTare` 去皮；自动进 step2 也会去皮
-- [ ] `HMI_xForceGuide=TRUE` 时 Z 跟力；FALSE 停止
-- [ ] 从站 3 次失败 → Alarm **1006**
-
-## 与 Web / TCP
-
-对照 `docs/plc/WEB_PLC_ALIGN.md`、`docs/plc/TCP_HMI.md`。  
-实控：`gateway/` + `web/live/`（默认 `MOCK_PLC=1` 可无 PLC 试画面）。  
-导入后确认：`PLC_PRG` 调用 `PRG_TcpHmi` 再 `PRG_Logic`；`FB_TCPServer` 使用本机 `SktTCP*` 库。
+- [ ] 编译 0 错；两个任务挂载正确
+- [ ] 面板 Jog 六向 + R 双向点动；Web 点动按住动松开停
+- [ ] Y/Z/R 撞 Cfg 限位即停；改小限位后仍能向回点动
+- [ ] 回零 Y/Z/R 完成置 0
+- [ ] `Force_xCommOk=TRUE`；关模拟后 `HMI_rForceShow` 随压力变化
+- [ ] `HMI_xForceGuide=TRUE` Z 跟力，FALSE 停
+- [ ] 从站 3 次失败 → 报警 1006；力 2s 无变化 → 报警 1005
+- [ ] Web：拔网线 ≤1s 远程动作清零；面板可接管（见 [TCP_HMI.md](TCP_HMI.md)）

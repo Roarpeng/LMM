@@ -1,207 +1,63 @@
-# GVL.md — LMM 全局变量契约
+# GVL.md — 全局变量契约
 
-> Writer 以 S5 为准。Axis 与 Logic **仅 GVL 交换**，禁止跨任务 CALL。  
-> 轴：X=M1+M2，Y=M3，Z=M4，R=M5。X⊥Y。  
-> **跨距 = Y 行程**（同一机械量 `HMI_rWheelBase`，4~6 m）。  
-> X 直行速度与左右旋速度 **分开**。  
-> 面板物理 IO 地址**固定**。EStop：**正常 TRUE / 按下 FALSE**。
+> 权威定义：`plc/GVL.st`（13 个分组，变量逐个带中文注释）。本文讲规则，不复制全表。
+> 触摸屏 / WebHMI 变量中文用法总表：[HMI.md](HMI.md)。
+> 轴：X=M1+M2，Y=M3，Z=M4，R=M5。X⊥Y。**跨距 = Y 行程**（`HMI_rWheelBase`，4~6 m）。
 
-## 分组
+## 铁律
 
-### GVL_Panel（面板物理 IO — 勿改地址）
+- 任务间**只经 GVL 交换，禁止跨任务 CALL**
+- 写者唯一：`HMI_*` 只由 `PRG_TcpHmi` 写（触摸屏直写 `HMI_*`/`HMI_*Req` 除外）；
+  `AxisCmd_*` 只由 `PRG_Logic` 写；`AxisFb_*`/`rForceAct`/`Force_x*` 只由 `PRG_Axis_Control` 写
+- 状态显示量（`Dev_x*`/`HMI_eDevState`）**只读派生，绝不参与运动互锁**
+- EStop：**正常 TRUE / 按下 FALSE**
 
-```iecst
-VAR_GLOBAL
-    StartBtn            : BOOL;   (* AT %IX1.6 【启动】→ HMI_xStart / HMI_xEnable *)
-    StopBtn             : BOOL;   (* AT %IX1.4 【停止】→ HMI_xStop *)
-    ResetBtn            : BOOL;   (* 【复位】→ HMI_xStopHold3s *)
-    EStop               : BOOL;   (* AT %IX0.4 【急停】正常TRUE 按下FALSE → 直通 HMI_xEStop *)
-    StopLamp            : BOOL;   (* AT %QX0.6 【停止灯】← Dev_xStop *)
-    StartLamp           : BOOL;   (* AT %QX0.7 【运行灯】← Dev_xRun *)
-END_VAR
-```
+## 分组速览（对应 plc/GVL.st 编号）
 
-### GVL_HMI（HMI / 面板桥接写 request）
+| # | 组 | 关键变量 | 写者 |
+|---|----|---------|------|
+| 1 | 面板物理 IO | `StartBtn %IX1.6` `StopBtn %IX1.4` `EStop %IX0.4` `StopLamp %QX0.6` `StartLamp %QX0.7`（地址固定勿改）+ 8 个 Jog 键 | 物理 |
+| 2 | 安全/起停 | `HMI_xEStop/xStop/xStopHold3s/xStart`、`xEStopLatched`、`xFaultAggregate`、`eCtrlSrc` | TcpHmi |
+| 3 | 状态显示 | `HMI_eDevState/HMI_eOpMode/HMI_iAlarmShow/HMI_xDev*/HMI_xLamp*` | Logic |
+| 4 | 手动点动 | `HMI_xJog*/xSpin*` + `HMI_rJogVel*/rSpinVel`（X 直行与旋转速度**分开**） | TcpHmi |
+| 5 | 回零 | `HMI_xHomeY/Z/R`、`HMI_iHomeAxis+xHomeExec`、`HMI_xHomed*/xHomeBusy*` | TcpHmi/Logic |
+| 6 | 自动 | `HMI_rAutoDistX/rAutoVel*/rWheelBase/iAutoPasses/rForceSet/rKp*/rHeadingErr`、`iAutoStep` | TcpHmi |
+| 7 | 力控 | `Force_*`（组态 Modbus RTU COM0）、`HMI_xForce*`、`rForceAct`、`HMI_rForceShow` | Axis/Logic |
+| 8 | **硬限位配置** | `Cfg_rLimY*/Z*/R*`（Y[0,6] Z[-0.7,0] R[-180,180] 默认） | **触摸屏/调试手动改** |
+| 9 | 联锁/限位输入 | `I_xLimY*/Z*`（地址 TBD）、`xIlk_Block*`、`xM5Ready` | 物理/Logic |
+| 10 | 轴命令 | `AxisCmd_*` | Logic |
+| 11 | 轴反馈 | `AxisFb_*` | Axis |
+| 12 | Modbus+Web 影子 | `MB_CmdIn %IW103`、`MB_StatusOut %QW44`、`Tcp_*` | TcpHmi |
+| 13 | 触摸屏请求 | `HMI_x*Req`（防双写自锁） | 触摸屏 |
 
-```iecst
-VAR_GLOBAL
-    (* —— 安全 / 设备 —— *)
-    HMI_xEStop          : BOOL;   (* 【急停】TRUE正常 FALSE按下 *)
-    HMI_xStop           : BOOL;   (* 【停止】短按停机；长按3s复位 *)
-    HMI_xStopHold3s     : BOOL;   (* 【复位】 *)
-    HMI_xStart          : BOOL;   (* 【启动】上升沿 STOP→RUN *)
-    HMI_xEnable         : BOOL;   (* 【启动别名】与 Start 等效 *)
-    HMI_xAutoMode       : BOOL;   (* TRUE=自动；FALSE=手动 *)
+## 面板 Jog 键（直接点动）
 
-    (* —— 手动点动（电平）；仅 RUN+手动 —— *)
-    HMI_xJogXPos        : BOOL;   (* 【X+】M1=M2 同速同向 *)
-    HMI_xJogXNeg        : BOOL;   (* 【X-】 *)
-    HMI_xSpinLeft       : BOOL;   (* 【左旋转】一正一反 *)
-    HMI_xSpinRight      : BOOL;   (* 【右旋转】 *)
-    HMI_xJogYPos, HMI_xJogYNeg : BOOL;
-    HMI_xJogZPos, HMI_xJogZNeg : BOOL;
-    HMI_xJogRPos, HMI_xJogRNeg : BOOL;
-    HMI_rJogVelX        : REAL;   (* 【X直行速度】 *)
-    HMI_rSpinVel        : REAL;   (* 【左右旋速度】与 JogVelX 分开 *)
-    HMI_rJogVelY        : REAL;
-    HMI_rJogVelZ        : REAL;
-    HMI_rJogVelR        : REAL;
+面板键在 `eCtrlSrc=0`（面板/触摸屏源）时与 `HMI_xJog*` 以 OR 合并进 Logic 手动段，
+受完全相同的限位/安全门控：
 
-    (* —— 自动 —— *)
-    HMI_xAutoStart      : BOOL;
-    HMI_xAutoAbort      : BOOL;
-    HMI_rAutoDistX      : REAL;   (* X 走距 *)
-    HMI_rAutoVelX       : REAL;
-    HMI_rWheelBase      : REAL;   (* 【龙门跨距=Y行程】4~6 m；自动 Y 走距用此值 *)
-    HMI_rAutoVelY       : REAL;
-    HMI_rAutoVelZ       : REAL;
-    HMI_rForceSet       : REAL;   (* F_set 单位N *)
-    HMI_xForceSimEnable : BOOL;
-    HMI_rForceSim       : REAL;
-END_VAR
-```
+| 键 | 轴 | 键 | 轴 |
+|----|----|----|----|
+| JogFwd / JogBwd | X+ / X- | JogUp / JogDown | Z+ / Z- |
+| JogRight / JogLeft | Y+ / Y- | JogClockAdd / JogClockMis | R+ / R- |
 
-**已删除（勿再绑屏）**：`HMI_eXMode` / `eDiffFunc` / `JogM1/M2` / `JogXSync*` / `JogXDiff*` / `HomeReq*` / `DiffDelta` / `TurnOmega` / `AutoDistY`。
+（映射现场可对调，改 `PRG_Logic.st` 点动源合并段。）
 
-### GVL_HMI_Status（Logic 写 · HMI 读）
+## 硬限位（除 X 外所有轴、所有模式强制）
 
-```iecst
-VAR_GLOBAL
-    HMI_eDevState       : INT;    (* 0停止/待机 1运行中 2错误 *)
-    HMI_xDevStop, HMI_xDevRun, HMI_xDevError : BOOL;
-    HMI_eOpMode         : INT;    (* 0手动 1自动 *)
-    HMI_xLampEStop, HMI_xLampEnableOk, HMI_xLampFault : BOOL;
-    HMI_iAlarmShow      : INT;
-    HMI_iAutoStepShow   : INT;
-    HMI_xAutoBusy, HMI_xAutoDone : BOOL;
-    HMI_rForceShow      : REAL;
-END_VAR
-```
+- 配置：`Cfg_rLim{Y,Z,R}{Pos,Neg}`，默认 Y[0,6]、Z[-0.7,0]、R[-180,180]，**可手动改**
+- 执行：`FB_Servo` 内最终闸门（点动/速度挡方向、定位夹目标、撞限位 MC_Halt）；
+  `FB_ForceFollow` 对 Z 另有同值夹紧；Logic 的 `xIlk_Block*` 只是点动前的提前挡
+- `I_xLim*` 物理限位开关（若接线）与 Cfg 限位**或**关系进 `xIlk_Block*`
 
-### GVL_Logic
+## 控制源仲裁（eCtrlSrc，GVL，仅 PRG_TcpHmi 写）
 
-```iecst
-VAR_GLOBAL
-    eDevState           : INT;
-    Dev_xStop, Dev_xRun, Dev_xError : BOOL;
-    xEStopLatched, xEnablePermit, xFaultAggregate : BOOL;
-    eOpMode, iAlarmID, iAutoStep : INT;
-    rForceAct, rForceKp : REAL;
-    xIlk_BlockYPlus, xIlk_BlockYNeg : BOOL;
-    xIlk_BlockZPlus, xIlk_BlockZNeg : BOOL;
-    xIlk_BlockYWhenZ, xM5Ready : BOOL;
-END_VAR
-```
+- `0=面板/触摸屏`：触摸屏直写 `HMI_*` 生效；面板 Jog 键并入点动
+- `1=远程Web`：整组 `HMI_* := Tcp_*`
+- 谁有操作谁独占；掉线强制回 0 并清点动/置停止+中止
+- 急停取更严：`HMI_xEStop := EStop AND Tcp_xEStop AND HMI_xEStopReq`
 
-### GVL_Force（PRG_Force485 · 组态 Modbus 通道）
+## 已删除（勿再使用/绑屏）
 
-> 详见 [PRG_Force485.md](PRG_Force485.md)。站号/COM 在设备树组态；程序侧不再保留 `Force_bySlave` / `Force_wComID`。
-
-| 变量 | 写者 | 说明 |
-|------|------|------|
-| `Force_xEnable` | 常量/HMI | 通讯总使能 |
-| `Force_wInRaw` | Modbus映射 `%IW` | 读 0x0000 原始力 |
-| `Force_xReadTrig` | PRG_Force485 | 探测读触发 |
-| `Force_wOutTare` / `Force_wOutUnit` | PRG_Force485→`%QW` | 去皮 0x11 / 单位 0x02 |
-| `Force_rScale` | 常量 | 默认 0.01 |
-| `HMI_xForceTare` / `Untare` / `Guide` | HMI/TCP | 去皮、力引导 |
-| `Logic_xForceTare` | PRG_Logic | 自动内部去皮 |
-| `Force_xCommOk` / `Timeout` / `SlaveFail` | PRG_Force485 | 通讯/1006 |
-| `Force_iRaw` / `Force_iState` | PRG_Force485 | 诊断 |
-| `rForceAct` / `rForceKp` | Force/Logic | 实际力、Kp |
-
-```iecst
-VAR_GLOBAL
-    Force_xEnable     : BOOL := TRUE;   (* 通讯总使能 *)
-    Force_wInRaw      : WORD;           (* 映射读：0x0000 *)
-    Force_xReadTrig   : BOOL;           (* 探测读触发 *)
-    Force_wOutTare    : WORD;           (* 映射写：去皮 *)
-    Force_wOutUnit    : WORD := 5;      (* 映射写：单位N *)
-    Force_rScale      : REAL := 0.01;
-    Force_xCommOk     : BOOL;
-    Force_xTimeout    : BOOL;
-    Force_xSlaveFail  : BOOL;           (* 3次失败→1006 *)
-    Force_iRaw        : INT;
-    Force_iState      : INT;
-    HMI_xForceGuide   : BOOL;           (* 力引导电平 *)
-    rForceAct         : REAL;
-    rForceKp          : REAL;
-END_VAR
-```
-
-### GVL_IO
-
-```iecst
-VAR_GLOBAL
-    I_xLimYPos, I_xLimYNeg, I_xHomeY : BOOL;
-    I_xLimZPos, I_xLimZNeg, I_xHomeZ : BOOL;
-    I_xLimRPos, I_xLimRNeg, I_xHomeR : BOOL;
-END_VAR
-```
-
-### GVL_AxisCmd（Logic → Axis）
-
-```iecst
-VAR_GLOBAL
-    AxisCmd_xPower, AxisCmd_xStopAll, AxisCmd_xResetFault : BOOL;
-    AxisCmd_xJogXPos, AxisCmd_xJogXNeg : BOOL;
-    AxisCmd_xSpinLeft, AxisCmd_xSpinRight : BOOL;
-    AxisCmd_xJogYPos, AxisCmd_xJogYNeg : BOOL;
-    AxisCmd_xJogZPos, AxisCmd_xJogZNeg : BOOL;
-    AxisCmd_xJogRPos, AxisCmd_xJogRNeg : BOOL;
-    AxisCmd_rJogVelX, AxisCmd_rSpinVel : REAL;
-    AxisCmd_rJogVelY, AxisCmd_rJogVelZ, AxisCmd_rJogVelR : REAL;
-    AxisCmd_xMoveRelX : BOOL;
-    AxisCmd_rMoveDistX, AxisCmd_rMoveVelX : REAL;
-    AxisCmd_xMoveRelY : BOOL;
-    AxisCmd_rMoveDistY, AxisCmd_rMoveVelY : REAL;  (* DistY := WheelBase *)
-    AxisCmd_rZVelCmd : REAL;
-    AxisCmd_xUseZVelCmd : BOOL;
-    AxisCmd_xHoldR : BOOL;
-    AxisCmd_rRHoldPos : REAL;
-    AxisCmd_rAcc, AxisCmd_rDec, AxisCmd_rWheelBase : REAL;
-END_VAR
-```
-
-**已删除**：`AxisCmd_eXMode` / `eDiffFunc` / `JogM*` / `JogXSync*` / `JogXDiff*` / `Home*` / `DiffDelta` / `TurnOmega`。
-
-### GVL_AxisFb（Axis only 写）
-
-```iecst
-VAR_GLOBAL
-    AxisFb_rVelCmdM1, AxisFb_rVelCmdM2 : REAL;
-    AxisFb_rPosM1, AxisFb_rPosM2, AxisFb_rPosY, AxisFb_rPosZ, AxisFb_rPosR : REAL;
-    AxisFb_xMovingM1, AxisFb_xMovingM2, AxisFb_xMovingY, AxisFb_xMovingZ, AxisFb_xMovingR : BOOL;
-    AxisFb_xPoweredM1, AxisFb_xPoweredM2, AxisFb_xPoweredY, AxisFb_xPoweredZ, AxisFb_xPoweredR : BOOL;
-    AxisFb_xFaultM1, AxisFb_xFaultM2, AxisFb_xFaultY, AxisFb_xFaultZ, AxisFb_xFaultR : BOOL;
-    AxisFb_xReady : BOOL;
-    AxisFb_xMoveDoneX, AxisFb_xMoveDoneY : BOOL;
-END_VAR
-```
-
-### GVL_Tcp（PRG_TcpHmi 写影子 · Logic 合成到 HMI）
-
-> 详见 [TCP_HMI.md](TCP_HMI.md)。`Tcp_xEStop` 上电默认 TRUE。
-
-| Variable | Writer | Readers | Notes |
-|----------|--------|---------|-------|
-| Tcp_xConnected / Tcp_xTimeout / Tcp_xOnline | PRG_TcpHmi | HMI/Web | 链路 |
-| Tcp_xEStop … Tcp_rForceSim（与 HMI request 同名后缀） | PRG_TcpHmi | PRG_Logic | 影子 |
-| HMI_*（合成后） | PRG_Logic | 全机 | 面板∨Tcp |
-
-```iecst
-VAR_GLOBAL
-    Tcp_xConnected, Tcp_xTimeout, Tcp_xOnline : BOOL;
-    Tcp_xEStop : BOOL := TRUE;
-    Tcp_xStop, Tcp_xStopHold3s, Tcp_xStart, Tcp_xEnable : BOOL;
-    Tcp_xAutoMode : BOOL;
-    Tcp_xJogXPos, Tcp_xJogXNeg, Tcp_xSpinLeft, Tcp_xSpinRight : BOOL;
-    Tcp_xJogYPos, Tcp_xJogYNeg, Tcp_xJogZPos, Tcp_xJogZNeg : BOOL;
-    Tcp_xJogRPos, Tcp_xJogRNeg : BOOL;
-    Tcp_rJogVelX, Tcp_rSpinVel, Tcp_rJogVelY, Tcp_rJogVelZ, Tcp_rJogVelR : REAL;
-    Tcp_xAutoStart, Tcp_xAutoAbort : BOOL;
-    Tcp_rAutoDistX, Tcp_rAutoVelX, Tcp_rAutoVelY, Tcp_rAutoVelZ : REAL;
-    Tcp_rWheelBase, Tcp_rForceSet, Tcp_rForceSim : REAL;
-    Tcp_xForceSimEnable : BOOL;
-END_VAR
-```
+`JogVel` `HomeReq` `CaliForReq` `ClearBruch` `yLength` `eDevState` `xEnablePermit`
+`xIlk_BlockYWhenZ` `I_xLimR*` `I_xHomeY/Z/R` `Tcp_uiPort` `AxisCmd_rZVelCmd` `AxisCmd_xUseZVelCmd`
+以及更早的 `HMI_eXMode` `JogM1/M2` `JogXSync*` `DiffDelta` `TurnOmega` `AutoDistY`。

@@ -1530,11 +1530,10 @@ xMoveAbsDone := fbMoveAbs.Done;
 xMoveRelDone := fbMoveRel.Done;
 
 (* 8. 速度指令：MC_MoveVelocity；Velocity 取绝对值，方向走 Direction *)
-(* 注意：本机 SM3 库的方向字面值是 positive/negative（非 CoDeSys 的 mcPositiveDirection） *)
 IF rVelCmd &gt;= 0.0 THEN
-    eDir := positive;
+    eDir := MC_DIRECTION.mcPositiveDirection;
 ELSE
-    eDir := negative;
+    eDir := MC_DIRECTION.mcNegativeDirection;
 END_IF;
 (* 运行中换向：先撤 Execute 一拍，下一拍带新方向重新触发 *)
 xDirFlip := xReqVel AND xVelRunPrev AND ((rVelCmd &gt;= 0.0) &lt;&gt; (rVelInPrev &gt;= 0.0));

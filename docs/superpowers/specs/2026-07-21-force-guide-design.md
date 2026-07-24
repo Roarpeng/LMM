@@ -17,3 +17,5 @@
 ## 力引导公式
 
 `AxisCmd_rZVelCmd := LIMIT(±HMI_rAutoVelZ, rForceKp*(HMI_rForceSet - rForceAct))`
+
+回零后 Z 软限位 **`[−0.7, 0]`**：越上界禁止正速、越下界禁止负速；力跟随同样受此限制。

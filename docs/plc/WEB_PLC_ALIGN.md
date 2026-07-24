@@ -1,7 +1,17 @@
-# Web v2 ↔ PLC 对齐（精简）
+# Web live ↔ PLC 对齐速查
 
-> 权威：`docs/plc/HMI.md` + `GVL.md` + `TCP_HMI.md`  
-> 实控页：`web/live/`（经 `gateway/` TCP:9100）
+> 权威：[HMI.md](HMI.md) + [GVL.md](GVL.md) + [TCP_HMI.md](TCP_HMI.md)。
+> 实控页：`web/live/`（浏览器 ↔ `gateway/` WebSocket ↔ Modbus TCP ↔ PLC）。
+
+## 通讯
+
+| 项 | 值 |
+|----|-----|
+| PLC 角色 | Modbus TCP **Master** |
+| Gateway | Modbus TCP **Server** `0.0.0.0:502`，`web/live` HTTP `:8080` |
+| 命令区 | Holding `1000..1063`（PLC FC03 读） |
+| 状态区 | Holding `1100..1163`（PLC FC16 写） |
+| 地址表 | `config/modbus-map.json` → [MODBUS_MAP.md](MODBUS_MAP.md) |
 
 ## 轴
 
@@ -11,34 +21,28 @@ X=M1+M2 · Y=M3 · Z=M4 · R=M5
 
 | 操作 | HMI |
 |------|-----|
-| X± | `JogXPos/Neg` + `rJogVelX` |
-| 左/右旋 | `SpinLeft/Right` + `rSpinVel` |
-| Y/Z/R± | `Jog*` + 各轴 Vel |
+| X± | `HMI_xJogXPos/Neg` + `HMI_rJogVelX` |
+| 左/右旋 | `HMI_xSpinLeft/Right` + `HMI_rSpinVel` |
+| Y/Z/R± | `HMI_xJog*` + `HMI_rJogVel*` |
+| Z 力引导 | `HMI_xForceGuide`（电平） |
+| 回零 Y/Z/R | `HMI_xHome*` 或 `HMI_iHomeAxis`+`HMI_xHomeExec` |
 
 ## 自动
 
-| 参数 | HMI |
-|------|-----|
-| X 距/速 | `rAutoDistX` / `rAutoVelX` |
-| **跨距=Y行程** | `rWheelBase`（4~6） |
-| Y/Z 速 | `rAutoVelY` / `rAutoVelZ` |
-| 力 | `rForceSet` |
+`HMI_rAutoDistX/rAutoVelX` · `HMI_rWheelBase`(跨距=Y行程 4~6) · `HMI_rAutoVelY/Z` ·
+`HMI_rForceSet` · `HMI_iAutoPasses` · `HMI_rKpForce/KpTrack/HeadingErr`
 
-步序：1 MoveX → 2 PressZ → 3 MoveY(=WheelBase)+恒力 → 4 R占位 → 5 Done
+步序：1 X走距 → 2 Y归位 → 3 Z压到力 → 4 Y走跨距恒力 → 5 多道判定 → 6 Done
 
-## 设备态
+## 硬限位
 
-0 Stop · 1 Run · 2 Error
+`Cfg_rLimY*/Z*/R*`（X 无）；所有模式强制；手动可改（触摸屏直绑 GVL；Web 暂不提供）。
 
-## 面板 IO
+## 设备态 / 报警
 
-Start %IX1.6 · Stop %IX1.4 · EStop %IX0.4（TRUE正常）· StopLamp %QX0.6 · StartLamp %QX0.7
+`HMI_eDevState`：0 停 · 1 运行 · 2 错误。报警 1001/1002/1005/1006/1007。
 
-## TCP WebHMI
+## 控制源
 
-| 项 | 值 |
-|----|-----|
-| 契约 | [TCP_HMI.md](TCP_HMI.md) |
-| PLC | Server `:9100`，`PRG_TcpHmi` → `Tcp_*` |
-| 合成 | 面板 ∨ Tcp → `HMI_*`（急停 AND） |
-| 网关 | `gateway/` → `web/live` |
+面板 ‖ 触摸屏 ‖ Web **互斥**（`eCtrlSrc`：谁操作谁独占，掉线回面板）；
+急停 AND（取更严）；停止/中止任一侧可介入。

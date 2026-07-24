@@ -1,73 +1,56 @@
-# TCP_HMI — WebHMI ↔ PLC 通讯契约
+# TCP_HMI — WebHMI ↔ PLC 通讯契约（Modbus TCP）
 
-> 权威符号：`LMM.xml` GVL 中的 `HMI_*`。  
-> 架构：浏览器 WebSocket ↔ `gateway/` ↔ TCP JSON Lines ↔ PLC Server `:9100`。  
-> Socket 实现：手册 **场景 1**（`SktTCPServer` 状态机）→ [FB_TCPServer.md](FB_TCPServer.md)
+> 权威符号：`LMM.xml` GVL 中的 `HMI_*` / `Tcp_*` / `MB_*`。  
+> 架构：浏览器 WebSocket/JSON ↔ `gateway/`（Modbus TCP **Server** `:502`）↔ PLC Modbus TCP **Master**。  
+> 单一映射源：`config/modbus-map.json` → `docs/plc/MODBUS_MAP.md`
 
 ## 连接
 
 | 项 | 值 |
 |----|-----|
-| PLC 角色 | TCP Server（手册场景 1） |
-| 端口 | `9100`（合法 2000~65536） |
-| 绑定 IP | `0.0.0.0`（双网口均可连） |
-| 帧 | 一行一个 JSON，`\n` 结尾（UTF-8） |
-| Recv | `uiDataSize:=0` 标准模式；`abyData:=DataBuffer[1]` |
-| 已连接 | `SktTCPGetStatus.eStatus = TCP_ESTABLISHED`（≠ Server.xBusy） |
-| 写节流 | ≥50ms 或变位 |
-| 状态周期 | ~100ms |
-| 超时 | 500ms 无 `w`/`ping` → 清 Tcp 侧 BOOL；`Tcp_xEStop:=TRUE` |
+| PLC 角色 | Modbus TCP **Master**（设备树 `MODBUS_TCP` / `modbusTcp`） |
+| Gateway 角色 | Modbus TCP **Server** |
+| Gateway 绑定 | `0.0.0.0:502`（现场目标 IP `192.168.1.1`，与设备树 `IpAddr` 一致） |
+| Unit ID | `1` |
+| 命令区 | Holding `1000..1063`（PLC **FC03 读** → `MB_CmdIn AT %IW103`） |
+| 状态区 | Holding `1100..1163`（PLC **FC16 写** → `MB_StatusOut AT %QW44`） |
+| 快照长度 | 64 WORD；首尾序号必须相等 |
+| REAL/连续量 | 有符号缩放 DINT，高字在前；位置/速度 scale=1000，力 scale=100 |
+| 心跳 | Gateway 每次命令刷新递增；PLC 1s 无变化 → 超时 |
+| 生产断线 | **禁止**自动切 Mock；仅 `MOCK_PLC=1` 启用 Mock |
 
-## 写白名单 `t:"w"`（→ `Tcp_*` 影子，再由 Logic 合成到 `HMI_*`）
+## 写白名单（浏览器 `t:"w"` → Gateway 命令镜像）
 
-安全：`HMI_xEStop` `HMI_xStop` `HMI_xStopHold3s` `HMI_xStart` `HMI_xEnable`  
-模式：`HMI_xAutoMode`  
-手动：`HMI_xJogXPos/Neg` `HMI_xSpinLeft/Right` `HMI_xJogY/Z/R Pos/Neg`  
-速度：`HMI_rJogVelX` `HMI_rSpinVel` `HMI_rJogVelY/Z/R`  
-自动：`HMI_xAutoStart/Abort` `HMI_rAutoDistX` `HMI_rAutoVelX/Y/Z` `HMI_rWheelBase` `HMI_rForceSet` `HMI_xForceSimEnable` `HMI_rForceSim` `HMI_xForceTare` `HMI_xForceUntare`
+与 `config/modbus-map.json` `command.fields` 一致。禁止写 `AxisCmd_*` / 设备派生状态。
 
-禁止写：`AxisCmd_*` / `eDevState` / `iAutoStep` / 已删旧符号。
+## 读白名单（PLC 状态镜像 → Gateway → 浏览器 `t:"s"`）
 
-## 读白名单 `t:"s"`（PLC → 网关）
+与 `status.fields` 一致，含 `Tcp_xConnected` / `Tcp_xTimeout` / `Tcp_iCommStatus` / 轴位置与报警。
 
-`HMI_eDevState` `HMI_xDevStop/Run/Error` `HMI_eOpMode`  
-`HMI_xLampEStop/EnableOk/Fault` `HMI_iAlarmShow`  
-`HMI_iAutoStepShow` `HMI_xAutoBusy/Done` `HMI_rForceShow`  
-可选：`Force_xCommOk` `Force_xTareBusy` `Force_xTareDone`  
-可选：`AxisFb_rPosY/Z/R` `AxisFb_xReady` `AxisFb_xFault*` `AxisFb_xMoveDoneX/Y`  
-链路：`Tcp_xConnected` `Tcp_xTimeout`
+## 面板 ‖ 远程并行互斥（`PRG_TcpHmi`）
 
-## 面板 ∨ TCP 合成（PRG_Logic）
-
-| 规则 | 公式 |
+| 规则 | 行为 |
 |------|------|
-| 急停 | `HMI_xEStop := EStop AND Tcp_xEStop` |
-| 其它 BOOL request | `HMI_* := Panel_* OR Tcp_*` |
-| REAL | `Tcp_xOnline` 时用 `Tcp_r*`；离线时面板 `JogVel` → `HMI_rJogVelX/Y/Z` |
-
-`Tcp_xEStop` 上电默认 TRUE。
-
-## 心跳
-
-```json
-{"t":"ping"}
-{"t":"pong"}
-{"t":"err","code":1,"msg":"parse"}
-```
+| 源选择 `eCtrlSrc` | GVL 变量；`0=面板/触摸屏` / `1=远程(Modbus)`；仅 PRG_TcpHmi 写 |
+| 面板 Jog 键 | `eCtrlSrc=0` 时直接点动（Fwd/Bwd→X± Right/Left→Y± Up/Down→Z± Clock→R±） |
+| TCP/Modbus 掉线 | 强制 `eCtrlSrc:=0`；清点动/启动/回零；置停止与自动中止 |
+| `eCtrlSrc=1` | 整组 `HMI_* := Tcp_*` |
+| 急停 | `HMI_xEStop := EStop AND Tcp_xEStop AND HMI_xEStopReq`（更严） |
+| Web“急停” | **非安全等级**停止请求；物理急停才是安全急停 |
 
 ## 程序
 
 | POU | 职责 |
 |-----|------|
-| `FB_TCPServer` | 手册场景 1：`SktTCPServer`→`GetStatus`→`Recv/Send`→`SktClose` |
-| `PRG_TcpHmi` | 收 `w`→Tcp_*、发 `s`、超时清 JOG |
-| `PRG_Logic` | 面板∨Tcp → HMI_* |
+| `PRG_TcpHmi` | 解码 `MB_CmdIn`→`Tcp_*`；编码状态→`MB_StatusOut`；心跳；控制源仲裁 |
+| `PRG_Logic` | 工艺/安全/自动（不解析通讯） |
 | `PLC_PRG` | `PRG_TcpHmi(); PRG_Logic();` |
+| ~~`FB_TCPServer`~~ | **已删除** |
 
-## 现场联调（对照手册）
+## 现场联调
 
-1. 下载工程，`i_xEnable` 保持 TRUE → status 1→2，等待客户端。  
-2. 网关或网络调试助手连 `PLC_IP:9100`。  
-3. Server.`xDone` 后 GetStatus=`TCP_ESTABLISHED`，再收发 JSON。  
-4. 客户端断开 → status 4→255→1，自动再听。  
-5. 库类型以 F2 为准；枚举路径可能是 `CmpHCTCPIP.TCP_STATUS.TCP_ESTABLISHED`。
+1. InoProShop：确认 `modbusTcp` 通道长度为 64，读 1000 / 写 1100。  
+2. Gateway：`MOCK_PLC=0 MODBUS_HOST=0.0.0.0 MODBUS_PORT=502 npm run start:plc`  
+3. 确认 PLC 主站目标 IP = Gateway 工业网口。  
+4. 点动松开即停；拔网线 ≤1s 远程动作清零；恢复网络不自行运动。  
+5. 面板在远程掉线后可接管。

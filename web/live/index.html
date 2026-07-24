@@ -171,7 +171,7 @@
   <header>
     <div>
       <h1>LMM WebHMI Live</h1>
-      <div class="meta">绑定 LMM.xml HMI_* · WS↔gateway↔TCP:9100 · 见 docs/plc/TCP_HMI.md</div>
+      <div class="meta">绑定 LMM.xml HMI_*（中文说明见 docs/plc/HMI.md）· WS↔gateway↔Modbus:502 · 见 docs/plc/TCP_HMI.md</div>
     </div>
     <div class="meta"><span class="pill" id="conn">WS: —</span> <span class="pill" id="plc-mode">PLC: —</span></div>
   </header>
@@ -222,7 +222,7 @@
 
       <section>
         <h2>链路</h2>
-        <p class="hint" id="link-hint">通过 gateway 写 Tcp_* 影子；Logic 合成面板∨TCP → HMI_*</p>
+        <p class="hint" id="link-hint">Web 写 HMI_* 名 → Gateway → Modbus；PLC 进 Tcp_* 影子后仲裁到 HMI_*（变量中文说明：docs/plc/HMI.md）</p>
       </section>
     </div>
 
@@ -281,12 +281,34 @@
             </div>
           </div>
         </div>
+        <div style="margin-top:.75rem;padding-top:.5rem;border-top:1px solid #333">
+          <h3 style="margin:0 0 .4rem;font-size:.95rem">回零 · Y/Z/R（完成→当前位置=0）</h3>
+          <div class="row">
+            <label class="opt"><input type="radio" name="home-axis" value="1" checked /> Y</label>
+            <label class="opt"><input type="radio" name="home-axis" value="2" /> Z</label>
+            <label class="opt"><input type="radio" name="home-axis" value="3" /> R</label>
+            <button type="button" class="primary" id="btn-home-exec">回零执行 HomeExec</button>
+          </div>
+          <div class="row" style="margin-top:.35rem">
+            <button type="button" id="btn-home-y">Y回零</button>
+            <button type="button" id="btn-home-z">Z回零</button>
+            <button type="button" id="btn-home-r">R回零</button>
+          </div>
+          <div class="pills" style="margin-top:.35rem">
+            <span class="pill" id="p-homed-y">Y Homed=F</span>
+            <span class="pill" id="p-homed-z">Z Homed=F</span>
+            <span class="pill" id="p-homed-r">R Homed=F</span>
+            <span class="pill" id="p-home-busy">Busy=—</span>
+          </div>
+          <p class="hint">轴选择 + HomeExec，或直接按 Y/Z/R 回零；同时只回一轴；手动模式</p>
+        </div>
       </section>
 
       <section id="panel-auto" class="panel-hidden">
         <h2>自动 · 参数与步序</h2>
         <div class="params">
           <span>DistX</span><input type="range" id="p-dx" min="0.1" max="5" step="0.1" value="1.0" /><span class="val" id="v-dx">1.0</span>
+          <span title="HMI_iAutoPasses">总道数</span><input type="range" id="p-npass" min="1" max="50" step="1" value="1" /><span class="val" id="v-npass">1</span>
           <span>VelX</span><input type="range" id="p-avx" min="0.05" max="2" step="0.05" value="0.4" /><span class="val" id="v-avx">0.40</span>
           <span title="HMI_rWheelBase">跨距=Y行程</span><input type="range" id="p-base" min="4" max="6" step="0.1" value="5.0" /><span class="val" id="v-base">5.0</span>
           <span>VelY</span><input type="range" id="p-avy" min="0.05" max="2" step="0.05" value="0.3" /><span class="val" id="v-avy">0.30</span>
@@ -294,7 +316,7 @@
           <span>F_set (N)</span><input type="range" id="p-fset" min="10" max="500" step="5" value="100" /><span class="val" id="v-fset">100</span>
         </div>
         <div class="row">
-          <label class="opt"><input type="checkbox" id="force-sim" checked /> HMI_xForceSimEnable</label>
+          <label class="opt"><input type="checkbox" id="force-sim" /> HMI_xForceSimEnable</label>
           <label class="opt"><input type="checkbox" id="force-climb" checked /> PressZ 自动爬升力</label>
         </div>
         <div class="params">
@@ -374,13 +396,16 @@
     HMI_xJogYPos: false, HMI_xJogYNeg: false,
     HMI_xJogZPos: false, HMI_xJogZNeg: false,
     HMI_xJogRPos: false, HMI_xJogRNeg: false,
+    HMI_xHomeY: false, HMI_xHomeZ: false, HMI_xHomeR: false,
+    HMI_iHomeAxis: 1, HMI_xHomeExec: false,
     HMI_rJogVelX: 0.4, HMI_rSpinVel: 0.3,
     HMI_rJogVelY: 0.3, HMI_rJogVelZ: 0.2, HMI_rJogVelR: 0.2,
     HMI_xAutoStart: false, HMI_xAutoAbort: false,
     HMI_rAutoDistX: 1.0, HMI_rAutoVelX: 0.4,
     HMI_rAutoVelY: 0.3, HMI_rAutoVelZ: 0.15,
     HMI_rWheelBase: 5.0, HMI_rForceSet: 100,
-    HMI_xForceSimEnable: true, HMI_rForceSim: 0,
+    HMI_iAutoPasses: 1,
+    HMI_xForceSimEnable: false, HMI_rForceSim: 0,
   };
 
   const S = {
@@ -401,12 +426,20 @@
     lampFault: false,
     posY: 0,
     posZ: 0,
+    posR: 0,
     ready: false,
+    homedY: false,
+    homedZ: false,
+    homedR: false,
+    homeBusyY: false,
+    homeBusyZ: false,
+    homeBusyR: false,
   };
 
   let ws = null;
   let seq = 0;
-  let dirty = true;
+  let dirty = false;
+  let controlClaimed = false;
   let lastSend = 0;
   let stopHold = null;
 
@@ -436,7 +469,8 @@
 
   function flush(force) {
     const now = Date.now();
-    if (!force && now - lastSend < 50 && !dirty) return;
+    if (!controlClaimed || !dirty) return;
+    if (!force && now - lastSend < 50) return;
     if (!ws || ws.readyState !== 1) return;
     const msg = { t: 'w', seq: ++seq, ...W };
     ws.send(JSON.stringify(msg));
@@ -444,8 +478,10 @@
     dirty = false;
   }
 
-  function patch(partial) {
+  function patch(partial, userInitiated = true) {
     Object.assign(W, partial);
+    if (userInitiated) controlClaimed = true;
+    if (!controlClaimed) return;
     dirty = true;
     flush(true);
   }
@@ -456,10 +492,11 @@
     ws.onopen = () => {
       setConn(true, S.mode);
       log('WS open');
-      flush(true);
       ws.send(JSON.stringify({ t: 'ping' }));
     };
     ws.onclose = () => {
+      controlClaimed = false;
+      dirty = false;
       setConn(false, S.mode);
       log('WS closed — retry 2s');
       // release motion
@@ -492,7 +529,14 @@
         S.lampFault = !!msg.HMI_xLampFault;
         S.posY = msg.AxisFb_rPosY ?? S.posY;
         S.posZ = msg.AxisFb_rPosZ ?? S.posZ;
+        S.posR = msg.AxisFb_rPosR ?? S.posR;
         S.ready = msg.AxisFb_xReady ?? S.ready;
+        S.homedY = !!(msg.HMI_xHomedY ?? msg.AxisFb_xHomedY);
+        S.homedZ = !!(msg.HMI_xHomedZ ?? msg.AxisFb_xHomedZ);
+        S.homedR = !!(msg.HMI_xHomedR ?? msg.AxisFb_xHomedR);
+        S.homeBusyY = !!msg.HMI_xHomeBusyY;
+        S.homeBusyZ = !!msg.HMI_xHomeBusyZ;
+        S.homeBusyR = !!msg.HMI_xHomeBusyR;
         setConn(true, msg.Tcp_xConnected === false ? 'offline' : (S.mode || 'live'));
         render();
       }
@@ -511,9 +555,23 @@
       (S.eOpMode ? 'AUTO' : 'MAN') +
       (S.lampEStop ? ' · EStopLamp' : '');
     $('fb-force').textContent = S.force.toFixed(1) + ' N / HoldR —';
-    $('fb-pos').textContent = 'Y=' + S.posY.toFixed(3) + ' Z=' + S.posZ.toFixed(3);
+    $('fb-pos').textContent =
+      'Y=' + S.posY.toFixed(3) + ' Z=' + S.posZ.toFixed(3) +
+      ' R=' + (S.posR != null ? Number(S.posR).toFixed(2) : '—');
     $('fb-vel').textContent = '— (live)';
     $('fb-mv').textContent = 'Ready=' + S.ready;
+    const hy = $('p-homed-y'), hz = $('p-homed-z'), hr = $('p-homed-r'), hb = $('p-home-busy');
+    if (hy) {
+      hy.textContent = 'Y Homed=' + (S.homedY ? 'T' : 'F');
+      hy.className = 'pill' + (S.homedY ? ' on ok' : '');
+      hz.textContent = 'Z Homed=' + (S.homedZ ? 'T' : 'F');
+      hz.className = 'pill' + (S.homedZ ? ' on ok' : '');
+      hr.textContent = 'R Homed=' + (S.homedR ? 'T' : 'F');
+      hr.className = 'pill' + (S.homedR ? ' on ok' : '');
+      const busy = S.homeBusyY ? 'Y' : S.homeBusyZ ? 'Z' : S.homeBusyR ? 'R' : '—';
+      hb.textContent = 'Busy=' + busy;
+      hb.className = 'pill' + (busy !== '—' ? ' warn' : '');
+    }
     $('p-step').textContent = 'Step=' + S.step + ' ' + (STEP_NAME[S.step] || '');
     $('p-busy').textContent = 'Busy=' + (S.busy ? 'T' : 'F');
     $('p-done').textContent = 'Done=' + (S.done ? 'T' : 'F');
@@ -543,13 +601,16 @@
 
   function bindRange(id, key, valId, digits) {
     const el = $(id), lab = $(valId);
-    const sync = () => {
+    const sync = (userInitiated) => {
       W[key] = Number(el.value);
       lab.textContent = Number(el.value).toFixed(digits);
-      dirty = true;
+      if (userInitiated) {
+        controlClaimed = true;
+        dirty = true;
+      }
     };
-    el.addEventListener('input', () => { sync(); flush(false); });
-    sync();
+    el.addEventListener('input', () => { sync(true); flush(false); });
+    sync(false);
   }
 
   bindRange('p-velx', 'HMI_rJogVelX', 'v-velx', 2);
@@ -558,6 +619,7 @@
   bindRange('p-velz', 'HMI_rJogVelZ', 'v-velz', 2);
   bindRange('p-velr', 'HMI_rJogVelR', 'v-velr', 2);
   bindRange('p-dx', 'HMI_rAutoDistX', 'v-dx', 1);
+  bindRange('p-npass', 'HMI_iAutoPasses', 'v-npass', 0);
   bindRange('p-avx', 'HMI_rAutoVelX', 'v-avx', 2);
   bindRange('p-base', 'HMI_rWheelBase', 'v-base', 1);
   bindRange('p-avy', 'HMI_rAutoVelY', 'v-avy', 2);
@@ -571,6 +633,34 @@
       render();
     });
   });
+
+  document.querySelectorAll('input[name=home-axis]').forEach((r) => {
+    r.addEventListener('change', () => {
+      patch({ HMI_iHomeAxis: Number(r.value) });
+    });
+  });
+
+  function pulseHome(partial) {
+    patch(partial);
+    log('home ' + JSON.stringify(partial));
+    setTimeout(() => {
+      patch({
+        HMI_xHomeExec: false,
+        HMI_xHomeY: false,
+        HMI_xHomeZ: false,
+        HMI_xHomeR: false,
+      }, false);
+    }, 200);
+  }
+
+  $('btn-home-exec').addEventListener('click', () => {
+    const sel = document.querySelector('input[name=home-axis]:checked');
+    const axis = sel ? Number(sel.value) : 1;
+    pulseHome({ HMI_iHomeAxis: axis, HMI_xHomeExec: true });
+  });
+  $('btn-home-y').addEventListener('click', () => pulseHome({ HMI_xHomeY: true }));
+  $('btn-home-z').addEventListener('click', () => pulseHome({ HMI_xHomeZ: true }));
+  $('btn-home-r').addEventListener('click', () => pulseHome({ HMI_xHomeR: true }));
 
   $('force-sim').addEventListener('change', () => {
     patch({ HMI_xForceSimEnable: $('force-sim').checked });
@@ -607,7 +697,7 @@
 
   $('btn-start').addEventListener('click', () => {
     patch({ HMI_xStart: true, HMI_xEnable: true });
-    setTimeout(() => patch({ HMI_xStart: false, HMI_xEnable: false }), 120);
+    setTimeout(() => patch({ HMI_xStart: false, HMI_xEnable: false }, false), 120);
     log('HMI_xStart pulse');
   });
 
@@ -626,29 +716,29 @@
 
   $('btn-reset').addEventListener('click', () => {
     patch({ HMI_xStopHold3s: true });
-    setTimeout(() => patch({ HMI_xStopHold3s: false }), 120);
+    setTimeout(() => patch({ HMI_xStopHold3s: false }, false), 120);
     log('HMI_xStopHold3s pulse');
   });
 
   $('btn-auto-start').addEventListener('click', () => {
     patch({ HMI_xAutoStart: true, HMI_xAutoAbort: false });
-    setTimeout(() => patch({ HMI_xAutoStart: false }), 120);
+    setTimeout(() => patch({ HMI_xAutoStart: false }, false), 120);
     log('HMI_xAutoStart');
   });
   $('btn-auto-abort').addEventListener('click', () => {
     patch({ HMI_xAutoAbort: true });
-    setTimeout(() => patch({ HMI_xAutoAbort: false }), 120);
+    setTimeout(() => patch({ HMI_xAutoAbort: false }, false), 120);
     log('HMI_xAutoAbort');
   });
 
   $('btn-tare').addEventListener('click', () => {
     patch({ HMI_xForceTare: true });
-    setTimeout(() => patch({ HMI_xForceTare: false }), 120);
+    setTimeout(() => patch({ HMI_xForceTare: false }, false), 120);
     log('HMI_xForceTare → FC06 0x11=1 去皮');
   });
   $('btn-untare').addEventListener('click', () => {
     patch({ HMI_xForceUntare: true });
-    setTimeout(() => patch({ HMI_xForceUntare: false }), 120);
+    setTimeout(() => patch({ HMI_xForceUntare: false }, false), 120);
     log('HMI_xForceUntare → FC06 0x11=2 取消去皮');
   });
 
