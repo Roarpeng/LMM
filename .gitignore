@@ -14,3 +14,5 @@ gateway/node_modules/
 # OS
 .DS_Store
 Thumbs.db
+__pycache__/
+*.pyc
