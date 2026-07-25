@@ -26,7 +26,7 @@ BAK_PATH = ROOT / "LMM.xml.bak.inject"
 SRC_DIR = ROOT / "plc" / "src"
 GVL_ST = ROOT / "plc" / "GVL.st"
 
-DEAD_POUS = ["FB_TCPServer", "PRG_Force485", "FB_XDiff"]
+DEAD_POUS = ["FB_TCPServer", "PRG_Force485", "FB_XDiff", "FB_GantryX"]
 
 ELEMENTARY = {
     "BOOL", "SINT", "INT", "DINT", "LINT",
@@ -35,7 +35,7 @@ ELEMENTARY = {
     "REAL", "LREAL", "TIME", "DATE", "STRING",
 }
 
-VAR_BLOCK_RE = re.compile(r"^\s*(VAR_INPUT|VAR_OUTPUT|VAR_IN_OUT|VAR_GLOBAL|VAR)\b")
+VAR_BLOCK_RE = re.compile(r"^\s*(VAR_INPUT|VAR_OUTPUT|VAR_IN_OUT|VAR_GLOBAL(?:\s+RETAIN)?|VAR)\b")
 END_VAR_RE = re.compile(r"^\s*END_VAR\b")
 HEADER_RE = re.compile(r"^\s*(PROGRAM|FUNCTION_BLOCK)\s+(\w+)")
 COMMENT_RE = re.compile(r"\(\*.*?\*\)", re.S)
@@ -108,6 +108,8 @@ def parse_st(path):
         vm = VAR_BLOCK_RE.match(line)
         if vm and scope is None:
             scope = vm.group(1)
+            if scope == "VAR_GLOBAL RETAIN":
+                scope = "VAR_GLOBAL_RETAIN"
             scopes.setdefault(scope, [])
             continue
         if END_VAR_RE.match(line) and scope is not None:
@@ -152,6 +154,19 @@ def var_xml(v, indent):
     if v["doc"]:
         out.append(f'{pad}  <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">'
                    f"{esc(v['doc'])}</xhtml></documentation>")
+    # InoPro：同一 data/globalvars 下只能有一个 globalVars；RETAIN 变量并入 GVL，
+    # 用变量级 retain 属性（勿再拆 GVL_RETAIN 兄弟节点）。
+    if v.get("retain"):
+        out.append(
+            f"{pad}  <addData>\n"
+            f'{pad}    <data name="http://www.3s-software.com/plcopenxml/attributes" '
+            f'handleUnknown="implementation">\n'
+            f"{pad}      <Attributes>\n"
+            f'{pad}        <Attribute Name="retain" Value="" />\n'
+            f"{pad}      </Attributes>\n"
+            f"{pad}    </data>\n"
+            f"{pad}  </addData>"
+        )
     out.append(f"{pad}</variable>")
     return "\n".join(out)
 
@@ -190,7 +205,88 @@ def replace_block(xml, start_re, end_str, repl_fn):
     return xml[:m.end()] + repl_fn(inner) + xml[end:]
 
 
+# 新建 POU 时使用的稳定 GUID（与 ProjectStructure 对齐）
+NEW_POU_GUIDS = {
+    "FB_XDual": "d4e5f6a7-b8c9-4012-c345-d6e7f8a90002",
+}
+FB_FOLDER_GUID = "2dc75837-520f-43d9-90dd-47cded0212a2"
+
+
+def _pou_adddata(name, guid, fb_folder=True):
+    mid = (
+        f'                  <pathStructure isFolder="True" name="FB" namespace="00000000-0000-0000-0000-000000000000" '
+        f'factoryName="Inovance.InoPro.InoNavigators.FolderObjectFactory" factoryGuid="{{BA66A801-C738-4176-B072-DFE26ACE36D3}}" '
+        f'objectGuid="{FB_FOLDER_GUID}">\n'
+        f'                    <pathStructure isFolder="False" name="{name}" namespace="e5b60c93-5445-4e40-ada9-cd9c005549b4" '
+        f'factoryName="Inovance.InoPro.InoPOUObject.POUObjectFactory" factoryGuid="{{39C4ED2B-903C-464c-9041-7DF4ECEE9609}}" '
+        f'objectGuid="{guid}" />\n'
+        f'                  </pathStructure>\n'
+    ) if fb_folder else (
+        f'                  <pathStructure isFolder="False" name="{name}" namespace="e5b60c93-5445-4e40-ada9-cd9c005549b4" '
+        f'factoryName="Inovance.InoPro.InoPOUObject.POUObjectFactory" factoryGuid="{{39C4ED2B-903C-464c-9041-7DF4ECEE9609}}" '
+        f'objectGuid="{guid}" />\n'
+    )
+    return (
+        '        <addData>\n'
+        '          <data name="http://www.3s-software.com/plcopenxml/pathstructure" handleUnknown="discard">\n'
+        '            <pathStructure isFolder="False" name="Device" namespace="1ee21fdd-5562-44a0-a3ce-665d74916d50" '
+        'factoryName="Inovance.InoPro.InoDeviceObject.DeviceObjectFactory" factoryGuid="{84d12aa5-3225-473b-9df6-18af40889bdf}" '
+        'objectGuid="d7de5ac3-3f30-45ac-8468-ec250b4e523b">\n'
+        '              <pathStructure isFolder="False" name="Plc Logic" namespace="00000000-0000-0000-0000-000000000000" '
+        'factoryName="_3S.CoDeSys.PlcLogicObject.PlcLogicObjectFactory" factoryGuid="{8ceeba4e-ac7a-4fbd-9415-bfb2d98668ab}" '
+        'objectGuid="8a291c6e-c5c5-4a07-8c04-1100df0e1491">\n'
+        '                <pathStructure isFolder="False" name="Application" namespace="e5b60c93-5445-4e40-ada9-cd9c005549b4" '
+        'factoryName="_3S.CoDeSys.ApplicationObject.ApplicationObjectFactory" factoryGuid="{ECADC42E-716E-4ff3-A93C-0CD143F9743F}" '
+        'objectGuid="69822df8-b9c0-4a01-9450-b2cdc030688c">\n'
+        + mid +
+        '                </pathStructure>\n'
+        '              </pathStructure>\n'
+        '            </pathStructure>\n'
+        '          </data>\n'
+        '          <data name="http://www.3s-software.com/plcopenxml/objectid" handleUnknown="discard">\n'
+        f'            <ObjectId>{guid}</ObjectId>\n'
+        '          </data>\n'
+        '        </addData>\n'
+    )
+
+
+def ensure_pou_exists(xml, name, kind):
+    """若 POU 不存在则在 FB_XLineTrack 后插入空壳，并登记 ProjectStructure。"""
+    pou_re = re.compile(r'<pou name="' + re.escape(name) + r'" pouType="[^"]+">')
+    if pou_re.search(xml):
+        return xml
+    guid = NEW_POU_GUIDS.get(name)
+    if not guid:
+        raise ValueError(f"LMM.xml 中未找到 POU {name}，且无新建 GUID")
+    pou_type = "functionBlock" if kind == "FUNCTION_BLOCK" else "program"
+    stub = (
+        f'      <pou name="{name}" pouType="{pou_type}">\n'
+        f'        <interface />\n'
+        f'        <body>\n          <ST>\n'
+        f'            <xhtml xmlns="http://www.w3.org/1999/xhtml"></xhtml>\n'
+        f'          </ST>\n        </body>\n'
+        f'{_pou_adddata(name, guid, fb_folder=(kind == "FUNCTION_BLOCK"))}'
+        f'      </pou>\n'
+    )
+    anchor = xml.find('</pou>', xml.find('<pou name="FB_XLineTrack"'))
+    if anchor < 0:
+        raise ValueError("无法定位 FB_XLineTrack 作为新建 POU 锚点")
+    anchor = anchor + len('</pou>')
+    xml = xml[:anchor] + "\n" + stub + xml[anchor:]
+    obj = f'              <Object Name="{name}" ObjectId="{guid}" />\n'
+    if f'Object Name="{name}"' not in xml:
+        marker = '              <Object Name="FB_XLineTrack"'
+        mi = xml.find(marker)
+        if mi < 0:
+            raise ValueError("ProjectStructure 中未找到 FB_XLineTrack")
+        line_end = xml.find("\n", mi) + 1
+        xml = xml[:line_end] + obj + xml[line_end:]
+    print(f"新建 POU 壳: {name} ({guid})")
+    return xml
+
+
 def inject_pou(xml, name, kind, scopes, body):
+    xml = ensure_pou_exists(xml, name, kind)
     pou_re = re.compile(r'<pou name="' + re.escape(name) + r'" pouType="[^"]+">')
     m = pou_re.search(xml)
     if not m:
@@ -212,20 +308,47 @@ def inject_pou(xml, name, kind, scopes, body):
     return xml[:m.start()] + block + xml[end:]
 
 
+def strip_extra_globalvars(xml):
+    """删除 GVL 之外的非法 globalVars 兄弟（如错误注入的 GVL_RETAIN）。"""
+    # 仅保留 data/.../globalvars 下的第一个 globalVars(GVL)
+    pattern = re.compile(
+        r'(<data name="http://www\.3s-software\.com/plcopenxml/globalvars"[^>]*>\s*)'
+        r'(<globalVars name="GVL">.*?</globalVars>)'
+        r'(\s*<globalVars name="[^"]+".*?</globalVars>)+'
+        r'(\s*</data>)',
+        re.S,
+    )
+
+    def _keep_gvl(m):
+        print(f"移除非法额外 globalVars（保留 GVL）")
+        return m.group(1) + m.group(2) + m.group(4)
+
+    return pattern.sub(_keep_gvl, xml)
+
+
 def inject_gvl(xml, vars_):
+    """注入唯一 GVL（InoPro 每个 globalvars data 仅允许一个 globalVars 子元素）。"""
+    xml = strip_extra_globalvars(xml)
     gvl_re = re.compile(r'<globalVars name="GVL">')
     m = gvl_re.search(xml)
     if not m:
-        raise ValueError("未找到 GVL globalVars")
+        raise ValueError("未找到 globalVars GVL")
+    vars_xml = "\n".join(var_xml(v, 8) for v in vars_)
     end = xml.index("</globalVars>", m.end())
     inner = xml[m.end():end]
-    # 保留尾部 addData
-    add = ""
-    am = re.search(r"<addData>.*</addData>\s*$", inner, re.S)
+    keep = ""
+    # 只保留 GVL 对象级 addData（pathstructure/objectid），
+    # 勿匹配变量内的 retain <addData>（否则会截断/重复破坏 XML）。
+    am = re.search(
+        r'<addData>\s*'
+        r'<data name="http://www\.3s-software\.com/plcopenxml/pathstructure"'
+        r'.*?</addData>\s*$',
+        inner,
+        re.S,
+    )
     if am:
-        add = "\n" + am.group(0).rstrip() + "\n      "
-    vars_xml = "\n".join(var_xml(v, 8) for v in vars_)
-    return xml[:m.end()] + "\n" + vars_xml + add + xml[end:]
+        keep = "\n" + am.group(0).rstrip() + "\n      "
+    return xml[:m.end()] + "\n" + vars_xml + keep + xml[end:]
 
 
 def remove_dead_pous(xml):
@@ -252,10 +375,14 @@ def fix_ethercat_task(xml):
 def main():
     check_only = "--check" in sys.argv
 
-    # 1. 解析 GVL
+    # 1. 解析 GVL（RETAIN 段并入同一 GVL，变量带 retain 标记）
     kind, name, scopes, _ = parse_st(GVL_ST)
     gvl_vars = scopes.get("VAR_GLOBAL", [])
-    print(f"GVL: {len(gvl_vars)} vars")
+    retain_vars = scopes.get("VAR_GLOBAL_RETAIN", [])
+    for v in retain_vars:
+        v["retain"] = True
+    all_gvl = gvl_vars + retain_vars
+    print(f"GVL: {len(gvl_vars)} vars + {len(retain_vars)} RETAIN (merged)")
 
     # 2. 解析 POU
     pous = []
@@ -274,7 +401,7 @@ def main():
     print(f"备份 -> {BAK_PATH.name}")
     xml = XML_PATH.read_text(encoding="utf-8")
 
-    xml = inject_gvl(xml, gvl_vars)
+    xml = inject_gvl(xml, all_gvl)
     for name, kind, scopes, body in pous:
         xml = inject_pou(xml, name, kind, scopes, body)
     xml = remove_dead_pous(xml)

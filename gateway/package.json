@@ -5,8 +5,8 @@
   "description": "Modbus TCP Server and WebSocket gateway for LMM WebHMI",
   "main": "server.js",
   "scripts": {
-    "start": "MOCK_PLC=1 node server.js",
-    "start:plc": "MOCK_PLC=0 node server.js",
+    "start": "node -e \"process.env.MOCK_PLC='1'; require('./server.js')\"",
+    "start:plc": "node -e \"process.env.MOCK_PLC='0'; require('./server.js')\"",
     "test": "cd .. && node --test gateway/test/*.test.js"
   },
   "dependencies": {

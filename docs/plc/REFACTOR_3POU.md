@@ -19,16 +19,17 @@
 |-----|------|------|----|
 | `PRG_TcpHmi` | HMI 交互：面板IO + 触摸屏Req + Web(`FB_TCPServer`) 三源仲裁 | `HMI_*` | 面板IO/`Tcp_*`/触摸屏Req |
 | `PRG_Logic` | 安全去耦 + 手动 + 自动多道循环 + 回零编排 | `AxisCmd_*` + 报警/灯 | `HMI_*`/`AxisFb_*` |
-| `PRG_Axis_Control` | 组装 5×`FB_Servo`+`FB_Force`+`FB_ForceFollow`+`FB_XLineTrack` | `AxisFb_*`/`rForceAct`/`Force_*` | `AxisCmd_*` |
+| `PRG_Axis_Control` | 组装 `FB_XDual`+3×`FB_Servo`(Y/Z/R)+`FB_Force`+`FB_ForceFollow` | `AxisFb_*`/`rForceAct`/`Force_*` | `AxisCmd_*` |
 
-## 3. 四个底层 FB
+## 3. 底层 FB
 
 - **FB_Servo**（电机控制，单轴原子）：`MC_Power/Reset/Stop/Home/SetPosition/MoveVelocity/MoveRelative/MoveAbsolute`。
   仲裁优先级：`停止/故障 > 回零 > 绝对定位 > 相对定位 > 速度模式 > 点动 > 空闲`。
-  新增输出 `xReady`（功率级就绪且非 Errorstop）——用于诊断"为何不动"。
+  输出 `xReady`（功率级就绪且非 Errorstop）——用于诊断"为何不动"。Y/Z/R 使用。
+- **FB_XDual**（X 双驱）：`FB_XLineTrack` 差速 + 双 `FB_Servo`（M1/M2 独立速度）；走距用平均相对位移判完成；无 Virtual/Gear/同步跳闸。详见 `docs/superpowers/specs/2026-07-25-x-dual-linetrack-design.md`。
 - **FB_Force**（力转换）：`wRaw(%IW102) → rForceN`；软件去皮（上升沿记偏移）；`wRaw` 长时间不变→`xTimeout`（只报警）。
 - **FB_ForceFollow**（恒力律）：`rZVelCmd := -rKp*(rForceSet-rForceAct)`（**向下=负**增压）；死区置 0；回零后夹紧 `[-0.7,0]`；`xInvert` 现场翻转符号。
-- **FB_XLineTrack**（直线纠偏/原地转）：直行 `rVelM1=rBase+trim, rVelM2=rBase-trim`，`trim=LIMIT(±TrimMax, rKpTrack*rHeadingErr)`；原地转一正一反。仅自动直行传入 `rHeadingErr`（视觉），手动传 0。
+- **FB_XLineTrack**（差速合成）：由 `FB_XDual` 调用；直行/自动走距与 Spin 均走 LineTrack 速度合成。
 
 ## 4. 安全 / 使能（去耦）
 
@@ -90,3 +91,4 @@ Y/Z 硬件限位回零；R 编码器回零。`HMI_xHomeY/Z/R` 或 `HMI_iHomeAxis
 ## 10. 报警表
 
 1001 急停 · 1002 电机故障 · 1003 限位 · 1005 力超时 · 1006 从站失败 · **1007 使能未就绪**。
+（**1008 已废除** — 原 X 同步跳闸，LineTrack 方案不做编码器互差联锁。）

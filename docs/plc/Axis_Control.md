@@ -6,7 +6,7 @@
 
 | 逻辑 | 电机 | SoftMotion | 硬限位 |
 |------|------|------------|--------|
-| X | M1+M2 | `Axis`, `Axis_1` | 无（`xLimEn:=FALSE`） |
+| X | M1+M2 | `Axis` / `Axis_1`（独立双驱，无 Virtual） | 无；**不做**编码器互差联锁 |
 | Y | M3 | `Axis_2` | `Cfg_rLimY*` |
 | Z | M4 | `Axis_3` | `Cfg_rLimZ*` |
 | R | M5 | `Axis_4`（`xM5Ready` 门控） | `Cfg_rLimR*` |
@@ -14,16 +14,23 @@
 ## 组装
 
 - `fbForce : FB_Force` — `Force_wInRaw(%IW102) → rForceAct`（模拟时 Logic 直写 `rForceAct`）
-- `fbTrack : FB_XLineTrack` — X 直行（基础速度带符号 + 视觉纠偏 trim）/ 原地左右旋
+- `fbX : FB_XDual` — X 双驱（`FB_XLineTrack` 差速 + 双 `FB_Servo`；无 Virtual/Gear）
 - `fbFF : FB_ForceFollow` — Z 恒力 P 律，限 `[-rVelMax, rVelMax]`，撞 `Cfg_rLimZ*` 归零
-- `fbM1/fbM2/fbY/fbZ/fbR : FB_Servo` — 见 [FB_Servo.md](FB_Servo.md)
+- `fbY/fbZ/fbR : FB_Servo` — 见 [FB_Servo.md](FB_Servo.md)
 
-## X 特别处理
+## X 双驱（LineTrack）
 
-- X 相对走距（自动步 1）不用定位 FB：**速度模式 + 里程判完成**
-  （`rXStart` 记起点，`ABS(rActPos-rXStart) >= ABS(rMoveDistX)` → `AxisFb_xMoveDoneX`）
-- 方向由 `AxisCmd_rMoveDistX` 符号决定；点动 X± 同理由 `AxisCmd_rJogVelX` 给绝对值
-- 完成后撤速度（`xXVelActive:=FALSE`）→ FB_Servo 内部 MC_Halt 停车
+`FB_XDual` 内部：`FB_XLineTrack` 合成 `rVelM1/rVelM2` → 双 `FB_Servo`（`xUseVelCmd`，`xLimEn:=FALSE`）。
+
+- **直行（JogX± / 自动 MoveRel）**：`eMode=1`，M1/M2 同向；可选 `rKpTrack·rHeadingErr` 航向纠偏（trim 限 `Cfg_rPhaseMax`）
+- **原地转（SpinL/R）**：`eMode=2/3`，一正一反差速
+- **走距完成**：`xMoveRel` 上升沿锁存 `(PosM1+PosM2)/2`；运行中平均相对位移 `|Δ| ≥ |rMoveDist|` → `AxisFb_xMoveDoneX`
+- **停止**：两轴速度 0 → `MC_Halt`
+- **已取消**：Virtual 轴、`MC_GearIn/Out/Phasing`、`|PosM1−PosM2|` 同步预警/跳闸、报警 **1008**
+
+兼容反馈：`AxisFb_rPosX := (PosM1+PosM2)/2`；`rSyncErr`/龙门耦合/Gear 相关位恒 0/FALSE。
+
+详见 [x-dual-linetrack-design](../superpowers/specs/2026-07-25-x-dual-linetrack-design.md)。
 
 ## Y / Z / R
 
@@ -35,3 +42,9 @@
 
 - 写 `HMI_*` / 报警 / 设备状态
 - 被 Logic CALL
+
+## 现场 InoProShop 验收（X 双驱切换后）
+
+1. 导入注入后的 `LMM.xml`，编译 **0 error**（无 `FB_GantryX` / 未解析 `Axis_Virtual` 引用）
+2. 设备树：**禁用或删除** `Axis_Virtual`；核对 `Axis`/`Axis_1` 仍为 M1/M2
+3. 下载后：手动 X±、SpinL/R、自动一步走距；确认双轴 Power/Ready，**无报警 1008**

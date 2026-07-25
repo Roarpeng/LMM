@@ -48,7 +48,7 @@ ELSE
     AxisCmd_xResetFault := FALSE;
 END_IF;
 
-(* 故障汇总：仅各轴 Errorstop *)
+(* 故障汇总：各轴 Errorstop（同步跳闸已废，不再 OR AxisFb_xSyncFault） *)
 xFaultAggregate := AxisFb_xFaultM1 OR AxisFb_xFaultM2 OR AxisFb_xFaultY OR AxisFb_xFaultZ
     OR (xM5Ready AND AxisFb_xFaultR);
 
@@ -80,10 +80,15 @@ AxisCmd_rJogVelY := HMI_rJogVelY;
 AxisCmd_rJogVelZ := HMI_rJogVelZ;
 AxisCmd_rJogVelR := HMI_rJogVelR;
 AxisCmd_rWheelBase := LIMIT(4.0, HMI_rWheelBase, 6.0);
-AxisCmd_rAcc := JogACC;
-AxisCmd_rDec := JogDEC;
-IF AxisCmd_rAcc < 1.0 THEN AxisCmd_rAcc := 100.0; END_IF;
-IF AxisCmd_rDec < 1.0 THEN AxisCmd_rDec := 100.0; END_IF;
+(* 每轴加减速（RETAIN 参数；<1 时兜底 100） *)
+AxisCmd_rAccX := HMI_rAccX; IF AxisCmd_rAccX < 1.0 THEN AxisCmd_rAccX := 100.0; END_IF;
+AxisCmd_rDecX := HMI_rDecX; IF AxisCmd_rDecX < 1.0 THEN AxisCmd_rDecX := 100.0; END_IF;
+AxisCmd_rAccY := HMI_rAccY; IF AxisCmd_rAccY < 1.0 THEN AxisCmd_rAccY := 100.0; END_IF;
+AxisCmd_rDecY := HMI_rDecY; IF AxisCmd_rDecY < 1.0 THEN AxisCmd_rDecY := 100.0; END_IF;
+AxisCmd_rAccZ := HMI_rAccZ; IF AxisCmd_rAccZ < 1.0 THEN AxisCmd_rAccZ := 100.0; END_IF;
+AxisCmd_rDecZ := HMI_rDecZ; IF AxisCmd_rDecZ < 1.0 THEN AxisCmd_rDecZ := 100.0; END_IF;
+AxisCmd_rAccR := HMI_rAccR; IF AxisCmd_rAccR < 1.0 THEN AxisCmd_rAccR := 100.0; END_IF;
+AxisCmd_rDecR := HMI_rDecR; IF AxisCmd_rDecR < 1.0 THEN AxisCmd_rDecR := 100.0; END_IF;
 
 (* 限位联锁：物理限位输入 ∨ 可配置硬限位（Cfg_rLim*，FB_Servo 内另有最终闸门） *)
 xIlk_BlockYPlus := I_xLimYPos OR (AxisFb_rPosY >= Cfg_rLimYPos);
@@ -266,7 +271,8 @@ tonReady(IN := AxisCmd_xPower AND NOT xReadyAll AND NOT xFaultAggregate, PT := T
 (* 报警 *)
 IF xEStopLatched OR NOT HMI_xEStop THEN
     iAlarmID := 1001;
-ELSIF xFaultAggregate THEN
+ELSIF AxisFb_xFaultM1 OR AxisFb_xFaultM2 OR AxisFb_xFaultY OR AxisFb_xFaultZ
+        OR (xM5Ready AND AxisFb_xFaultR) THEN
     iAlarmID := 1002;
 ELSIF tonReady.Q THEN
     iAlarmID := 1007;

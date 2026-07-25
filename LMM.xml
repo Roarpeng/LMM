@@ -1,7 +1,7 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <project xmlns="http://www.plcopen.org/xml/tc6_0200">
-  <fileHeader companyName="Inovance company" productName="InoProShop(V1.9.1.6)" productVersion="InoProShop(V1.9.1.6)" creationDateTime="2026-07-23T19:01:52.4184983" />
-  <contentHeader name="LMM.project" modificationDateTime="2026-07-23T19:01:34.7448869">
+  <fileHeader companyName="Inovance company" productName="InoProShop(V1.9.1.6)" productVersion="InoProShop(V1.9.1.6)" creationDateTime="2026-07-25T13:40:05.155318" />
+  <contentHeader name="LMM.project" modificationDateTime="2026-07-25T13:39:45.1621345">
     <coordinateInfo>
       <fbd>
         <scaling x="1" y="1" />
@@ -25,11 +25,8 @@
       <pou name="PRG_Axis_Control" pouType="program">
         <interface>
           <localVars>
-            <variable name="fbM1">
-              <type><derived name="FB_Servo" /></type>
-            </variable>
-            <variable name="fbM2">
-              <type><derived name="FB_Servo" /></type>
+            <variable name="fbX">
+              <type><derived name="FB_XDual" /></type>
             </variable>
             <variable name="fbY">
               <type><derived name="FB_Servo" /></type>
@@ -46,30 +43,13 @@
             <variable name="fbFF">
               <type><derived name="FB_ForceFollow" /></type>
             </variable>
-            <variable name="fbTrack">
-              <type><derived name="FB_XLineTrack" /></type>
-            </variable>
-            <variable name="iTrackMode">
-              <type><INT /></type>
-            </variable>
-            <variable name="rXBase">
-              <type><REAL /></type>
-            </variable>
-            <variable name="rXStart">
-              <type><LREAL /></type>
-            </variable>
-            <variable name="xMoveRelXPrev">
-              <type><BOOL /></type>
-            </variable>
-            <variable name="xXVelActive">
-              <type><BOOL /></type>
-            </variable>
           </localVars>
         </interface>
         <body>
           <ST>
             <xhtml xmlns="http://www.w3.org/1999/xhtml">(* PRG_Axis_Control — 运动独立任务(ETHERCAT 4ms)。只读 AxisCmd_*，写 AxisFb_*/rForceAct。
-   禁止被其它 POU CALL；禁止写 HMI_*/报警。 *)
+   禁止被其它 POU CALL；禁止写 HMI_*/报警。
+   X：FB_XDual（LineTrack + 双 FB_Servo，无 Virtual/Gear）；Y/Z/R 仍 FB_Servo。 *)
 
 (* ===== 力传感转换（本 POU 拥有 rForceAct） ===== *)
 fbForce(wRaw := Force_wInRaw, rScale := Force_rScale, xEnable := Force_xEnable,
@@ -81,54 +61,42 @@ IF NOT HMI_xForceSimEnable THEN
     rForceAct := fbForce.rForceN;
 END_IF;
 
-(* ===== X 直线纠偏 / 原地转（速度模式 + 里程判完成） ===== *)
-iTrackMode := 0;
-rXBase := 0.0;
-IF AxisCmd_xMoveRelX THEN
-    iTrackMode := 1;
-    (* 方向由走距符号决定，速度取绝对值 *)
-    IF AxisCmd_rMoveDistX &gt;= 0.0 THEN
-        rXBase := ABS(AxisCmd_rMoveVelX);
-    ELSE
-        rXBase := -ABS(AxisCmd_rMoveVelX);
-    END_IF;
-ELSIF AxisCmd_xSpinLeft THEN
-    iTrackMode := 2;
-ELSIF AxisCmd_xSpinRight THEN
-    iTrackMode := 3;
-ELSIF AxisCmd_xJogXPos THEN
-    iTrackMode := 1;
-    rXBase := ABS(AxisCmd_rJogVelX);
-ELSIF AxisCmd_xJogXNeg THEN
-    iTrackMode := 1;
-    rXBase := -ABS(AxisCmd_rJogVelX);
-END_IF;
-
-IF AxisCmd_xMoveRelX AND NOT xMoveRelXPrev THEN
-    rXStart := fbM1.rActPos;
-    AxisFb_xMoveDoneX := FALSE;
-END_IF;
-xMoveRelXPrev := AxisCmd_xMoveRelX;
-IF AxisCmd_xMoveRelX THEN
-    IF ABS(fbM1.rActPos - rXStart) &gt;= ABS(AxisCmd_rMoveDistX) THEN
-        AxisFb_xMoveDoneX := TRUE;
-    END_IF;
-ELSE
-    AxisFb_xMoveDoneX := FALSE;
-END_IF;
-
-xXVelActive := (iTrackMode &lt;&gt; 0) AND NOT (AxisCmd_xMoveRelX AND AxisFb_xMoveDoneX);
-
-fbTrack(xEnable := AxisCmd_xPower, xStop := AxisCmd_xStopAll, eMode := iTrackMode,
-    rBaseVel := rXBase, rSpinVel := AxisCmd_rSpinVel,
-    rHeadingErr := AxisCmd_rHeadingErr, rKpTrack := AxisCmd_rTrackKp, rTrimMax := 0.2);
-
-fbM1(Axis := Axis, xEnable := AxisCmd_xPower, xStop := AxisCmd_xStopAll, xResetFault := AxisCmd_xResetFault,
-    xUseVelCmd := xXVelActive, rVelCmd := fbTrack.rVelM1, rAcc := AxisCmd_rAcc, rDec := AxisCmd_rDec,
-    xLimEn := FALSE, rLimPos := 0.0, rLimNeg := 0.0);
-fbM2(Axis := Axis_1, xEnable := AxisCmd_xPower, xStop := AxisCmd_xStopAll, xResetFault := AxisCmd_xResetFault,
-    xUseVelCmd := xXVelActive, rVelCmd := fbTrack.rVelM2, rAcc := AxisCmd_rAcc, rDec := AxisCmd_rDec,
-    xLimEn := FALSE, rLimPos := 0.0, rLimNeg := 0.0);
+(* ===== X：FB_XDual（LineTrack + 双 Servo；无 Virtual/Gear） ===== *)
+fbX(
+    AxisM1 := Axis, AxisM2 := Axis_1,
+    xEnable := AxisCmd_xPower, xStop := AxisCmd_xStopAll, xResetFault := AxisCmd_xResetFault,
+    xJogPos := AxisCmd_xJogXPos, xJogNeg := AxisCmd_xJogXNeg,
+    xSpinLeft := AxisCmd_xSpinLeft, xSpinRight := AxisCmd_xSpinRight,
+    xMoveRel := AxisCmd_xMoveRelX, rMoveDist := AxisCmd_rMoveDistX, rMoveVel := AxisCmd_rMoveVelX,
+    rJogVel := AxisCmd_rJogVelX, rSpinVel := AxisCmd_rSpinVel,
+    rHeadingErr := AxisCmd_rHeadingErr, rKpTrack := AxisCmd_rTrackKp,
+    rAcc := AxisCmd_rAccX, rDec := AxisCmd_rDecX,
+    rTrimMax := Cfg_rPhaseMax);
+AxisFb_xMoveDoneX := fbX.xMoveDone;
+AxisFb_rPosX := fbX.rPosV;
+AxisFb_rSyncErr := fbX.rSyncErr;
+AxisFb_rVelFactorX := fbX.rVelFactor;
+AxisFb_xGantryCoupled := fbX.xCoupled;
+AxisFb_xInGearM1 := fbX.xInGearM1;
+AxisFb_xInGearM2 := fbX.xInGearM2;
+AxisFb_xPoweredV := fbX.xPoweredV;
+AxisFb_xSyncWarn := fbX.xSyncWarn;
+AxisFb_xSyncFault := fbX.xSyncFault;
+AxisFb_iGantryState := fbX.iState;
+AxisFb_rVelCmdM1 := fbX.rVelCmdM1;
+AxisFb_rVelCmdM2 := fbX.rVelCmdM2;
+AxisFb_rPosM1 := fbX.rPosM1;
+AxisFb_rPosM2 := fbX.rPosM2;
+AxisFb_xMovingM1 := fbX.xMovingM1;
+AxisFb_xMovingM2 := fbX.xMovingM2;
+AxisFb_xStandstill1 := fbX.xStandstillM1;
+AxisFb_xStandstill2 := fbX.xStandstillM2;
+AxisFb_xPoweredM1 := fbX.xPoweredM1;
+AxisFb_xPoweredM2 := fbX.xPoweredM2;
+AxisFb_xReadyM1 := fbX.xReadyM1;
+AxisFb_xReadyM2 := fbX.xReadyM2;
+AxisFb_xFaultM1 := fbX.xFaultM1;
+AxisFb_xFaultM2 := fbX.xFaultM2;
 
 (* ===== Y：回零 &gt; 绝对(归位) &gt; 相对(横移) &gt; 点动；硬限位 [Cfg_rLimYNeg, Cfg_rLimYPos] ===== *)
 fbY(Axis := Axis_2, xEnable := AxisCmd_xPower, xStop := AxisCmd_xStopAll, xResetFault := AxisCmd_xResetFault,
@@ -136,7 +104,7 @@ fbY(Axis := Axis_2, xEnable := AxisCmd_xPower, xStop := AxisCmd_xStopAll, xReset
     xMoveAbs := AxisCmd_xMoveAbsY, rTargetPos := AxisCmd_rMoveAbsPosY,
     xMoveRel := AxisCmd_xMoveRelY, rDist := AxisCmd_rMoveDistY,
     xJogPos := AxisCmd_xJogYPos, xJogNeg := AxisCmd_xJogYNeg, rJogVel := AxisCmd_rJogVelY,
-    rVel := AxisCmd_rMoveVelY, rAcc := AxisCmd_rAcc, rDec := AxisCmd_rDec,
+    rVel := AxisCmd_rMoveVelY, rAcc := AxisCmd_rAccY, rDec := AxisCmd_rDecY,
     xLimEn := TRUE, rLimPos := Cfg_rLimYPos, rLimNeg := Cfg_rLimYNeg);
 AxisFb_xMoveDoneY := fbY.xMoveRelDone;
 
@@ -149,7 +117,7 @@ fbZ(Axis := Axis_3, xEnable := AxisCmd_xPower, xStop := AxisCmd_xStopAll, xReset
     xHome := AxisCmd_xHomeZ,
     xUseVelCmd := AxisCmd_xForceFollow, rVelCmd := fbFF.rZVelCmd,
     xJogPos := AxisCmd_xJogZPos, xJogNeg := AxisCmd_xJogZNeg, rJogVel := AxisCmd_rJogVelZ,
-    rAcc := AxisCmd_rAcc, rDec := AxisCmd_rDec,
+    rAcc := AxisCmd_rAccZ, rDec := AxisCmd_rDecZ,
     xLimEn := TRUE, rLimPos := Cfg_rLimZPos, rLimNeg := Cfg_rLimZNeg);
 
 (* ===== R：回零 &gt; 保持角(绝对) &gt; 点动；M5 门控；硬限位 [Cfg_rLimRNeg, Cfg_rLimRPos] ===== *)
@@ -157,26 +125,19 @@ fbR(Axis := Axis_4, xEnable := AxisCmd_xPower AND xM5Ready, xStop := AxisCmd_xSt
     xHome := AxisCmd_xHomeR,
     xMoveAbs := AxisCmd_xHoldR, rTargetPos := AxisCmd_rRHoldPos,
     xJogPos := AxisCmd_xJogRPos, xJogNeg := AxisCmd_xJogRNeg, rJogVel := AxisCmd_rJogVelR,
-    rVel := AxisCmd_rJogVelR, rAcc := AxisCmd_rAcc, rDec := AxisCmd_rDec,
+    rVel := AxisCmd_rJogVelR, rAcc := AxisCmd_rAccR, rDec := AxisCmd_rDecR,
     xLimEn := TRUE, rLimPos := Cfg_rLimRPos, rLimNeg := Cfg_rLimRNeg);
 
-(* ===== 反馈回写 ===== *)
-AxisFb_rVelCmdM1 := fbTrack.rVelM1;
-AxisFb_rVelCmdM2 := fbTrack.rVelM2;
-AxisFb_rPosM1 := fbM1.rActPos; AxisFb_rPosM2 := fbM2.rActPos;
+(* ===== Y/Z/R 反馈回写 ===== *)
 AxisFb_rPosY := fbY.rActPos; AxisFb_rPosZ := fbZ.rActPos; AxisFb_rPosR := fbR.rActPos;
-AxisFb_xMovingM1 := fbM1.xMoving; AxisFb_xMovingM2 := fbM2.xMoving;
 AxisFb_xMovingY := fbY.xMoving; AxisFb_xMovingZ := fbZ.xMoving; AxisFb_xMovingR := fbR.xMoving;
-AxisFb_xStandstill1 := fbM1.xStandstill; AxisFb_xStandstill2 := fbM2.xStandstill;
 AxisFb_xStandstillY := fbY.xStandstill; AxisFb_xStandstillZ := fbZ.xStandstill; AxisFb_xStandstillR := fbR.xStandstill;
-AxisFb_xPoweredM1 := fbM1.xPowered; AxisFb_xPoweredM2 := fbM2.xPowered;
 AxisFb_xPoweredY := fbY.xPowered; AxisFb_xPoweredZ := fbZ.xPowered; AxisFb_xPoweredR := fbR.xPowered;
-AxisFb_xReadyM1 := fbM1.xReady; AxisFb_xReadyM2 := fbM2.xReady;
 AxisFb_xReadyY := fbY.xReady; AxisFb_xReadyZ := fbZ.xReady; AxisFb_xReadyR := fbR.xReady;
 AxisFb_xHomedY := fbY.xHomed; AxisFb_xHomedZ := fbZ.xHomed; AxisFb_xHomedR := fbR.xHomed;
-AxisFb_xFaultM1 := fbM1.xFault; AxisFb_xFaultM2 := fbM2.xFault;
 AxisFb_xFaultY := fbY.xFault; AxisFb_xFaultZ := fbZ.xFault; AxisFb_xFaultR := fbR.xFault;
-AxisFb_xReady := fbM1.xReady AND fbM2.xReady AND fbY.xReady AND fbZ.xReady AND (NOT xM5Ready OR fbR.xReady);</xhtml>
+AxisFb_xReady := AxisFb_xReadyM1 AND AxisFb_xReadyM2 AND fbY.xReady AND fbZ.xReady
+    AND (NOT xM5Ready OR fbR.xReady);</xhtml>
           </ST>
         </body>
         <addData>
@@ -293,6 +254,310 @@ xActive := (eMode &lt;&gt; 0) AND xEnable AND NOT xStop;</xhtml>
           </data>
         </addData>
       </pou>
+      <pou name="FB_XDual" pouType="functionBlock">
+        <interface>
+          <inputVars>
+            <variable name="xEnable">
+              <type><BOOL /></type>
+            </variable>
+            <variable name="xStop">
+              <type><BOOL /></type>
+            </variable>
+            <variable name="xResetFault">
+              <type><BOOL /></type>
+            </variable>
+            <variable name="xJogPos">
+              <type><BOOL /></type>
+            </variable>
+            <variable name="xJogNeg">
+              <type><BOOL /></type>
+            </variable>
+            <variable name="xSpinLeft">
+              <type><BOOL /></type>
+            </variable>
+            <variable name="xSpinRight">
+              <type><BOOL /></type>
+            </variable>
+            <variable name="xMoveRel">
+              <type><BOOL /></type>
+            </variable>
+            <variable name="rMoveDist">
+              <type><REAL /></type>
+            </variable>
+            <variable name="rMoveVel">
+              <type><REAL /></type>
+            </variable>
+            <variable name="rJogVel">
+              <type><REAL /></type>
+            </variable>
+            <variable name="rSpinVel">
+              <type><REAL /></type>
+            </variable>
+            <variable name="rHeadingErr">
+              <type><REAL /></type>
+            </variable>
+            <variable name="rKpTrack">
+              <type><REAL /></type>
+            </variable>
+            <variable name="rAcc">
+              <type><REAL /></type>
+            </variable>
+            <variable name="rDec">
+              <type><REAL /></type>
+            </variable>
+            <variable name="rTrimMax">
+              <type><REAL /></type>
+              <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">纠偏限幅；接 Cfg_rPhaseMax</xhtml></documentation>
+            </variable>
+          </inputVars>
+          <outputVars>
+            <variable name="xMoveDone">
+              <type><BOOL /></type>
+            </variable>
+            <variable name="rPosV">
+              <type><REAL /></type>
+              <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">平均位置，兼容旧 rPosX 名</xhtml></documentation>
+            </variable>
+            <variable name="rSyncErr">
+              <type><REAL /></type>
+              <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">恒 0</xhtml></documentation>
+            </variable>
+            <variable name="rVelFactor">
+              <type><REAL /></type>
+              <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">恒 0</xhtml></documentation>
+            </variable>
+            <variable name="xCoupled">
+              <type><BOOL /></type>
+              <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">恒 FALSE</xhtml></documentation>
+            </variable>
+            <variable name="xInGearM1">
+              <type><BOOL /></type>
+            </variable>
+            <variable name="xInGearM2">
+              <type><BOOL /></type>
+            </variable>
+            <variable name="xPoweredV">
+              <type><BOOL /></type>
+            </variable>
+            <variable name="xSyncWarn">
+              <type><BOOL /></type>
+            </variable>
+            <variable name="xSyncFault">
+              <type><BOOL /></type>
+            </variable>
+            <variable name="iState">
+              <type><INT /></type>
+              <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">恒 0</xhtml></documentation>
+            </variable>
+            <variable name="rVelCmdM1">
+              <type><REAL /></type>
+            </variable>
+            <variable name="rVelCmdM2">
+              <type><REAL /></type>
+            </variable>
+            <variable name="rPosM1">
+              <type><REAL /></type>
+            </variable>
+            <variable name="rPosM2">
+              <type><REAL /></type>
+            </variable>
+            <variable name="xMovingM1">
+              <type><BOOL /></type>
+            </variable>
+            <variable name="xMovingM2">
+              <type><BOOL /></type>
+            </variable>
+            <variable name="xStandstillM1">
+              <type><BOOL /></type>
+            </variable>
+            <variable name="xStandstillM2">
+              <type><BOOL /></type>
+            </variable>
+            <variable name="xPoweredM1">
+              <type><BOOL /></type>
+            </variable>
+            <variable name="xPoweredM2">
+              <type><BOOL /></type>
+            </variable>
+            <variable name="xReadyM1">
+              <type><BOOL /></type>
+            </variable>
+            <variable name="xReadyM2">
+              <type><BOOL /></type>
+            </variable>
+            <variable name="xFaultM1">
+              <type><BOOL /></type>
+            </variable>
+            <variable name="xFaultM2">
+              <type><BOOL /></type>
+            </variable>
+          </outputVars>
+          <localVars>
+            <variable name="fbTrack">
+              <type><derived name="FB_XLineTrack" /></type>
+            </variable>
+            <variable name="fbM1">
+              <type><derived name="FB_Servo" /></type>
+            </variable>
+            <variable name="fbM2">
+              <type><derived name="FB_Servo" /></type>
+            </variable>
+            <variable name="eMode">
+              <type><INT /></type>
+            </variable>
+            <variable name="rBase">
+              <type><REAL /></type>
+            </variable>
+            <variable name="xMovePrev">
+              <type><BOOL /></type>
+            </variable>
+            <variable name="xArmed">
+              <type><BOOL /></type>
+            </variable>
+            <variable name="rStart">
+              <type><REAL /></type>
+            </variable>
+            <variable name="rAvg">
+              <type><REAL /></type>
+            </variable>
+          </localVars>
+          <inOutVars>
+            <variable name="AxisM1">
+              <type><derived name="AXIS_REF_SM3" /></type>
+            </variable>
+            <variable name="AxisM2">
+              <type><derived name="AXIS_REF_SM3" /></type>
+            </variable>
+          </inOutVars>
+        </interface>
+        <body>
+          <ST>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">(* FB_XDual — M1/M2 独立速度 + FB_XLineTrack；无 Virtual/Gear。
+   走距：平均相对位移；不做 |PosM1-PosM2| 联锁。 *)
+
+(* 废弃同步输出 *)
+rSyncErr := 0.0;
+rVelFactor := 0.0;
+iState := 0;
+xCoupled := FALSE;
+xInGearM1 := FALSE;
+xInGearM2 := FALSE;
+xPoweredV := FALSE;
+xSyncWarn := FALSE;
+xSyncFault := FALSE;
+
+(* 模式：Stop &gt; Spin &gt; Jog/MoveRel（与 tools/x_dual_logic.py 一致；用 IF 避免 SEL 真假序陷阱） *)
+IF xStop OR NOT xEnable THEN
+    eMode := 0;
+    rBase := 0.0;
+ELSIF xSpinLeft XOR xSpinRight THEN
+    IF xSpinLeft THEN
+        eMode := 2;
+    ELSE
+        eMode := 3;
+    END_IF;
+    rBase := 0.0;
+ELSIF (xJogPos XOR xJogNeg) OR xMoveRel THEN
+    eMode := 1;
+    IF xMoveRel THEN
+        IF rMoveDist &gt;= 0.0 THEN
+            rBase := ABS(rMoveVel);
+        ELSE
+            rBase := -ABS(rMoveVel);
+        END_IF;
+    ELSIF xJogPos THEN
+        rBase := ABS(rJogVel);
+    ELSE
+        rBase := -ABS(rJogVel);
+    END_IF;
+ELSE
+    eMode := 0;
+    rBase := 0.0;
+END_IF;
+
+fbTrack(
+    xEnable := xEnable,
+    xStop := xStop,
+    eMode := eMode,
+    rBaseVel := rBase,
+    rSpinVel := rSpinVel,
+    rHeadingErr := rHeadingErr,
+    rKpTrack := rKpTrack,
+    rTrimMax := rTrimMax
+);
+rVelCmdM1 := fbTrack.rVelM1;
+rVelCmdM2 := fbTrack.rVelM2;
+
+fbM1(
+    Axis := AxisM1,
+    xEnable := xEnable,
+    xStop := xStop,
+    xResetFault := xResetFault,
+    xUseVelCmd := TRUE,
+    rVelCmd := rVelCmdM1,
+    rAcc := rAcc,
+    rDec := rDec,
+    xLimEn := FALSE
+);
+fbM2(
+    Axis := AxisM2,
+    xEnable := xEnable,
+    xStop := xStop,
+    xResetFault := xResetFault,
+    xUseVelCmd := TRUE,
+    rVelCmd := rVelCmdM2,
+    rAcc := rAcc,
+    rDec := rDec,
+    xLimEn := FALSE
+);
+
+rPosM1 := LREAL_TO_REAL(fbM1.rActPos);
+rPosM2 := LREAL_TO_REAL(fbM2.rActPos);
+rAvg := (rPosM1 + rPosM2) * 0.5;
+rPosV := rAvg;
+xMovingM1 := fbM1.xMoving;
+xMovingM2 := fbM2.xMoving;
+xStandstillM1 := fbM1.xStandstill;
+xStandstillM2 := fbM2.xStandstill;
+xPoweredM1 := fbM1.xPowered;
+xPoweredM2 := fbM2.xPowered;
+xReadyM1 := fbM1.xReady;
+xReadyM2 := fbM2.xReady;
+xFaultM1 := fbM1.xFault;
+xFaultM2 := fbM2.xFault;
+
+(* 走距完成：上升沿锁平均位；|Δavg|≥|dist| 保持 done，直至撤销/Stop（对齐 move_done_update） *)
+IF xStop OR NOT xEnable OR NOT xMoveRel THEN
+    xArmed := FALSE;
+    xMoveDone := FALSE;
+ELSE
+    IF xMoveRel AND NOT xMovePrev THEN
+        xArmed := TRUE;
+        rStart := rAvg;
+    END_IF;
+    xMoveDone := xArmed AND (ABS(rAvg - rStart) &gt;= ABS(rMoveDist));
+END_IF;
+xMovePrev := xMoveRel;</xhtml>
+          </ST>
+        </body>
+        <addData>
+          <data name="http://www.3s-software.com/plcopenxml/pathstructure" handleUnknown="discard">
+            <pathStructure isFolder="False" name="Device" namespace="1ee21fdd-5562-44a0-a3ce-665d74916d50" factoryName="Inovance.InoPro.InoDeviceObject.DeviceObjectFactory" factoryGuid="{84d12aa5-3225-473b-9df6-18af40889bdf}" objectGuid="d7de5ac3-3f30-45ac-8468-ec250b4e523b">
+              <pathStructure isFolder="False" name="Plc Logic" namespace="00000000-0000-0000-0000-000000000000" factoryName="_3S.CoDeSys.PlcLogicObject.PlcLogicObjectFactory" factoryGuid="{8ceeba4e-ac7a-4fbd-9415-bfb2d98668ab}" objectGuid="8a291c6e-c5c5-4a07-8c04-1100df0e1491">
+                <pathStructure isFolder="False" name="Application" namespace="e5b60c93-5445-4e40-ada9-cd9c005549b4" factoryName="_3S.CoDeSys.ApplicationObject.ApplicationObjectFactory" factoryGuid="{ECADC42E-716E-4ff3-A93C-0CD143F9743F}" objectGuid="69822df8-b9c0-4a01-9450-b2cdc030688c">
+                  <pathStructure isFolder="True" name="FB" namespace="00000000-0000-0000-0000-000000000000" factoryName="Inovance.InoPro.InoNavigators.FolderObjectFactory" factoryGuid="{BA66A801-C738-4176-B072-DFE26ACE36D3}" objectGuid="2dc75837-520f-43d9-90dd-47cded0212a2">
+                    <pathStructure isFolder="False" name="FB_XDual" namespace="e5b60c93-5445-4e40-ada9-cd9c005549b4" factoryName="Inovance.InoPro.InoPOUObject.POUObjectFactory" factoryGuid="{39C4ED2B-903C-464c-9041-7DF4ECEE9609}" objectGuid="d4e5f6a7-b8c9-4012-c345-d6e7f8a90002" />
+                  </pathStructure>
+                </pathStructure>
+              </pathStructure>
+            </pathStructure>
+          </data>
+          <data name="http://www.3s-software.com/plcopenxml/objectid" handleUnknown="discard">
+            <ObjectId>d4e5f6a7-b8c9-4012-c345-d6e7f8a90002</ObjectId>
+          </data>
+        </addData>
+      </pou>
+
       <pou name="FB_Force" pouType="functionBlock">
         <interface>
           <inputVars>
@@ -458,6 +723,10 @@ IF NOT xInit THEN
     Tcp_iAutoPasses := 1;
     Tcp_rHeadingErr := 0.0;
     Tcp_rKpTrack := 0.0; Tcp_rKpForce := 1.0;
+    Tcp_rAccX := 100.0; Tcp_rDecX := 100.0;
+    Tcp_rAccY := 100.0; Tcp_rDecY := 100.0;
+    Tcp_rAccZ := 100.0; Tcp_rDecZ := 100.0;
+    Tcp_rAccR := 100.0; Tcp_rDecR := 100.0;
     Tcp_iCommStatus := 0;
     Tcp_wLastHb := 0; Tcp_wLastSeq := 16#FFFF; Tcp_wStatusSeq := 0;
     tonHb(IN := FALSE);
@@ -538,6 +807,22 @@ IF xValid THEN
         Tcp_rKpTrack := DINT_TO_REAL(DWORD_TO_DINT(dwTmp)) / 1000.0;
         dwTmp := SHL(WORD_TO_DWORD(MB_CmdIn[36]), 16) OR WORD_TO_DWORD(MB_CmdIn[37]);
         Tcp_rKpForce := DINT_TO_REAL(DWORD_TO_DINT(dwTmp)) / 1000.0;
+        dwTmp := SHL(WORD_TO_DWORD(MB_CmdIn[38]), 16) OR WORD_TO_DWORD(MB_CmdIn[39]);
+        Tcp_rAccX := DINT_TO_REAL(DWORD_TO_DINT(dwTmp)) / 1000.0;
+        dwTmp := SHL(WORD_TO_DWORD(MB_CmdIn[40]), 16) OR WORD_TO_DWORD(MB_CmdIn[41]);
+        Tcp_rDecX := DINT_TO_REAL(DWORD_TO_DINT(dwTmp)) / 1000.0;
+        dwTmp := SHL(WORD_TO_DWORD(MB_CmdIn[42]), 16) OR WORD_TO_DWORD(MB_CmdIn[43]);
+        Tcp_rAccY := DINT_TO_REAL(DWORD_TO_DINT(dwTmp)) / 1000.0;
+        dwTmp := SHL(WORD_TO_DWORD(MB_CmdIn[44]), 16) OR WORD_TO_DWORD(MB_CmdIn[45]);
+        Tcp_rDecY := DINT_TO_REAL(DWORD_TO_DINT(dwTmp)) / 1000.0;
+        dwTmp := SHL(WORD_TO_DWORD(MB_CmdIn[46]), 16) OR WORD_TO_DWORD(MB_CmdIn[47]);
+        Tcp_rAccZ := DINT_TO_REAL(DWORD_TO_DINT(dwTmp)) / 1000.0;
+        dwTmp := SHL(WORD_TO_DWORD(MB_CmdIn[48]), 16) OR WORD_TO_DWORD(MB_CmdIn[49]);
+        Tcp_rDecZ := DINT_TO_REAL(DWORD_TO_DINT(dwTmp)) / 1000.0;
+        dwTmp := SHL(WORD_TO_DWORD(MB_CmdIn[50]), 16) OR WORD_TO_DWORD(MB_CmdIn[51]);
+        Tcp_rAccR := DINT_TO_REAL(DWORD_TO_DINT(dwTmp)) / 1000.0;
+        dwTmp := SHL(WORD_TO_DWORD(MB_CmdIn[52]), 16) OR WORD_TO_DWORD(MB_CmdIn[53]);
+        Tcp_rDecR := DINT_TO_REAL(DWORD_TO_DINT(dwTmp)) / 1000.0;
     END_IF;
 ELSIF wMagic &lt;&gt; 0 AND wMagic &lt;&gt; 19533 THEN
     Tcp_iCommStatus := 2;
@@ -688,6 +973,10 @@ IF eCtrlSrc = 1 THEN
     HMI_rHeadingErr := Tcp_rHeadingErr;
     HMI_rKpTrack := Tcp_rKpTrack;
     HMI_rKpForce := Tcp_rKpForce;
+    HMI_rAccX := Tcp_rAccX; HMI_rDecX := Tcp_rDecX;
+    HMI_rAccY := Tcp_rAccY; HMI_rDecY := Tcp_rDecY;
+    HMI_rAccZ := Tcp_rAccZ; HMI_rDecZ := Tcp_rDecZ;
+    HMI_rAccR := Tcp_rAccR; HMI_rDecR := Tcp_rDecR;
 END_IF;
 
 HMI_xEStop := EStop AND Tcp_xEStop AND HMI_xEStopReq;
@@ -961,7 +1250,7 @@ ELSE
     AxisCmd_xResetFault := FALSE;
 END_IF;
 
-(* 故障汇总：仅各轴 Errorstop *)
+(* 故障汇总：各轴 Errorstop（同步跳闸已废，不再 OR AxisFb_xSyncFault） *)
 xFaultAggregate := AxisFb_xFaultM1 OR AxisFb_xFaultM2 OR AxisFb_xFaultY OR AxisFb_xFaultZ
     OR (xM5Ready AND AxisFb_xFaultR);
 
@@ -993,10 +1282,15 @@ AxisCmd_rJogVelY := HMI_rJogVelY;
 AxisCmd_rJogVelZ := HMI_rJogVelZ;
 AxisCmd_rJogVelR := HMI_rJogVelR;
 AxisCmd_rWheelBase := LIMIT(4.0, HMI_rWheelBase, 6.0);
-AxisCmd_rAcc := JogACC;
-AxisCmd_rDec := JogDEC;
-IF AxisCmd_rAcc &lt; 1.0 THEN AxisCmd_rAcc := 100.0; END_IF;
-IF AxisCmd_rDec &lt; 1.0 THEN AxisCmd_rDec := 100.0; END_IF;
+(* 每轴加减速（RETAIN 参数；&lt;1 时兜底 100） *)
+AxisCmd_rAccX := HMI_rAccX; IF AxisCmd_rAccX &lt; 1.0 THEN AxisCmd_rAccX := 100.0; END_IF;
+AxisCmd_rDecX := HMI_rDecX; IF AxisCmd_rDecX &lt; 1.0 THEN AxisCmd_rDecX := 100.0; END_IF;
+AxisCmd_rAccY := HMI_rAccY; IF AxisCmd_rAccY &lt; 1.0 THEN AxisCmd_rAccY := 100.0; END_IF;
+AxisCmd_rDecY := HMI_rDecY; IF AxisCmd_rDecY &lt; 1.0 THEN AxisCmd_rDecY := 100.0; END_IF;
+AxisCmd_rAccZ := HMI_rAccZ; IF AxisCmd_rAccZ &lt; 1.0 THEN AxisCmd_rAccZ := 100.0; END_IF;
+AxisCmd_rDecZ := HMI_rDecZ; IF AxisCmd_rDecZ &lt; 1.0 THEN AxisCmd_rDecZ := 100.0; END_IF;
+AxisCmd_rAccR := HMI_rAccR; IF AxisCmd_rAccR &lt; 1.0 THEN AxisCmd_rAccR := 100.0; END_IF;
+AxisCmd_rDecR := HMI_rDecR; IF AxisCmd_rDecR &lt; 1.0 THEN AxisCmd_rDecR := 100.0; END_IF;
 
 (* 限位联锁：物理限位输入 ∨ 可配置硬限位（Cfg_rLim*，FB_Servo 内另有最终闸门） *)
 xIlk_BlockYPlus := I_xLimYPos OR (AxisFb_rPosY &gt;= Cfg_rLimYPos);
@@ -1179,7 +1473,8 @@ tonReady(IN := AxisCmd_xPower AND NOT xReadyAll AND NOT xFaultAggregate, PT := T
 (* 报警 *)
 IF xEStopLatched OR NOT HMI_xEStop THEN
     iAlarmID := 1001;
-ELSIF xFaultAggregate THEN
+ELSIF AxisFb_xFaultM1 OR AxisFb_xFaultM2 OR AxisFb_xFaultY OR AxisFb_xFaultZ
+        OR (xM5Ready AND AxisFb_xFaultR) THEN
     iAlarmID := 1002;
 ELSIF tonReady.Q THEN
     iAlarmID := 1007;
@@ -1576,6 +1871,28 @@ xHaltPrev := xNeedStop AND xMoving;</xhtml>
           </data>
         </addData>
       </pou>
+      <pou name="SoftMotion_PlanningPrg" pouType="program">
+        <interface />
+        <body>
+          <ST>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">;</xhtml>
+          </ST>
+        </body>
+        <addData>
+          <data name="http://www.3s-software.com/plcopenxml/pathstructure" handleUnknown="discard">
+            <pathStructure isFolder="False" name="Device" namespace="1ee21fdd-5562-44a0-a3ce-665d74916d50" factoryName="Inovance.InoPro.InoDeviceObject.DeviceObjectFactory" factoryGuid="{84d12aa5-3225-473b-9df6-18af40889bdf}" objectGuid="d7de5ac3-3f30-45ac-8468-ec250b4e523b">
+              <pathStructure isFolder="False" name="Plc Logic" namespace="00000000-0000-0000-0000-000000000000" factoryName="_3S.CoDeSys.PlcLogicObject.PlcLogicObjectFactory" factoryGuid="{8ceeba4e-ac7a-4fbd-9415-bfb2d98668ab}" objectGuid="8a291c6e-c5c5-4a07-8c04-1100df0e1491">
+                <pathStructure isFolder="False" name="Application" namespace="e5b60c93-5445-4e40-ada9-cd9c005549b4" factoryName="_3S.CoDeSys.ApplicationObject.ApplicationObjectFactory" factoryGuid="{ECADC42E-716E-4ff3-A93C-0CD143F9743F}" objectGuid="69822df8-b9c0-4a01-9450-b2cdc030688c">
+                  <pathStructure isFolder="False" name="SoftMotion_PlanningPrg" namespace="e5b60c93-5445-4e40-ada9-cd9c005549b4" factoryName="Inovance.InoPro.InoPOUObject.POUObjectFactory" factoryGuid="{39C4ED2B-903C-464c-9041-7DF4ECEE9609}" objectGuid="21dbddb9-4dc6-4d15-9ff3-bcfa519d1774" />
+                </pathStructure>
+              </pathStructure>
+            </pathStructure>
+          </data>
+          <data name="http://www.3s-software.com/plcopenxml/objectid" handleUnknown="discard">
+            <ObjectId>21dbddb9-4dc6-4d15-9ff3-bcfa519d1774</ObjectId>
+          </data>
+        </addData>
+      </pou>
     </pous>
   </types>
   <instances>
@@ -1684,6 +2001,156 @@ xHaltPrev := xNeedStop AND xMoving;</xhtml>
           </data>
           <data name="http://www.3s-software.com/plcopenxml/objectid" handleUnknown="discard">
             <ObjectId>d7de5ac3-3f30-45ac-8468-ec250b4e523b</ObjectId>
+          </data>
+        </addData>
+      </configuration>
+      <configuration name="Axis_Virtual">
+        <addData>
+          <data name="http://www.3s-software.com/plcopenxml/pathstructure" handleUnknown="discard">
+            <pathStructure isFolder="False" name="Device" namespace="1ee21fdd-5562-44a0-a3ce-665d74916d50" factoryName="Inovance.InoPro.InoDeviceObject.DeviceObjectFactory" factoryGuid="{84d12aa5-3225-473b-9df6-18af40889bdf}" objectGuid="d7de5ac3-3f30-45ac-8468-ec250b4e523b">
+              <pathStructure isFolder="False" name="SoftMotion General Axis Pool" namespace="00000000-0000-0000-0000-000000000000" factoryName="Inovance.InoPro.InoDeviceObject.ConnectorObjectFactory" factoryGuid="{ac0cf67b-9fcf-4cf4-94fd-96aee12373a3}" objectGuid="96f11209-be8a-4d1d-a011-003eafbc42f4">
+                <pathStructure isFolder="False" name="Axis_Virtual" namespace="1ee21fdd-5562-44a0-a3ce-665d74916d50" factoryName="Inovance.InoPro.InoDeviceObject.DeviceObjectFactory" factoryGuid="{84d12aa5-3225-473b-9df6-18af40889bdf}" objectGuid="a895d7bb-a1a8-4fbe-9bbd-ed5ace8fa467" />
+              </pathStructure>
+            </pathStructure>
+          </data>
+          <data name="Device" handleUnknown="discard">
+            <Device xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="">
+              <DeviceType>
+                <DeviceIdentification>
+                  <Type>1024</Type>
+                  <Id>FFFF 0001</Id>
+                  <Version>4.0.0.0</Version>
+                </DeviceIdentification>
+                <Connector moduleType="1024" role="child" interface="Common.SoftMotion.General" connectorId="0" alwaymapping="false">
+                  <HostParameterSet>
+                    <ParameterSection>
+                      <Name>AXIS_REF: Standard</Name>
+                      <Description />
+                      <Parameter ParameterId="1021" type="std:WORD" IndexInDevDesc="0">
+                        <Attributes />
+                        <Value name="_x0031_021" visiblename="wDriveID" desc="Unique ID of the drive">5</Value>
+                        <Name>wDriveID</Name>
+                        <Description>Unique ID of the drive</Description>
+                      </Parameter>
+                      <Parameter ParameterId="1040" type="std:BOOL" IndexInDevDesc="1">
+                        <Attributes offlineaccess="read" />
+                        <Value name="_x0031_040" visiblename="bVirtual" offlineaccess="read" desc="drive is simulated">TRUE</Value>
+                        <Name>bVirtual</Name>
+                        <Description>drive is simulated</Description>
+                      </Parameter>
+                      <Parameter ParameterId="1060" type="std:INT" IndexInDevDesc="2">
+                        <Attributes />
+                        <Value name="_x0031_060" visiblename="iMovementType" desc="Movement type: 0: modulo, 1: finite">0</Value>
+                        <Name>iMovementType</Name>
+                        <Description>Movement type: 0: modulo, 1: finite</Description>
+                      </Parameter>
+                      <Parameter ParameterId="1061" type="std:LREAL" IndexInDevDesc="3">
+                        <Attributes />
+                        <Value name="_x0031_061" visiblename="fPositionPeriod" desc="Modulo period value for modulo drives [u]">360.0</Value>
+                        <Name>fPositionPeriod</Name>
+                        <Description>Modulo period value for modulo drives [u]</Description>
+                      </Parameter>
+                      <Parameter ParameterId="1062" type="std:INT" IndexInDevDesc="7">
+                        <Attributes />
+                        <Value name="_x0031_062" visiblename="eRampType" desc="The velocity ramp used for trajectories.">0</Value>
+                        <Name>eRampType</Name>
+                        <Description>The velocity ramp used for trajectories.</Description>
+                      </Parameter>
+                      <Parameter ParameterId="1113" type="std:LREAL" IndexInDevDesc="9">
+                        <Attributes />
+                        <Value name="_x0031_113" visiblename="fSWMaxVelocity" desc="Maximum velocity magnitude (software limit)">5000</Value>
+                        <Name>fSWMaxVelocity</Name>
+                        <Description>Maximum velocity magnitude (software limit)</Description>
+                      </Parameter>
+                      <Parameter ParameterId="1123" type="std:LREAL" IndexInDevDesc="10">
+                        <Attributes />
+                        <Value name="_x0031_123" visiblename="fSWMaxAcceleration" desc="Maximum acceleration magnitude (software limit)">10000</Value>
+                        <Name>fSWMaxAcceleration</Name>
+                        <Description>Maximum acceleration magnitude (software limit)</Description>
+                      </Parameter>
+                      <Parameter ParameterId="1133" type="std:LREAL" IndexInDevDesc="11">
+                        <Attributes />
+                        <Value name="_x0031_133" visiblename="fSWMaxDeceleration" desc="Maximum deceleration magnitude (software limit)">10000</Value>
+                        <Name>fSWMaxDeceleration</Name>
+                        <Description>Maximum deceleration magnitude (software limit)</Description>
+                      </Parameter>
+                      <Parameter ParameterId="1143" type="std:LREAL" IndexInDevDesc="12">
+                        <Attributes />
+                        <Value name="_x0031_143" visiblename="fSWMaxJerk" desc="Maximum jerk magnitude (software limit)">100000</Value>
+                        <Name>fSWMaxJerk</Name>
+                        <Description>Maximum jerk magnitude (software limit)</Description>
+                      </Parameter>
+                      <Parameter ParameterId="1144" type="std:LREAL" IndexInDevDesc="8">
+                        <Attributes />
+                        <Value name="_x0031_144" visiblename="fRampJerk" desc="Jerk used for bringing acceleration to 0 when sin² ramp is interrupted.">0</Value>
+                        <Name>fRampJerk</Name>
+                        <Description>Jerk used for bringing acceleration to 0 when sin² ramp is interrupted.</Description>
+                      </Parameter>
+                      <Parameter ParameterId="1200" type="std:LREAL" IndexInDevDesc="6">
+                        <Attributes />
+                        <Value name="_x0031_200" visiblename="fSWLimitPositive" desc="Software limit in positive direction (long rail; limits disabled)">1000000.0</Value>
+                        <Name>fSWLimitPositive</Name>
+                        <Description>Software limit in positive direction (long rail; limits disabled)</Description>
+                      </Parameter>
+                      <Parameter ParameterId="1201" type="std:LREAL" IndexInDevDesc="5">
+                        <Attributes />
+                        <Value name="_x0031_201" visiblename="fSWLimitNegative" desc="Software limit in negative direction (long rail; limits disabled)">-1000000.0</Value>
+                        <Name>fSWLimitNegative</Name>
+                        <Description>Software limit in negative direction (long rail; limits disabled)</Description>
+                      </Parameter>
+                      <Parameter ParameterId="1203" type="std:LREAL" IndexInDevDesc="13">
+                        <Attributes />
+                        <Value name="_x0031_203" visiblename="fSWLimitDeceleration" desc="Deceleration for  stop on software error [u/s²]">1000</Value>
+                        <Name>fSWLimitDeceleration</Name>
+                        <Description>Deceleration for  stop on software error [u/s²]</Description>
+                      </Parameter>
+                      <Parameter ParameterId="1205" type="std:BOOL" IndexInDevDesc="4">
+                        <Attributes />
+                        <Value name="_x0031_205" visiblename="bSWLimitEnable" desc="Activate/deactivate software limits">FALSE</Value>
+                        <Name>bSWLimitEnable</Name>
+                        <Description>Activate/deactivate software limits</Description>
+                      </Parameter>
+                      <Parameter ParameterId="1250" type="std:LREAL" IndexInDevDesc="14">
+                        <Attributes />
+                        <Value name="_x0031_250" visiblename="fSWErrorMaxDistance" desc="Maximum distance that may be travelled for ramping down after a software error has been detected [u]">10</Value>
+                        <Name>fSWErrorMaxDistance</Name>
+                        <Description>Maximum distance that may be travelled for ramping down after a software error has been detected [u]</Description>
+                      </Parameter>
+                    </ParameterSection>
+                    <ParameterSection>
+                      <Name>AXIS_REF: scaling settings</Name>
+                      <Description />
+                      <Parameter ParameterId="1051" type="std:DWORD" IndexInDevDesc="15">
+                        <Attributes />
+                        <Value name="_x0031_051" visiblename="dwRatioTechUnitsDenom" desc="Virtual master uses 1:1 tech units (same as slave SetPosition space)">1</Value>
+                        <Name>dwRatioTechUnitsDenom</Name>
+                        <Description>Virtual master uses 1:1 tech units (same as slave SetPosition space)</Description>
+                      </Parameter>
+                      <Parameter ParameterId="1052" type="std:DINT" IndexInDevDesc="16">
+                        <Attributes />
+                        <Value name="_x0031_052" visiblename="iRatioTechUnitsNum" desc="Virtual master uses 1:1 tech units (same as slave SetPosition space)">1</Value>
+                        <Name>iRatioTechUnitsNum</Name>
+                        <Description>Virtual master uses 1:1 tech units (same as slave SetPosition space)</Description>
+                      </Parameter>
+                    </ParameterSection>
+                    <Parameter ParameterId="100121" type="std:WORD">
+                      <Attributes />
+                      <Value name="_x0031_00121" visiblename="AxisNumber">6</Value>
+                      <Name>AxisNumber</Name>
+                    </Parameter>
+                  </HostParameterSet>
+                  <DriverInfoType TaskName="" />
+                </Connector>
+                <Connector moduleType="1248" interface="Common.SoftMotion.Logical" connectorId="1" hostpath="0" alwaymapping="false">
+                  <HostParameterSet />
+                  <DriverInfoType TaskName="" />
+                </Connector>
+                <DeviceParameterSet />
+              </DeviceType>
+            </Device>
+          </data>
+          <data name="http://www.3s-software.com/plcopenxml/objectid" handleUnknown="discard">
+            <ObjectId>a895d7bb-a1a8-4fbe-9bbd-ed5ace8fa467</ObjectId>
           </data>
         </addData>
       </configuration>
@@ -5544,19 +6011,19 @@ xHaltPrev := xNeedStop AND xMoving;</xhtml>
                       <Description />
                       <Parameter ParameterId="1051" type="std:DWORD" IndexInDevDesc="17">
                         <Attributes />
-                        <Value name="_x0031_051" visiblename="dwRatioTechUnitsDenom" desc="conversion inc./tech.units denominator">1048576</Value>
+                        <Value name="_x0031_051" visiblename="dwRatioTechUnitsDenom" desc="conversion inc./tech.units denominator">4997576</Value>
                         <Name>dwRatioTechUnitsDenom</Name>
                         <Description>conversion inc./tech.units denominator</Description>
                       </Parameter>
                       <Parameter ParameterId="1052" type="std:DINT" IndexInDevDesc="18">
                         <Attributes />
-                        <Value name="_x0031_052" visiblename="iRatioTechUnitsNum" desc="conversion inc./tech.units numerator">9425</Value>
+                        <Value name="_x0031_052" visiblename="iRatioTechUnitsNum" desc="conversion inc./tech.units numerator">-377</Value>
                         <Name>iRatioTechUnitsNum</Name>
                         <Description>conversion inc./tech.units numerator</Description>
                       </Parameter>
                       <Parameter ParameterId="5000" type="std:DINT" IndexInDevDesc="19">
                         <Attributes />
-                        <Value name="_x0035_000" visiblename="ScalingIncs">16#100000</Value>
+                        <Value name="_x0035_000" visiblename="ScalingIncs">16#131072</Value>
                         <Name>ScalingIncs</Name>
                       </Parameter>
                       <Parameter ParameterId="5001" type="std:DINT" IndexInDevDesc="20">
@@ -5566,12 +6033,12 @@ xHaltPrev := xNeedStop AND xMoving;</xhtml>
                       </Parameter>
                       <Parameter ParameterId="5002" type="std:DINT" IndexInDevDesc="21">
                         <Attributes />
-                        <Value name="_x0035_002" visiblename="ScalingMotorTurns2">1</Value>
+                        <Value name="_x0035_002" visiblename="ScalingMotorTurns2">10</Value>
                         <Name>ScalingMotorTurns2</Name>
                       </Parameter>
                       <Parameter ParameterId="5003" type="std:DINT" IndexInDevDesc="22">
                         <Attributes />
-                        <Value name="_x0035_003" visiblename="ScalingGearOutput1">10</Value>
+                        <Value name="_x0035_003" visiblename="ScalingGearOutput1">1</Value>
                         <Name>ScalingGearOutput1</Name>
                       </Parameter>
                       <Parameter ParameterId="5004" type="std:DINT" IndexInDevDesc="23">
@@ -5586,7 +6053,7 @@ xHaltPrev := xNeedStop AND xMoving;</xhtml>
                       </Parameter>
                       <Parameter ParameterId="5006" type="std:BOOL" IndexInDevDesc="25">
                         <Attributes />
-                        <Value name="_x0035_006" visiblename="InvertDirection">FALSE</Value>
+                        <Value name="_x0035_006" visiblename="InvertDirection">TRUE</Value>
                         <Name>InvertDirection</Name>
                       </Parameter>
                     </ParameterSection>
@@ -7002,6 +7469,11 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
                         <Attributes channel="diagAck" offlineaccess="none" />
                         <Value name="_x0031_074855985" visiblename="Diag Acknowledge" offlineaccess="none">FALSE</Value>
                         <Name>Diag Acknowledge</Name>
+                      </Parameter>
+                      <Parameter ParameterId="1343291392" type="std:BOOL">
+                        <Attributes download="false" />
+                        <Value name="_x0031_343291392" visiblename="AutoUpdate">False</Value>
+                        <Name>AutoUpdate</Name>
                       </Parameter>
                     </ParameterSection>
                     <ParameterSection>
@@ -8845,6 +9317,11 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
                         <Description>Modes of operation</Description>
                       </Parameter>
                     </ParameterSection>
+                    <Parameter ParameterId="222222" type="std:STRING">
+                      <Attributes download="false" offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0032_22222" visiblename="FunCodeList" offlineaccess="read" onlineaccess="read" />
+                      <Name>FunCodeList</Name>
+                    </Parameter>
                     <Parameter ParameterId="16777218" type="std:UINT">
                       <Attributes alwaysmapping="true" channel="output" />
                       <Value name="_x0031_6777218" visiblename="ControlWord" desc="ControlWord">
@@ -9497,19 +9974,19 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
                       <Description />
                       <Parameter ParameterId="1051" type="std:DWORD" IndexInDevDesc="17">
                         <Attributes />
-                        <Value name="_x0031_051" visiblename="dwRatioTechUnitsDenom" desc="conversion inc./tech.units denominator">1048576</Value>
+                        <Value name="_x0031_051" visiblename="dwRatioTechUnitsDenom" desc="conversion inc./tech.units denominator">4997576</Value>
                         <Name>dwRatioTechUnitsDenom</Name>
                         <Description>conversion inc./tech.units denominator</Description>
                       </Parameter>
                       <Parameter ParameterId="1052" type="std:DINT" IndexInDevDesc="18">
                         <Attributes />
-                        <Value name="_x0031_052" visiblename="iRatioTechUnitsNum" desc="conversion inc./tech.units numerator">9425</Value>
+                        <Value name="_x0031_052" visiblename="iRatioTechUnitsNum" desc="conversion inc./tech.units numerator">377</Value>
                         <Name>iRatioTechUnitsNum</Name>
                         <Description>conversion inc./tech.units numerator</Description>
                       </Parameter>
                       <Parameter ParameterId="5000" type="std:DINT" IndexInDevDesc="19">
                         <Attributes />
-                        <Value name="_x0035_000" visiblename="ScalingIncs">16#100000</Value>
+                        <Value name="_x0035_000" visiblename="ScalingIncs">16#131072</Value>
                         <Name>ScalingIncs</Name>
                       </Parameter>
                       <Parameter ParameterId="5001" type="std:DINT" IndexInDevDesc="20">
@@ -9519,12 +9996,12 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
                       </Parameter>
                       <Parameter ParameterId="5002" type="std:DINT" IndexInDevDesc="21">
                         <Attributes />
-                        <Value name="_x0035_002" visiblename="ScalingMotorTurns2">1</Value>
+                        <Value name="_x0035_002" visiblename="ScalingMotorTurns2">10</Value>
                         <Name>ScalingMotorTurns2</Name>
                       </Parameter>
                       <Parameter ParameterId="5003" type="std:DINT" IndexInDevDesc="22">
                         <Attributes />
-                        <Value name="_x0035_003" visiblename="ScalingGearOutput1">10</Value>
+                        <Value name="_x0035_003" visiblename="ScalingGearOutput1">1</Value>
                         <Name>ScalingGearOutput1</Name>
                       </Parameter>
                       <Parameter ParameterId="5004" type="std:DINT" IndexInDevDesc="23">
@@ -13450,19 +13927,19 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
                       <Description />
                       <Parameter ParameterId="1051" type="std:DWORD" IndexInDevDesc="17">
                         <Attributes />
-                        <Value name="_x0031_051" visiblename="dwRatioTechUnitsDenom" desc="conversion inc./tech.units denominator">1048576</Value>
+                        <Value name="_x0031_051" visiblename="dwRatioTechUnitsDenom" desc="conversion inc./tech.units denominator">1249394</Value>
                         <Name>dwRatioTechUnitsDenom</Name>
                         <Description>conversion inc./tech.units denominator</Description>
                       </Parameter>
                       <Parameter ParameterId="1052" type="std:DINT" IndexInDevDesc="18">
                         <Attributes />
-                        <Value name="_x0031_052" visiblename="iRatioTechUnitsNum" desc="conversion inc./tech.units numerator">25</Value>
+                        <Value name="_x0031_052" visiblename="iRatioTechUnitsNum" desc="conversion inc./tech.units numerator">1</Value>
                         <Name>iRatioTechUnitsNum</Name>
                         <Description>conversion inc./tech.units numerator</Description>
                       </Parameter>
                       <Parameter ParameterId="5000" type="std:DINT" IndexInDevDesc="19">
                         <Attributes />
-                        <Value name="_x0035_000" visiblename="ScalingIncs">16#100000</Value>
+                        <Value name="_x0035_000" visiblename="ScalingIncs">16#131072</Value>
                         <Name>ScalingIncs</Name>
                       </Parameter>
                       <Parameter ParameterId="5001" type="std:DINT" IndexInDevDesc="20">
@@ -13472,12 +13949,12 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
                       </Parameter>
                       <Parameter ParameterId="5002" type="std:DINT" IndexInDevDesc="21">
                         <Attributes />
-                        <Value name="_x0035_002" visiblename="ScalingMotorTurns2">1</Value>
+                        <Value name="_x0035_002" visiblename="ScalingMotorTurns2">5</Value>
                         <Name>ScalingMotorTurns2</Name>
                       </Parameter>
                       <Parameter ParameterId="5003" type="std:DINT" IndexInDevDesc="22">
                         <Attributes />
-                        <Value name="_x0035_003" visiblename="ScalingGearOutput1">5</Value>
+                        <Value name="_x0035_003" visiblename="ScalingGearOutput1">1</Value>
                         <Name>ScalingGearOutput1</Name>
                       </Parameter>
                       <Parameter ParameterId="5004" type="std:DINT" IndexInDevDesc="23">
@@ -17487,7 +17964,7 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
                       <Description />
                       <Parameter ParameterId="1051" type="std:DWORD" IndexInDevDesc="17">
                         <Attributes />
-                        <Value name="_x0031_051" visiblename="dwRatioTechUnitsDenom" desc="conversion inc./tech.units denominator">524288</Value>
+                        <Value name="_x0031_051" visiblename="dwRatioTechUnitsDenom" desc="conversion inc./tech.units denominator">624697</Value>
                         <Name>dwRatioTechUnitsDenom</Name>
                         <Description>conversion inc./tech.units denominator</Description>
                       </Parameter>
@@ -17499,7 +17976,7 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
                       </Parameter>
                       <Parameter ParameterId="5000" type="std:DINT" IndexInDevDesc="19">
                         <Attributes />
-                        <Value name="_x0035_000" visiblename="ScalingIncs">16#100000</Value>
+                        <Value name="_x0035_000" visiblename="ScalingIncs">16#131072</Value>
                         <Name>ScalingIncs</Name>
                       </Parameter>
                       <Parameter ParameterId="5001" type="std:DINT" IndexInDevDesc="20">
@@ -21450,19 +21927,19 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
                       <Description />
                       <Parameter ParameterId="1051" type="std:DWORD" IndexInDevDesc="17">
                         <Attributes />
-                        <Value name="_x0031_051" visiblename="dwRatioTechUnitsDenom" desc="conversion inc./tech.units denominator">2048</Value>
+                        <Value name="_x0031_051" visiblename="dwRatioTechUnitsDenom" desc="conversion inc./tech.units denominator">624697</Value>
                         <Name>dwRatioTechUnitsDenom</Name>
                         <Description>conversion inc./tech.units denominator</Description>
                       </Parameter>
                       <Parameter ParameterId="1052" type="std:DINT" IndexInDevDesc="18">
                         <Attributes />
-                        <Value name="_x0031_052" visiblename="iRatioTechUnitsNum" desc="conversion inc./tech.units numerator">45</Value>
+                        <Value name="_x0031_052" visiblename="iRatioTechUnitsNum" desc="conversion inc./tech.units numerator">36</Value>
                         <Name>iRatioTechUnitsNum</Name>
                         <Description>conversion inc./tech.units numerator</Description>
                       </Parameter>
                       <Parameter ParameterId="5000" type="std:DINT" IndexInDevDesc="19">
                         <Attributes />
-                        <Value name="_x0035_000" visiblename="ScalingIncs">16#4000</Value>
+                        <Value name="_x0035_000" visiblename="ScalingIncs">16#131072</Value>
                         <Name>ScalingIncs</Name>
                       </Parameter>
                       <Parameter ParameterId="5001" type="std:DINT" IndexInDevDesc="20">
@@ -21472,7 +21949,7 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
                       </Parameter>
                       <Parameter ParameterId="5002" type="std:DINT" IndexInDevDesc="21">
                         <Attributes />
-                        <Value name="_x0035_002" visiblename="ScalingMotorTurns2">1</Value>
+                        <Value name="_x0035_002" visiblename="ScalingMotorTurns2">5</Value>
                         <Name>ScalingMotorTurns2</Name>
                       </Parameter>
                       <Parameter ParameterId="5003" type="std:DINT" IndexInDevDesc="22">
@@ -22295,7 +22772,7 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
                     </Parameter>
                     <Parameter ParameterId="4001" type="std:UDINT">
                       <Attributes />
-                      <Value name="_x0034_001" visiblename="4001">0</Value>
+                      <Value name="_x0034_001" visiblename="4001">1</Value>
                       <Name>4001</Name>
                     </Parameter>
                     <Parameter ParameterId="6005" type="std:LREAL">
@@ -22645,7 +23122,7 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
                     </Parameter>
                     <Parameter ParameterId="123456" type="std:DINT">
                       <Attributes />
-                      <Value name="_x0031_23456" visiblename="PulseSelectIndex">1</Value>
+                      <Value name="_x0031_23456" visiblename="PulseSelectIndex">0</Value>
                       <Name>PulseSelectIndex</Name>
                     </Parameter>
                   </HostParameterSet>
@@ -23532,141 +24009,141 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
                     </Parameter>
                     <Parameter ParameterId="1001" type="std: ARRAY[0..63] OF WORD">
                       <Attributes channel="input" />
-                      <Value name="_x0031_001_0_0_0" visiblename="Channel 02[0]" desc="READ 1000" />
-                      <Value name="_x0031_001_1_0_0" visiblename="Channel 02[1]" desc="READ 1001" />
-                      <Value name="_x0031_001_2_0_0" visiblename="Channel 02[2]" desc="READ 1002" />
-                      <Value name="_x0031_001_3_0_0" visiblename="Channel 02[3]" desc="READ 1003" />
-                      <Value name="_x0031_001_4_0_0" visiblename="Channel 02[4]" desc="READ 1004" />
-                      <Value name="_x0031_001_5_0_0" visiblename="Channel 02[5]" desc="READ 1005" />
-                      <Value name="_x0031_001_6_0_0" visiblename="Channel 02[6]" desc="READ 1006" />
-                      <Value name="_x0031_001_7_0_0" visiblename="Channel 02[7]" desc="READ 1007" />
-                      <Value name="_x0031_001_8_0_0" visiblename="Channel 02[8]" desc="READ 1008" />
-                      <Value name="_x0031_001_9_0_0" visiblename="Channel 02[9]" desc="READ 1009" />
-                      <Value name="_x0031_001_10_0_0" visiblename="Channel 02[10]" desc="READ 1010" />
-                      <Value name="_x0031_001_11_0_0" visiblename="Channel 02[11]" desc="READ 1011" />
-                      <Value name="_x0031_001_12_0_0" visiblename="Channel 02[12]" desc="READ 1012" />
-                      <Value name="_x0031_001_13_0_0" visiblename="Channel 02[13]" desc="READ 1013" />
-                      <Value name="_x0031_001_14_0_0" visiblename="Channel 02[14]" desc="READ 1014" />
-                      <Value name="_x0031_001_15_0_0" visiblename="Channel 02[15]" desc="READ 1015" />
-                      <Value name="_x0031_001_16_0_0" visiblename="Channel 02[16]" desc="READ 1016" />
-                      <Value name="_x0031_001_17_0_0" visiblename="Channel 02[17]" desc="READ 1017" />
-                      <Value name="_x0031_001_18_0_0" visiblename="Channel 02[18]" desc="READ 1018" />
-                      <Value name="_x0031_001_19_0_0" visiblename="Channel 02[19]" desc="READ 1019" />
-                      <Value name="_x0031_001_20_0_0" visiblename="Channel 02[20]" desc="READ 1020" />
-                      <Value name="_x0031_001_21_0_0" visiblename="Channel 02[21]" desc="READ 1021" />
-                      <Value name="_x0031_001_22_0_0" visiblename="Channel 02[22]" desc="READ 1022" />
-                      <Value name="_x0031_001_23_0_0" visiblename="Channel 02[23]" desc="READ 1023" />
-                      <Value name="_x0031_001_24_0_0" visiblename="Channel 02[24]" desc="READ 1024" />
-                      <Value name="_x0031_001_25_0_0" visiblename="Channel 02[25]" desc="READ 1025" />
-                      <Value name="_x0031_001_26_0_0" visiblename="Channel 02[26]" desc="READ 1026" />
-                      <Value name="_x0031_001_27_0_0" visiblename="Channel 02[27]" desc="READ 1027" />
-                      <Value name="_x0031_001_28_0_0" visiblename="Channel 02[28]" desc="READ 1028" />
-                      <Value name="_x0031_001_29_0_0" visiblename="Channel 02[29]" desc="READ 1029" />
-                      <Value name="_x0031_001_30_0_0" visiblename="Channel 02[30]" desc="READ 1030" />
-                      <Value name="_x0031_001_31_0_0" visiblename="Channel 02[31]" desc="READ 1031" />
-                      <Value name="_x0031_001_32_0_0" visiblename="Channel 02[32]" desc="READ 1032" />
-                      <Value name="_x0031_001_33_0_0" visiblename="Channel 02[33]" desc="READ 1033" />
-                      <Value name="_x0031_001_34_0_0" visiblename="Channel 02[34]" desc="READ 1034" />
-                      <Value name="_x0031_001_35_0_0" visiblename="Channel 02[35]" desc="READ 1035" />
-                      <Value name="_x0031_001_36_0_0" visiblename="Channel 02[36]" desc="READ 1036" />
-                      <Value name="_x0031_001_37_0_0" visiblename="Channel 02[37]" desc="READ 1037" />
-                      <Value name="_x0031_001_38_0_0" visiblename="Channel 02[38]" desc="READ 1038" />
-                      <Value name="_x0031_001_39_0_0" visiblename="Channel 02[39]" desc="READ 1039" />
-                      <Value name="_x0031_001_40_0_0" visiblename="Channel 02[40]" desc="READ 1040" />
-                      <Value name="_x0031_001_41_0_0" visiblename="Channel 02[41]" desc="READ 1041" />
-                      <Value name="_x0031_001_42_0_0" visiblename="Channel 02[42]" desc="READ 1042" />
-                      <Value name="_x0031_001_43_0_0" visiblename="Channel 02[43]" desc="READ 1043" />
-                      <Value name="_x0031_001_44_0_0" visiblename="Channel 02[44]" desc="READ 1044" />
-                      <Value name="_x0031_001_45_0_0" visiblename="Channel 02[45]" desc="READ 1045" />
-                      <Value name="_x0031_001_46_0_0" visiblename="Channel 02[46]" desc="READ 1046" />
-                      <Value name="_x0031_001_47_0_0" visiblename="Channel 02[47]" desc="READ 1047" />
-                      <Value name="_x0031_001_48_0_0" visiblename="Channel 02[48]" desc="READ 1048" />
-                      <Value name="_x0031_001_49_0_0" visiblename="Channel 02[49]" desc="READ 1049" />
-                      <Value name="_x0031_001_50_0_0" visiblename="Channel 02[50]" desc="READ 1050" />
-                      <Value name="_x0031_001_51_0_0" visiblename="Channel 02[51]" desc="READ 1051" />
-                      <Value name="_x0031_001_52_0_0" visiblename="Channel 02[52]" desc="READ 1052" />
-                      <Value name="_x0031_001_53_0_0" visiblename="Channel 02[53]" desc="READ 1053" />
-                      <Value name="_x0031_001_54_0_0" visiblename="Channel 02[54]" desc="READ 1054" />
-                      <Value name="_x0031_001_55_0_0" visiblename="Channel 02[55]" desc="READ 1055" />
-                      <Value name="_x0031_001_56_0_0" visiblename="Channel 02[56]" desc="READ 1056" />
-                      <Value name="_x0031_001_57_0_0" visiblename="Channel 02[57]" desc="READ 1057" />
-                      <Value name="_x0031_001_58_0_0" visiblename="Channel 02[58]" desc="READ 1058" />
-                      <Value name="_x0031_001_59_0_0" visiblename="Channel 02[59]" desc="READ 1059" />
-                      <Value name="_x0031_001_60_0_0" visiblename="Channel 02[60]" desc="READ 1060" />
-                      <Value name="_x0031_001_61_0_0" visiblename="Channel 02[61]" desc="READ 1061" />
-                      <Value name="_x0031_001_62_0_0" visiblename="Channel 02[62]" desc="READ 1062" />
-                      <Value name="_x0031_001_63_0_0" visiblename="Channel 02[63]" desc="READ 1063" />
+                      <Value name="_x0031_001_0_0_0" visiblename="Channel 02[0]" desc="READ 16#1000(=4096)" />
+                      <Value name="_x0031_001_1_0_0" visiblename="Channel 02[1]" desc="READ 16#1001(=4097)" />
+                      <Value name="_x0031_001_2_0_0" visiblename="Channel 02[2]" desc="READ 16#1002(=4098)" />
+                      <Value name="_x0031_001_3_0_0" visiblename="Channel 02[3]" desc="READ 16#1003(=4099)" />
+                      <Value name="_x0031_001_4_0_0" visiblename="Channel 02[4]" desc="READ 16#1004(=4100)" />
+                      <Value name="_x0031_001_5_0_0" visiblename="Channel 02[5]" desc="READ 16#1005(=4101)" />
+                      <Value name="_x0031_001_6_0_0" visiblename="Channel 02[6]" desc="READ 16#1006(=4102)" />
+                      <Value name="_x0031_001_7_0_0" visiblename="Channel 02[7]" desc="READ 16#1007(=4103)" />
+                      <Value name="_x0031_001_8_0_0" visiblename="Channel 02[8]" desc="READ 16#1008(=4104)" />
+                      <Value name="_x0031_001_9_0_0" visiblename="Channel 02[9]" desc="READ 16#1009(=4105)" />
+                      <Value name="_x0031_001_10_0_0" visiblename="Channel 02[10]" desc="READ 16#100A(=4106)" />
+                      <Value name="_x0031_001_11_0_0" visiblename="Channel 02[11]" desc="READ 16#100B(=4107)" />
+                      <Value name="_x0031_001_12_0_0" visiblename="Channel 02[12]" desc="READ 16#100C(=4108)" />
+                      <Value name="_x0031_001_13_0_0" visiblename="Channel 02[13]" desc="READ 16#100D(=4109)" />
+                      <Value name="_x0031_001_14_0_0" visiblename="Channel 02[14]" desc="READ 16#100E(=4110)" />
+                      <Value name="_x0031_001_15_0_0" visiblename="Channel 02[15]" desc="READ 16#100F(=4111)" />
+                      <Value name="_x0031_001_16_0_0" visiblename="Channel 02[16]" desc="READ 16#1010(=4112)" />
+                      <Value name="_x0031_001_17_0_0" visiblename="Channel 02[17]" desc="READ 16#1011(=4113)" />
+                      <Value name="_x0031_001_18_0_0" visiblename="Channel 02[18]" desc="READ 16#1012(=4114)" />
+                      <Value name="_x0031_001_19_0_0" visiblename="Channel 02[19]" desc="READ 16#1013(=4115)" />
+                      <Value name="_x0031_001_20_0_0" visiblename="Channel 02[20]" desc="READ 16#1014(=4116)" />
+                      <Value name="_x0031_001_21_0_0" visiblename="Channel 02[21]" desc="READ 16#1015(=4117)" />
+                      <Value name="_x0031_001_22_0_0" visiblename="Channel 02[22]" desc="READ 16#1016(=4118)" />
+                      <Value name="_x0031_001_23_0_0" visiblename="Channel 02[23]" desc="READ 16#1017(=4119)" />
+                      <Value name="_x0031_001_24_0_0" visiblename="Channel 02[24]" desc="READ 16#1018(=4120)" />
+                      <Value name="_x0031_001_25_0_0" visiblename="Channel 02[25]" desc="READ 16#1019(=4121)" />
+                      <Value name="_x0031_001_26_0_0" visiblename="Channel 02[26]" desc="READ 16#101A(=4122)" />
+                      <Value name="_x0031_001_27_0_0" visiblename="Channel 02[27]" desc="READ 16#101B(=4123)" />
+                      <Value name="_x0031_001_28_0_0" visiblename="Channel 02[28]" desc="READ 16#101C(=4124)" />
+                      <Value name="_x0031_001_29_0_0" visiblename="Channel 02[29]" desc="READ 16#101D(=4125)" />
+                      <Value name="_x0031_001_30_0_0" visiblename="Channel 02[30]" desc="READ 16#101E(=4126)" />
+                      <Value name="_x0031_001_31_0_0" visiblename="Channel 02[31]" desc="READ 16#101F(=4127)" />
+                      <Value name="_x0031_001_32_0_0" visiblename="Channel 02[32]" desc="READ 16#1020(=4128)" />
+                      <Value name="_x0031_001_33_0_0" visiblename="Channel 02[33]" desc="READ 16#1021(=4129)" />
+                      <Value name="_x0031_001_34_0_0" visiblename="Channel 02[34]" desc="READ 16#1022(=4130)" />
+                      <Value name="_x0031_001_35_0_0" visiblename="Channel 02[35]" desc="READ 16#1023(=4131)" />
+                      <Value name="_x0031_001_36_0_0" visiblename="Channel 02[36]" desc="READ 16#1024(=4132)" />
+                      <Value name="_x0031_001_37_0_0" visiblename="Channel 02[37]" desc="READ 16#1025(=4133)" />
+                      <Value name="_x0031_001_38_0_0" visiblename="Channel 02[38]" desc="READ 16#1026(=4134)" />
+                      <Value name="_x0031_001_39_0_0" visiblename="Channel 02[39]" desc="READ 16#1027(=4135)" />
+                      <Value name="_x0031_001_40_0_0" visiblename="Channel 02[40]" desc="READ 16#1028(=4136)" />
+                      <Value name="_x0031_001_41_0_0" visiblename="Channel 02[41]" desc="READ 16#1029(=4137)" />
+                      <Value name="_x0031_001_42_0_0" visiblename="Channel 02[42]" desc="READ 16#102A(=4138)" />
+                      <Value name="_x0031_001_43_0_0" visiblename="Channel 02[43]" desc="READ 16#102B(=4139)" />
+                      <Value name="_x0031_001_44_0_0" visiblename="Channel 02[44]" desc="READ 16#102C(=4140)" />
+                      <Value name="_x0031_001_45_0_0" visiblename="Channel 02[45]" desc="READ 16#102D(=4141)" />
+                      <Value name="_x0031_001_46_0_0" visiblename="Channel 02[46]" desc="READ 16#102E(=4142)" />
+                      <Value name="_x0031_001_47_0_0" visiblename="Channel 02[47]" desc="READ 16#102F(=4143)" />
+                      <Value name="_x0031_001_48_0_0" visiblename="Channel 02[48]" desc="READ 16#1030(=4144)" />
+                      <Value name="_x0031_001_49_0_0" visiblename="Channel 02[49]" desc="READ 16#1031(=4145)" />
+                      <Value name="_x0031_001_50_0_0" visiblename="Channel 02[50]" desc="READ 16#1032(=4146)" />
+                      <Value name="_x0031_001_51_0_0" visiblename="Channel 02[51]" desc="READ 16#1033(=4147)" />
+                      <Value name="_x0031_001_52_0_0" visiblename="Channel 02[52]" desc="READ 16#1034(=4148)" />
+                      <Value name="_x0031_001_53_0_0" visiblename="Channel 02[53]" desc="READ 16#1035(=4149)" />
+                      <Value name="_x0031_001_54_0_0" visiblename="Channel 02[54]" desc="READ 16#1036(=4150)" />
+                      <Value name="_x0031_001_55_0_0" visiblename="Channel 02[55]" desc="READ 16#1037(=4151)" />
+                      <Value name="_x0031_001_56_0_0" visiblename="Channel 02[56]" desc="READ 16#1038(=4152)" />
+                      <Value name="_x0031_001_57_0_0" visiblename="Channel 02[57]" desc="READ 16#1039(=4153)" />
+                      <Value name="_x0031_001_58_0_0" visiblename="Channel 02[58]" desc="READ 16#103A(=4154)" />
+                      <Value name="_x0031_001_59_0_0" visiblename="Channel 02[59]" desc="READ 16#103B(=4155)" />
+                      <Value name="_x0031_001_60_0_0" visiblename="Channel 02[60]" desc="READ 16#103C(=4156)" />
+                      <Value name="_x0031_001_61_0_0" visiblename="Channel 02[61]" desc="READ 16#103D(=4157)" />
+                      <Value name="_x0031_001_62_0_0" visiblename="Channel 02[62]" desc="READ 16#103E(=4158)" />
+                      <Value name="_x0031_001_63_0_0" visiblename="Channel 02[63]" desc="READ 16#103F(=4159)" />
                       <Name>Channel 02</Name>
-                      <Description>读保持寄存器 命令快照 1000..1063</Description>
+                      <Description>读保持寄存器</Description>
                     </Parameter>
                     <Parameter ParameterId="2000" type="std: ARRAY[0..63] OF WORD">
                       <Attributes channel="output" />
-                      <Value name="_x0032_000_0_0_0" visiblename="Channel 01[0]" desc="WRITE 1100" />
-                      <Value name="_x0032_000_1_0_0" visiblename="Channel 01[1]" desc="WRITE 1101" />
-                      <Value name="_x0032_000_2_0_0" visiblename="Channel 01[2]" desc="WRITE 1102" />
-                      <Value name="_x0032_000_3_0_0" visiblename="Channel 01[3]" desc="WRITE 1103" />
-                      <Value name="_x0032_000_4_0_0" visiblename="Channel 01[4]" desc="WRITE 1104" />
-                      <Value name="_x0032_000_5_0_0" visiblename="Channel 01[5]" desc="WRITE 1105" />
-                      <Value name="_x0032_000_6_0_0" visiblename="Channel 01[6]" desc="WRITE 1106" />
-                      <Value name="_x0032_000_7_0_0" visiblename="Channel 01[7]" desc="WRITE 1107" />
-                      <Value name="_x0032_000_8_0_0" visiblename="Channel 01[8]" desc="WRITE 1108" />
-                      <Value name="_x0032_000_9_0_0" visiblename="Channel 01[9]" desc="WRITE 1109" />
-                      <Value name="_x0032_000_10_0_0" visiblename="Channel 01[10]" desc="WRITE 1110" />
-                      <Value name="_x0032_000_11_0_0" visiblename="Channel 01[11]" desc="WRITE 1111" />
-                      <Value name="_x0032_000_12_0_0" visiblename="Channel 01[12]" desc="WRITE 1112" />
-                      <Value name="_x0032_000_13_0_0" visiblename="Channel 01[13]" desc="WRITE 1113" />
-                      <Value name="_x0032_000_14_0_0" visiblename="Channel 01[14]" desc="WRITE 1114" />
-                      <Value name="_x0032_000_15_0_0" visiblename="Channel 01[15]" desc="WRITE 1115" />
-                      <Value name="_x0032_000_16_0_0" visiblename="Channel 01[16]" desc="WRITE 1116" />
-                      <Value name="_x0032_000_17_0_0" visiblename="Channel 01[17]" desc="WRITE 1117" />
-                      <Value name="_x0032_000_18_0_0" visiblename="Channel 01[18]" desc="WRITE 1118" />
-                      <Value name="_x0032_000_19_0_0" visiblename="Channel 01[19]" desc="WRITE 1119" />
-                      <Value name="_x0032_000_20_0_0" visiblename="Channel 01[20]" desc="WRITE 1120" />
-                      <Value name="_x0032_000_21_0_0" visiblename="Channel 01[21]" desc="WRITE 1121" />
-                      <Value name="_x0032_000_22_0_0" visiblename="Channel 01[22]" desc="WRITE 1122" />
-                      <Value name="_x0032_000_23_0_0" visiblename="Channel 01[23]" desc="WRITE 1123" />
-                      <Value name="_x0032_000_24_0_0" visiblename="Channel 01[24]" desc="WRITE 1124" />
-                      <Value name="_x0032_000_25_0_0" visiblename="Channel 01[25]" desc="WRITE 1125" />
-                      <Value name="_x0032_000_26_0_0" visiblename="Channel 01[26]" desc="WRITE 1126" />
-                      <Value name="_x0032_000_27_0_0" visiblename="Channel 01[27]" desc="WRITE 1127" />
-                      <Value name="_x0032_000_28_0_0" visiblename="Channel 01[28]" desc="WRITE 1128" />
-                      <Value name="_x0032_000_29_0_0" visiblename="Channel 01[29]" desc="WRITE 1129" />
-                      <Value name="_x0032_000_30_0_0" visiblename="Channel 01[30]" desc="WRITE 1130" />
-                      <Value name="_x0032_000_31_0_0" visiblename="Channel 01[31]" desc="WRITE 1131" />
-                      <Value name="_x0032_000_32_0_0" visiblename="Channel 01[32]" desc="WRITE 1132" />
-                      <Value name="_x0032_000_33_0_0" visiblename="Channel 01[33]" desc="WRITE 1133" />
-                      <Value name="_x0032_000_34_0_0" visiblename="Channel 01[34]" desc="WRITE 1134" />
-                      <Value name="_x0032_000_35_0_0" visiblename="Channel 01[35]" desc="WRITE 1135" />
-                      <Value name="_x0032_000_36_0_0" visiblename="Channel 01[36]" desc="WRITE 1136" />
-                      <Value name="_x0032_000_37_0_0" visiblename="Channel 01[37]" desc="WRITE 1137" />
-                      <Value name="_x0032_000_38_0_0" visiblename="Channel 01[38]" desc="WRITE 1138" />
-                      <Value name="_x0032_000_39_0_0" visiblename="Channel 01[39]" desc="WRITE 1139" />
-                      <Value name="_x0032_000_40_0_0" visiblename="Channel 01[40]" desc="WRITE 1140" />
-                      <Value name="_x0032_000_41_0_0" visiblename="Channel 01[41]" desc="WRITE 1141" />
-                      <Value name="_x0032_000_42_0_0" visiblename="Channel 01[42]" desc="WRITE 1142" />
-                      <Value name="_x0032_000_43_0_0" visiblename="Channel 01[43]" desc="WRITE 1143" />
-                      <Value name="_x0032_000_44_0_0" visiblename="Channel 01[44]" desc="WRITE 1144" />
-                      <Value name="_x0032_000_45_0_0" visiblename="Channel 01[45]" desc="WRITE 1145" />
-                      <Value name="_x0032_000_46_0_0" visiblename="Channel 01[46]" desc="WRITE 1146" />
-                      <Value name="_x0032_000_47_0_0" visiblename="Channel 01[47]" desc="WRITE 1147" />
-                      <Value name="_x0032_000_48_0_0" visiblename="Channel 01[48]" desc="WRITE 1148" />
-                      <Value name="_x0032_000_49_0_0" visiblename="Channel 01[49]" desc="WRITE 1149" />
-                      <Value name="_x0032_000_50_0_0" visiblename="Channel 01[50]" desc="WRITE 1150" />
-                      <Value name="_x0032_000_51_0_0" visiblename="Channel 01[51]" desc="WRITE 1151" />
-                      <Value name="_x0032_000_52_0_0" visiblename="Channel 01[52]" desc="WRITE 1152" />
-                      <Value name="_x0032_000_53_0_0" visiblename="Channel 01[53]" desc="WRITE 1153" />
-                      <Value name="_x0032_000_54_0_0" visiblename="Channel 01[54]" desc="WRITE 1154" />
-                      <Value name="_x0032_000_55_0_0" visiblename="Channel 01[55]" desc="WRITE 1155" />
-                      <Value name="_x0032_000_56_0_0" visiblename="Channel 01[56]" desc="WRITE 1156" />
-                      <Value name="_x0032_000_57_0_0" visiblename="Channel 01[57]" desc="WRITE 1157" />
-                      <Value name="_x0032_000_58_0_0" visiblename="Channel 01[58]" desc="WRITE 1158" />
-                      <Value name="_x0032_000_59_0_0" visiblename="Channel 01[59]" desc="WRITE 1159" />
-                      <Value name="_x0032_000_60_0_0" visiblename="Channel 01[60]" desc="WRITE 1160" />
-                      <Value name="_x0032_000_61_0_0" visiblename="Channel 01[61]" desc="WRITE 1161" />
-                      <Value name="_x0032_000_62_0_0" visiblename="Channel 01[62]" desc="WRITE 1162" />
-                      <Value name="_x0032_000_63_0_0" visiblename="Channel 01[63]" desc="WRITE 1163" />
+                      <Value name="_x0032_000_0_0_0" visiblename="Channel 01[0]" desc="WRITE 16#1100(=4352)" />
+                      <Value name="_x0032_000_1_0_0" visiblename="Channel 01[1]" desc="WRITE 16#1101(=4353)" />
+                      <Value name="_x0032_000_2_0_0" visiblename="Channel 01[2]" desc="WRITE 16#1102(=4354)" />
+                      <Value name="_x0032_000_3_0_0" visiblename="Channel 01[3]" desc="WRITE 16#1103(=4355)" />
+                      <Value name="_x0032_000_4_0_0" visiblename="Channel 01[4]" desc="WRITE 16#1104(=4356)" />
+                      <Value name="_x0032_000_5_0_0" visiblename="Channel 01[5]" desc="WRITE 16#1105(=4357)" />
+                      <Value name="_x0032_000_6_0_0" visiblename="Channel 01[6]" desc="WRITE 16#1106(=4358)" />
+                      <Value name="_x0032_000_7_0_0" visiblename="Channel 01[7]" desc="WRITE 16#1107(=4359)" />
+                      <Value name="_x0032_000_8_0_0" visiblename="Channel 01[8]" desc="WRITE 16#1108(=4360)" />
+                      <Value name="_x0032_000_9_0_0" visiblename="Channel 01[9]" desc="WRITE 16#1109(=4361)" />
+                      <Value name="_x0032_000_10_0_0" visiblename="Channel 01[10]" desc="WRITE 16#110A(=4362)" />
+                      <Value name="_x0032_000_11_0_0" visiblename="Channel 01[11]" desc="WRITE 16#110B(=4363)" />
+                      <Value name="_x0032_000_12_0_0" visiblename="Channel 01[12]" desc="WRITE 16#110C(=4364)" />
+                      <Value name="_x0032_000_13_0_0" visiblename="Channel 01[13]" desc="WRITE 16#110D(=4365)" />
+                      <Value name="_x0032_000_14_0_0" visiblename="Channel 01[14]" desc="WRITE 16#110E(=4366)" />
+                      <Value name="_x0032_000_15_0_0" visiblename="Channel 01[15]" desc="WRITE 16#110F(=4367)" />
+                      <Value name="_x0032_000_16_0_0" visiblename="Channel 01[16]" desc="WRITE 16#1110(=4368)" />
+                      <Value name="_x0032_000_17_0_0" visiblename="Channel 01[17]" desc="WRITE 16#1111(=4369)" />
+                      <Value name="_x0032_000_18_0_0" visiblename="Channel 01[18]" desc="WRITE 16#1112(=4370)" />
+                      <Value name="_x0032_000_19_0_0" visiblename="Channel 01[19]" desc="WRITE 16#1113(=4371)" />
+                      <Value name="_x0032_000_20_0_0" visiblename="Channel 01[20]" desc="WRITE 16#1114(=4372)" />
+                      <Value name="_x0032_000_21_0_0" visiblename="Channel 01[21]" desc="WRITE 16#1115(=4373)" />
+                      <Value name="_x0032_000_22_0_0" visiblename="Channel 01[22]" desc="WRITE 16#1116(=4374)" />
+                      <Value name="_x0032_000_23_0_0" visiblename="Channel 01[23]" desc="WRITE 16#1117(=4375)" />
+                      <Value name="_x0032_000_24_0_0" visiblename="Channel 01[24]" desc="WRITE 16#1118(=4376)" />
+                      <Value name="_x0032_000_25_0_0" visiblename="Channel 01[25]" desc="WRITE 16#1119(=4377)" />
+                      <Value name="_x0032_000_26_0_0" visiblename="Channel 01[26]" desc="WRITE 16#111A(=4378)" />
+                      <Value name="_x0032_000_27_0_0" visiblename="Channel 01[27]" desc="WRITE 16#111B(=4379)" />
+                      <Value name="_x0032_000_28_0_0" visiblename="Channel 01[28]" desc="WRITE 16#111C(=4380)" />
+                      <Value name="_x0032_000_29_0_0" visiblename="Channel 01[29]" desc="WRITE 16#111D(=4381)" />
+                      <Value name="_x0032_000_30_0_0" visiblename="Channel 01[30]" desc="WRITE 16#111E(=4382)" />
+                      <Value name="_x0032_000_31_0_0" visiblename="Channel 01[31]" desc="WRITE 16#111F(=4383)" />
+                      <Value name="_x0032_000_32_0_0" visiblename="Channel 01[32]" desc="WRITE 16#1120(=4384)" />
+                      <Value name="_x0032_000_33_0_0" visiblename="Channel 01[33]" desc="WRITE 16#1121(=4385)" />
+                      <Value name="_x0032_000_34_0_0" visiblename="Channel 01[34]" desc="WRITE 16#1122(=4386)" />
+                      <Value name="_x0032_000_35_0_0" visiblename="Channel 01[35]" desc="WRITE 16#1123(=4387)" />
+                      <Value name="_x0032_000_36_0_0" visiblename="Channel 01[36]" desc="WRITE 16#1124(=4388)" />
+                      <Value name="_x0032_000_37_0_0" visiblename="Channel 01[37]" desc="WRITE 16#1125(=4389)" />
+                      <Value name="_x0032_000_38_0_0" visiblename="Channel 01[38]" desc="WRITE 16#1126(=4390)" />
+                      <Value name="_x0032_000_39_0_0" visiblename="Channel 01[39]" desc="WRITE 16#1127(=4391)" />
+                      <Value name="_x0032_000_40_0_0" visiblename="Channel 01[40]" desc="WRITE 16#1128(=4392)" />
+                      <Value name="_x0032_000_41_0_0" visiblename="Channel 01[41]" desc="WRITE 16#1129(=4393)" />
+                      <Value name="_x0032_000_42_0_0" visiblename="Channel 01[42]" desc="WRITE 16#112A(=4394)" />
+                      <Value name="_x0032_000_43_0_0" visiblename="Channel 01[43]" desc="WRITE 16#112B(=4395)" />
+                      <Value name="_x0032_000_44_0_0" visiblename="Channel 01[44]" desc="WRITE 16#112C(=4396)" />
+                      <Value name="_x0032_000_45_0_0" visiblename="Channel 01[45]" desc="WRITE 16#112D(=4397)" />
+                      <Value name="_x0032_000_46_0_0" visiblename="Channel 01[46]" desc="WRITE 16#112E(=4398)" />
+                      <Value name="_x0032_000_47_0_0" visiblename="Channel 01[47]" desc="WRITE 16#112F(=4399)" />
+                      <Value name="_x0032_000_48_0_0" visiblename="Channel 01[48]" desc="WRITE 16#1130(=4400)" />
+                      <Value name="_x0032_000_49_0_0" visiblename="Channel 01[49]" desc="WRITE 16#1131(=4401)" />
+                      <Value name="_x0032_000_50_0_0" visiblename="Channel 01[50]" desc="WRITE 16#1132(=4402)" />
+                      <Value name="_x0032_000_51_0_0" visiblename="Channel 01[51]" desc="WRITE 16#1133(=4403)" />
+                      <Value name="_x0032_000_52_0_0" visiblename="Channel 01[52]" desc="WRITE 16#1134(=4404)" />
+                      <Value name="_x0032_000_53_0_0" visiblename="Channel 01[53]" desc="WRITE 16#1135(=4405)" />
+                      <Value name="_x0032_000_54_0_0" visiblename="Channel 01[54]" desc="WRITE 16#1136(=4406)" />
+                      <Value name="_x0032_000_55_0_0" visiblename="Channel 01[55]" desc="WRITE 16#1137(=4407)" />
+                      <Value name="_x0032_000_56_0_0" visiblename="Channel 01[56]" desc="WRITE 16#1138(=4408)" />
+                      <Value name="_x0032_000_57_0_0" visiblename="Channel 01[57]" desc="WRITE 16#1139(=4409)" />
+                      <Value name="_x0032_000_58_0_0" visiblename="Channel 01[58]" desc="WRITE 16#113A(=4410)" />
+                      <Value name="_x0032_000_59_0_0" visiblename="Channel 01[59]" desc="WRITE 16#113B(=4411)" />
+                      <Value name="_x0032_000_60_0_0" visiblename="Channel 01[60]" desc="WRITE 16#113C(=4412)" />
+                      <Value name="_x0032_000_61_0_0" visiblename="Channel 01[61]" desc="WRITE 16#113D(=4413)" />
+                      <Value name="_x0032_000_62_0_0" visiblename="Channel 01[62]" desc="WRITE 16#113E(=4414)" />
+                      <Value name="_x0032_000_63_0_0" visiblename="Channel 01[63]" desc="WRITE 16#113F(=4415)" />
                       <Name>Channel 01</Name>
-                      <Description>写多个寄存器 状态快照 1100..1163</Description>
+                      <Description>写多个寄存器</Description>
                     </Parameter>
                     <Parameter ParameterId="5000" type="std:BOOL">
                       <Attributes download="false" />
@@ -23683,7 +24160,7 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
                         <Element name="AckDelay" visiblename="AckDelay">1000</Element>
                         <Element name="EnableSlaveVariable" visiblename="EnableSlaveVariable">3001</Element>
                         <Element name="Res" visiblename="Res">1</Element>
-                        <Element name="IpAddr" visiblename="IpAddr">16885952</Element>
+                        <Element name="IpAddr" visiblename="IpAddr">4194412736</Element>
                       </Value>
                       <Name>ModbusTcpSlave</Name>
                       <Description>Des of the modbustcp Slave device</Description>
@@ -23691,6 +24168,33 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
                     <Parameter ParameterId="393218" type="localTypes:MODBUSCHANNELSET">
                       <Attributes />
                       <Value name="_x0033_93218" visiblename="channel">
+                        <Element name="PremeterSet" visiblename="PremeterSet">
+                          <Element name="Bit0" visiblename="Bit0">FALSE</Element>
+                          <Element name="Bit1" visiblename="Bit1">FALSE</Element>
+                          <Element name="Bit2" visiblename="Bit2">FALSE</Element>
+                          <Element name="Bit3" visiblename="Bit3">TRUE</Element>
+                          <Element name="Bit4" visiblename="Bit4">FALSE</Element>
+                          <Element name="Bit5" visiblename="Bit5">FALSE</Element>
+                          <Element name="Bit6" visiblename="Bit6">FALSE</Element>
+                          <Element name="Bit7" visiblename="Bit7">FALSE</Element>
+                        </Element>
+                        <Element name="TrigRes" visiblename="TrigRes">0</Element>
+                        <Element name="CycleTimes" visiblename="CycleTimes">5</Element>
+                        <Element name="ReadRegOffSet" visiblename="ReadRegOffSet">4096</Element>
+                        <Element name="ReadRegLeg" visiblename="ReadRegLeg">64</Element>
+                        <Element name="WriteRegOffSet" visiblename="WriteRegOffSet">0</Element>
+                        <Element name="WriteRegLeg" visiblename="WriteRegLeg">1</Element>
+                        <Element name="IOChannel" visiblename="IOChannel">1</Element>
+                        <Element name="ResendCount" visiblename="ResendCount">1</Element>
+                        <Element name="TriggerCondition" visiblename="TriggerCondition">0</Element>
+                        <Element name="ChannelName" visiblename="ChannelName">'Channel 02'</Element>
+                        <Element name="ChannelNote" visiblename="ChannelNote">''</Element>
+                      </Value>
+                      <Name>channel</Name>
+                    </Parameter>
+                    <Parameter ParameterId="393219" type="localTypes:MODBUSCHANNELSET">
+                      <Attributes />
+                      <Value name="_x0033_93219" visiblename="channel">
                         <Element name="PremeterSet" visiblename="PremeterSet">
                           <Element name="Bit0" visiblename="Bit0">FALSE</Element>
                           <Element name="Bit1" visiblename="Bit1">FALSE</Element>
@@ -23704,40 +24208,13 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
                         <Element name="TrigRes" visiblename="TrigRes">0</Element>
                         <Element name="CycleTimes" visiblename="CycleTimes">5</Element>
                         <Element name="ReadRegOffSet" visiblename="ReadRegOffSet">0</Element>
-                        <Element name="ReadRegLeg" visiblename="ReadRegLeg">64</Element>
-                        <Element name="WriteRegOffSet" visiblename="WriteRegOffSet">1100</Element>
+                        <Element name="ReadRegLeg" visiblename="ReadRegLeg">1</Element>
+                        <Element name="WriteRegOffSet" visiblename="WriteRegOffSet">4352</Element>
                         <Element name="WriteRegLeg" visiblename="WriteRegLeg">64</Element>
                         <Element name="IOChannel" visiblename="IOChannel">0</Element>
                         <Element name="ResendCount" visiblename="ResendCount">1</Element>
                         <Element name="TriggerCondition" visiblename="TriggerCondition">0</Element>
                         <Element name="ChannelName" visiblename="ChannelName">'Channel 01'</Element>
-                        <Element name="ChannelNote" visiblename="ChannelNote">''</Element>
-                      </Value>
-                      <Name>channel</Name>
-                    </Parameter>
-                    <Parameter ParameterId="393219" type="localTypes:MODBUSCHANNELSET">
-                      <Attributes />
-                      <Value name="_x0033_93219" visiblename="channel">
-                        <Element name="PremeterSet" visiblename="PremeterSet">
-                          <Element name="Bit0" visiblename="Bit0">FALSE</Element>
-                          <Element name="Bit1" visiblename="Bit1">FALSE</Element>
-                          <Element name="Bit2" visiblename="Bit2">FALSE</Element>
-                          <Element name="Bit3" visiblename="Bit3">TRUE</Element>
-                          <Element name="Bit4" visiblename="Bit4">FALSE</Element>
-                          <Element name="Bit5" visiblename="Bit5">FALSE</Element>
-                          <Element name="Bit6" visiblename="Bit6">FALSE</Element>
-                          <Element name="Bit7" visiblename="Bit7">FALSE</Element>
-                        </Element>
-                        <Element name="TrigRes" visiblename="TrigRes">0</Element>
-                        <Element name="CycleTimes" visiblename="CycleTimes">5</Element>
-                        <Element name="ReadRegOffSet" visiblename="ReadRegOffSet">1000</Element>
-                        <Element name="ReadRegLeg" visiblename="ReadRegLeg">64</Element>
-                        <Element name="WriteRegOffSet" visiblename="WriteRegOffSet">0</Element>
-                        <Element name="WriteRegLeg" visiblename="WriteRegLeg">64</Element>
-                        <Element name="IOChannel" visiblename="IOChannel">1</Element>
-                        <Element name="ResendCount" visiblename="ResendCount">1</Element>
-                        <Element name="TriggerCondition" visiblename="TriggerCondition">0</Element>
-                        <Element name="ChannelName" visiblename="ChannelName">'Channel 02'</Element>
                         <Element name="ChannelNote" visiblename="ChannelNote">''</Element>
                       </Value>
                       <Name>channel</Name>
@@ -23818,14 +24295,6 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
           <type><BOOL /></type>
           <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【面板逆时针】手动 R-</xhtml></documentation>
         </variable>
-        <variable name="JogACC">
-          <type><REAL /></type>
-          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">点动加速度 → AxisCmd_rAcc（&lt;1 时取 100）</xhtml></documentation>
-        </variable>
-        <variable name="JogDEC">
-          <type><REAL /></type>
-          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">点动减速度 → AxisCmd_rDec（&lt;1 时取 100）</xhtml></documentation>
-        </variable>
         <variable name="HMI_xEStop">
           <type><BOOL /></type>
           <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【急停】TRUE正常 FALSE按下 = 物理 AND 触摸屏Req AND Web</xhtml></documentation>
@@ -23876,7 +24345,7 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
         </variable>
         <variable name="HMI_iAlarmShow">
           <type><INT /></type>
-          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【只读·报警号】1001急停 1002轴故障 1005力超时 1006从站失败 1007未就绪</xhtml></documentation>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【只读·报警号】1001急停 1002轴故障 1005力超时 1006从站失败 1007未就绪；1008已废</xhtml></documentation>
         </variable>
         <variable name="Dev_xStop">
           <type><BOOL /></type>
@@ -23958,31 +24427,6 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
           <type><BOOL /></type>
           <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【R-】</xhtml></documentation>
         </variable>
-        <variable name="HMI_rJogVelX">
-          <type><REAL /></type>
-          <initialValue><simpleValue value="0.4" /></initialValue>
-          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【X直行速度】与旋转速度分开</xhtml></documentation>
-        </variable>
-        <variable name="HMI_rSpinVel">
-          <type><REAL /></type>
-          <initialValue><simpleValue value="0.3" /></initialValue>
-          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【左右旋速度】</xhtml></documentation>
-        </variable>
-        <variable name="HMI_rJogVelY">
-          <type><REAL /></type>
-          <initialValue><simpleValue value="0.4" /></initialValue>
-          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【Y点动速度】</xhtml></documentation>
-        </variable>
-        <variable name="HMI_rJogVelZ">
-          <type><REAL /></type>
-          <initialValue><simpleValue value="0.4" /></initialValue>
-          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【Z点动速度】力跟随限速后备</xhtml></documentation>
-        </variable>
-        <variable name="HMI_rJogVelR">
-          <type><REAL /></type>
-          <initialValue><simpleValue value="0.2" /></initialValue>
-          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【R点动速度】</xhtml></documentation>
-        </variable>
         <variable name="HMI_xHomeY">
           <type><BOOL /></type>
           <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【Y回零】</xhtml></documentation>
@@ -24036,46 +24480,10 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
           <type><BOOL /></type>
           <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【自动中止】立即结束</xhtml></documentation>
         </variable>
-        <variable name="HMI_rAutoDistX">
-          <type><REAL /></type>
-          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【自动X走距】每道</xhtml></documentation>
-        </variable>
-        <variable name="HMI_rAutoVelX">
-          <type><REAL /></type>
-          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【自动X速度】</xhtml></documentation>
-        </variable>
-        <variable name="HMI_rAutoVelY">
-          <type><REAL /></type>
-          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【自动Y速度】</xhtml></documentation>
-        </variable>
-        <variable name="HMI_rAutoVelZ">
-          <type><REAL /></type>
-          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【自动Z速度】力跟随限速参考</xhtml></documentation>
-        </variable>
-        <variable name="HMI_rWheelBase">
-          <type><REAL /></type>
-          <initialValue><simpleValue value="5.0" /></initialValue>
-          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【龙门跨距=Y行程】4~6 m</xhtml></documentation>
-        </variable>
-        <variable name="HMI_iAutoPasses">
-          <type><INT /></type>
-          <initialValue><simpleValue value="1" /></initialValue>
-          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【自动总道数】≥1</xhtml></documentation>
-        </variable>
         <variable name="HMI_rHeadingErr">
           <type><REAL /></type>
           <initialValue><simpleValue value="0.0" /></initialValue>
-          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【航向误差】视觉/外部纠偏输入</xhtml></documentation>
-        </variable>
-        <variable name="HMI_rKpTrack">
-          <type><REAL /></type>
-          <initialValue><simpleValue value="0.0" /></initialValue>
-          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【直线纠偏Kp】</xhtml></documentation>
-        </variable>
-        <variable name="HMI_rKpForce">
-          <type><REAL /></type>
-          <initialValue><simpleValue value="1.0" /></initialValue>
-          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【力跟随Kp】</xhtml></documentation>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【航向误差】视觉/外部纠偏输入（实时量，不保持）</xhtml></documentation>
         </variable>
         <variable name="iAutoStep">
           <type><INT /></type>
@@ -24156,10 +24564,6 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
           <type><REAL /></type>
           <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【内部·恒力Kp】</xhtml></documentation>
         </variable>
-        <variable name="HMI_rForceSet">
-          <type><REAL /></type>
-          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【恒力设定】N</xhtml></documentation>
-        </variable>
         <variable name="HMI_rForceSim">
           <type><REAL /></type>
           <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【力模拟值】N</xhtml></documentation>
@@ -24187,36 +24591,6 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
         <variable name="Logic_xForceTare">
           <type><BOOL /></type>
           <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【内部·自动步去皮脉冲】</xhtml></documentation>
-        </variable>
-        <variable name="Cfg_rLimYPos">
-          <type><REAL /></type>
-          <initialValue><simpleValue value="6.0" /></initialValue>
-          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【Y正限位】m，默认跨距上限</xhtml></documentation>
-        </variable>
-        <variable name="Cfg_rLimYNeg">
-          <type><REAL /></type>
-          <initialValue><simpleValue value="0.0" /></initialValue>
-          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【Y负限位】m</xhtml></documentation>
-        </variable>
-        <variable name="Cfg_rLimZPos">
-          <type><REAL /></type>
-          <initialValue><simpleValue value="0.0" /></initialValue>
-          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【Z正限位】上</xhtml></documentation>
-        </variable>
-        <variable name="Cfg_rLimZNeg">
-          <type><REAL /></type>
-          <initialValue><simpleValue value="-0.7" /></initialValue>
-          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【Z负限位】下压行程</xhtml></documentation>
-        </variable>
-        <variable name="Cfg_rLimRPos">
-          <type><REAL /></type>
-          <initialValue><simpleValue value="180.0" /></initialValue>
-          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【R正限位】度</xhtml></documentation>
-        </variable>
-        <variable name="Cfg_rLimRNeg">
-          <type><REAL /></type>
-          <initialValue><simpleValue value="-180.0" /></initialValue>
-          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【R负限位】度</xhtml></documentation>
         </variable>
         <variable name="I_xLimYPos">
           <type><BOOL /></type>
@@ -24408,17 +24782,41 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
           <type><REAL /></type>
           <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【跨距】限幅 4..6</xhtml></documentation>
         </variable>
-        <variable name="AxisCmd_rAcc">
+        <variable name="AxisCmd_rAccX">
           <type><REAL /></type>
-          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【加速度】</xhtml></documentation>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【X加速度】</xhtml></documentation>
         </variable>
-        <variable name="AxisCmd_rDec">
+        <variable name="AxisCmd_rDecX">
           <type><REAL /></type>
-          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【减速度】</xhtml></documentation>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【X减速度】</xhtml></documentation>
+        </variable>
+        <variable name="AxisCmd_rAccY">
+          <type><REAL /></type>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【Y加速度】</xhtml></documentation>
+        </variable>
+        <variable name="AxisCmd_rDecY">
+          <type><REAL /></type>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【Y减速度】</xhtml></documentation>
+        </variable>
+        <variable name="AxisCmd_rAccZ">
+          <type><REAL /></type>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【Z加速度】</xhtml></documentation>
+        </variable>
+        <variable name="AxisCmd_rDecZ">
+          <type><REAL /></type>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【Z减速度】</xhtml></documentation>
+        </variable>
+        <variable name="AxisCmd_rAccR">
+          <type><REAL /></type>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【R加速度】</xhtml></documentation>
+        </variable>
+        <variable name="AxisCmd_rDecR">
+          <type><REAL /></type>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【R减速度】</xhtml></documentation>
         </variable>
         <variable name="AxisFb_rVelCmdM1">
           <type><REAL /></type>
-          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【只读·M1速度指令】含纠偏</xhtml></documentation>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【只读·M1速度指令】含纠偏/旋转</xhtml></documentation>
         </variable>
         <variable name="AxisFb_rVelCmdM2">
           <type><REAL /></type>
@@ -24431,6 +24829,46 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
         <variable name="AxisFb_rPosM2">
           <type><REAL /></type>
           <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【只读·M2位置】</xhtml></documentation>
+        </variable>
+        <variable name="AxisFb_rPosX">
+          <type><REAL /></type>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【只读·Virtual X 位置】走距判据</xhtml></documentation>
+        </variable>
+        <variable name="AxisFb_rSyncErr">
+          <type><REAL /></type>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【只读·M1-M2 同步误差】</xhtml></documentation>
+        </variable>
+        <variable name="AxisFb_rVelFactorX">
+          <type><REAL /></type>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【只读·Virtual Override 倍率】</xhtml></documentation>
+        </variable>
+        <variable name="AxisFb_xGantryCoupled">
+          <type><BOOL /></type>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【只读·龙门已 GearIn】M1且M2</xhtml></documentation>
+        </variable>
+        <variable name="AxisFb_xInGearM1">
+          <type><BOOL /></type>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【只读·M1 电子齿轮 InGear】</xhtml></documentation>
+        </variable>
+        <variable name="AxisFb_xInGearM2">
+          <type><BOOL /></type>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【只读·M2 电子齿轮 InGear】</xhtml></documentation>
+        </variable>
+        <variable name="AxisFb_xPoweredV">
+          <type><BOOL /></type>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【只读·Virtual 已使能】</xhtml></documentation>
+        </variable>
+        <variable name="AxisFb_xSyncWarn">
+          <type><BOOL /></type>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【只读·同步预警】</xhtml></documentation>
+        </variable>
+        <variable name="AxisFb_xSyncFault">
+          <type><BOOL /></type>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【只读·同步跳闸】已废，恒 FALSE</xhtml></documentation>
+        </variable>
+        <variable name="AxisFb_iGantryState">
+          <type><INT /></type>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【只读·0Idle 1Coupling 2Coupled 3Decouple 4Diff 5Align】</xhtml></documentation>
         </variable>
         <variable name="AxisFb_rPosY">
           <type><REAL /></type>
@@ -24792,6 +25230,46 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
           <type><REAL /></type>
           <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【Web影子·力Kp】</xhtml></documentation>
         </variable>
+        <variable name="Tcp_rAccX">
+          <type><REAL /></type>
+          <initialValue><simpleValue value="100.0" /></initialValue>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【Web影子·X加速度】</xhtml></documentation>
+        </variable>
+        <variable name="Tcp_rDecX">
+          <type><REAL /></type>
+          <initialValue><simpleValue value="100.0" /></initialValue>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【Web影子·X减速度】</xhtml></documentation>
+        </variable>
+        <variable name="Tcp_rAccY">
+          <type><REAL /></type>
+          <initialValue><simpleValue value="100.0" /></initialValue>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【Web影子·Y加速度】</xhtml></documentation>
+        </variable>
+        <variable name="Tcp_rDecY">
+          <type><REAL /></type>
+          <initialValue><simpleValue value="100.0" /></initialValue>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【Web影子·Y减速度】</xhtml></documentation>
+        </variable>
+        <variable name="Tcp_rAccZ">
+          <type><REAL /></type>
+          <initialValue><simpleValue value="100.0" /></initialValue>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【Web影子·Z加速度】</xhtml></documentation>
+        </variable>
+        <variable name="Tcp_rDecZ">
+          <type><REAL /></type>
+          <initialValue><simpleValue value="100.0" /></initialValue>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【Web影子·Z减速度】</xhtml></documentation>
+        </variable>
+        <variable name="Tcp_rAccR">
+          <type><REAL /></type>
+          <initialValue><simpleValue value="100.0" /></initialValue>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【Web影子·R加速度】</xhtml></documentation>
+        </variable>
+        <variable name="Tcp_rDecR">
+          <type><REAL /></type>
+          <initialValue><simpleValue value="100.0" /></initialValue>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【Web影子·R减速度】</xhtml></documentation>
+        </variable>
         <variable name="HMI_xStartReq">
           <type><BOOL /></type>
           <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【触摸屏启动】</xhtml></documentation>
@@ -24816,6 +25294,390 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
         <variable name="HMI_xAutoAbortReq">
           <type><BOOL /></type>
           <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【触摸屏自动中止】</xhtml></documentation>
+        </variable>
+        <variable name="HMI_rJogVelX">
+          <type><REAL /></type>
+          <initialValue><simpleValue value="0.4" /></initialValue>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【X直行速度】与旋转速度分开</xhtml></documentation>
+          <addData>
+            <data name="http://www.3s-software.com/plcopenxml/attributes" handleUnknown="implementation">
+              <Attributes>
+                <Attribute Name="retain" Value="" />
+              </Attributes>
+            </data>
+          </addData>
+        </variable>
+        <variable name="HMI_rSpinVel">
+          <type><REAL /></type>
+          <initialValue><simpleValue value="0.3" /></initialValue>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【左右旋速度】</xhtml></documentation>
+          <addData>
+            <data name="http://www.3s-software.com/plcopenxml/attributes" handleUnknown="implementation">
+              <Attributes>
+                <Attribute Name="retain" Value="" />
+              </Attributes>
+            </data>
+          </addData>
+        </variable>
+        <variable name="HMI_rJogVelY">
+          <type><REAL /></type>
+          <initialValue><simpleValue value="0.4" /></initialValue>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【Y点动速度】</xhtml></documentation>
+          <addData>
+            <data name="http://www.3s-software.com/plcopenxml/attributes" handleUnknown="implementation">
+              <Attributes>
+                <Attribute Name="retain" Value="" />
+              </Attributes>
+            </data>
+          </addData>
+        </variable>
+        <variable name="HMI_rJogVelZ">
+          <type><REAL /></type>
+          <initialValue><simpleValue value="0.4" /></initialValue>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【Z点动速度】力跟随限速后备</xhtml></documentation>
+          <addData>
+            <data name="http://www.3s-software.com/plcopenxml/attributes" handleUnknown="implementation">
+              <Attributes>
+                <Attribute Name="retain" Value="" />
+              </Attributes>
+            </data>
+          </addData>
+        </variable>
+        <variable name="HMI_rJogVelR">
+          <type><REAL /></type>
+          <initialValue><simpleValue value="0.2" /></initialValue>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【R点动速度】</xhtml></documentation>
+          <addData>
+            <data name="http://www.3s-software.com/plcopenxml/attributes" handleUnknown="implementation">
+              <Attributes>
+                <Attribute Name="retain" Value="" />
+              </Attributes>
+            </data>
+          </addData>
+        </variable>
+        <variable name="HMI_rAccX">
+          <type><REAL /></type>
+          <initialValue><simpleValue value="100.0" /></initialValue>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【X加速度】</xhtml></documentation>
+          <addData>
+            <data name="http://www.3s-software.com/plcopenxml/attributes" handleUnknown="implementation">
+              <Attributes>
+                <Attribute Name="retain" Value="" />
+              </Attributes>
+            </data>
+          </addData>
+        </variable>
+        <variable name="HMI_rDecX">
+          <type><REAL /></type>
+          <initialValue><simpleValue value="100.0" /></initialValue>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【X减速度】</xhtml></documentation>
+          <addData>
+            <data name="http://www.3s-software.com/plcopenxml/attributes" handleUnknown="implementation">
+              <Attributes>
+                <Attribute Name="retain" Value="" />
+              </Attributes>
+            </data>
+          </addData>
+        </variable>
+        <variable name="HMI_rAccY">
+          <type><REAL /></type>
+          <initialValue><simpleValue value="100.0" /></initialValue>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【Y加速度】</xhtml></documentation>
+          <addData>
+            <data name="http://www.3s-software.com/plcopenxml/attributes" handleUnknown="implementation">
+              <Attributes>
+                <Attribute Name="retain" Value="" />
+              </Attributes>
+            </data>
+          </addData>
+        </variable>
+        <variable name="HMI_rDecY">
+          <type><REAL /></type>
+          <initialValue><simpleValue value="100.0" /></initialValue>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【Y减速度】</xhtml></documentation>
+          <addData>
+            <data name="http://www.3s-software.com/plcopenxml/attributes" handleUnknown="implementation">
+              <Attributes>
+                <Attribute Name="retain" Value="" />
+              </Attributes>
+            </data>
+          </addData>
+        </variable>
+        <variable name="HMI_rAccZ">
+          <type><REAL /></type>
+          <initialValue><simpleValue value="100.0" /></initialValue>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【Z加速度】</xhtml></documentation>
+          <addData>
+            <data name="http://www.3s-software.com/plcopenxml/attributes" handleUnknown="implementation">
+              <Attributes>
+                <Attribute Name="retain" Value="" />
+              </Attributes>
+            </data>
+          </addData>
+        </variable>
+        <variable name="HMI_rDecZ">
+          <type><REAL /></type>
+          <initialValue><simpleValue value="100.0" /></initialValue>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【Z减速度】</xhtml></documentation>
+          <addData>
+            <data name="http://www.3s-software.com/plcopenxml/attributes" handleUnknown="implementation">
+              <Attributes>
+                <Attribute Name="retain" Value="" />
+              </Attributes>
+            </data>
+          </addData>
+        </variable>
+        <variable name="HMI_rAccR">
+          <type><REAL /></type>
+          <initialValue><simpleValue value="100.0" /></initialValue>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【R加速度】</xhtml></documentation>
+          <addData>
+            <data name="http://www.3s-software.com/plcopenxml/attributes" handleUnknown="implementation">
+              <Attributes>
+                <Attribute Name="retain" Value="" />
+              </Attributes>
+            </data>
+          </addData>
+        </variable>
+        <variable name="HMI_rDecR">
+          <type><REAL /></type>
+          <initialValue><simpleValue value="100.0" /></initialValue>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【R减速度】</xhtml></documentation>
+          <addData>
+            <data name="http://www.3s-software.com/plcopenxml/attributes" handleUnknown="implementation">
+              <Attributes>
+                <Attribute Name="retain" Value="" />
+              </Attributes>
+            </data>
+          </addData>
+        </variable>
+        <variable name="HMI_rAutoDistX">
+          <type><REAL /></type>
+          <initialValue><simpleValue value="1.0" /></initialValue>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【自动X走距】每道</xhtml></documentation>
+          <addData>
+            <data name="http://www.3s-software.com/plcopenxml/attributes" handleUnknown="implementation">
+              <Attributes>
+                <Attribute Name="retain" Value="" />
+              </Attributes>
+            </data>
+          </addData>
+        </variable>
+        <variable name="HMI_rAutoVelX">
+          <type><REAL /></type>
+          <initialValue><simpleValue value="0.4" /></initialValue>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【自动X速度】</xhtml></documentation>
+          <addData>
+            <data name="http://www.3s-software.com/plcopenxml/attributes" handleUnknown="implementation">
+              <Attributes>
+                <Attribute Name="retain" Value="" />
+              </Attributes>
+            </data>
+          </addData>
+        </variable>
+        <variable name="HMI_rAutoVelY">
+          <type><REAL /></type>
+          <initialValue><simpleValue value="0.3" /></initialValue>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【自动Y速度】</xhtml></documentation>
+          <addData>
+            <data name="http://www.3s-software.com/plcopenxml/attributes" handleUnknown="implementation">
+              <Attributes>
+                <Attribute Name="retain" Value="" />
+              </Attributes>
+            </data>
+          </addData>
+        </variable>
+        <variable name="HMI_rAutoVelZ">
+          <type><REAL /></type>
+          <initialValue><simpleValue value="0.15" /></initialValue>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【自动Z速度】力跟随限速参考</xhtml></documentation>
+          <addData>
+            <data name="http://www.3s-software.com/plcopenxml/attributes" handleUnknown="implementation">
+              <Attributes>
+                <Attribute Name="retain" Value="" />
+              </Attributes>
+            </data>
+          </addData>
+        </variable>
+        <variable name="HMI_rWheelBase">
+          <type><REAL /></type>
+          <initialValue><simpleValue value="5.0" /></initialValue>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【龙门跨距=Y行程】4~6 m</xhtml></documentation>
+          <addData>
+            <data name="http://www.3s-software.com/plcopenxml/attributes" handleUnknown="implementation">
+              <Attributes>
+                <Attribute Name="retain" Value="" />
+              </Attributes>
+            </data>
+          </addData>
+        </variable>
+        <variable name="HMI_iAutoPasses">
+          <type><INT /></type>
+          <initialValue><simpleValue value="1" /></initialValue>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【自动总道数】≥1</xhtml></documentation>
+          <addData>
+            <data name="http://www.3s-software.com/plcopenxml/attributes" handleUnknown="implementation">
+              <Attributes>
+                <Attribute Name="retain" Value="" />
+              </Attributes>
+            </data>
+          </addData>
+        </variable>
+        <variable name="HMI_rForceSet">
+          <type><REAL /></type>
+          <initialValue><simpleValue value="100.0" /></initialValue>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【恒力设定】N</xhtml></documentation>
+          <addData>
+            <data name="http://www.3s-software.com/plcopenxml/attributes" handleUnknown="implementation">
+              <Attributes>
+                <Attribute Name="retain" Value="" />
+              </Attributes>
+            </data>
+          </addData>
+        </variable>
+        <variable name="HMI_rKpForce">
+          <type><REAL /></type>
+          <initialValue><simpleValue value="1.0" /></initialValue>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【力跟随Kp】</xhtml></documentation>
+          <addData>
+            <data name="http://www.3s-software.com/plcopenxml/attributes" handleUnknown="implementation">
+              <Attributes>
+                <Attribute Name="retain" Value="" />
+              </Attributes>
+            </data>
+          </addData>
+        </variable>
+        <variable name="HMI_rKpTrack">
+          <type><REAL /></type>
+          <initialValue><simpleValue value="0.0" /></initialValue>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【直线纠偏Kp】</xhtml></documentation>
+          <addData>
+            <data name="http://www.3s-software.com/plcopenxml/attributes" handleUnknown="implementation">
+              <Attributes>
+                <Attribute Name="retain" Value="" />
+              </Attributes>
+            </data>
+          </addData>
+        </variable>
+        <variable name="Cfg_rLimYPos">
+          <type><REAL /></type>
+          <initialValue><simpleValue value="6.0" /></initialValue>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【Y正限位】m，默认跨距上限</xhtml></documentation>
+          <addData>
+            <data name="http://www.3s-software.com/plcopenxml/attributes" handleUnknown="implementation">
+              <Attributes>
+                <Attribute Name="retain" Value="" />
+              </Attributes>
+            </data>
+          </addData>
+        </variable>
+        <variable name="Cfg_rLimYNeg">
+          <type><REAL /></type>
+          <initialValue><simpleValue value="0.0" /></initialValue>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【Y负限位】m</xhtml></documentation>
+          <addData>
+            <data name="http://www.3s-software.com/plcopenxml/attributes" handleUnknown="implementation">
+              <Attributes>
+                <Attribute Name="retain" Value="" />
+              </Attributes>
+            </data>
+          </addData>
+        </variable>
+        <variable name="Cfg_rLimZPos">
+          <type><REAL /></type>
+          <initialValue><simpleValue value="0.0" /></initialValue>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【Z正限位】上</xhtml></documentation>
+          <addData>
+            <data name="http://www.3s-software.com/plcopenxml/attributes" handleUnknown="implementation">
+              <Attributes>
+                <Attribute Name="retain" Value="" />
+              </Attributes>
+            </data>
+          </addData>
+        </variable>
+        <variable name="Cfg_rLimZNeg">
+          <type><REAL /></type>
+          <initialValue><simpleValue value="-0.7" /></initialValue>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【Z负限位】下压行程</xhtml></documentation>
+          <addData>
+            <data name="http://www.3s-software.com/plcopenxml/attributes" handleUnknown="implementation">
+              <Attributes>
+                <Attribute Name="retain" Value="" />
+              </Attributes>
+            </data>
+          </addData>
+        </variable>
+        <variable name="Cfg_rLimRPos">
+          <type><REAL /></type>
+          <initialValue><simpleValue value="180.0" /></initialValue>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【R正限位】度</xhtml></documentation>
+          <addData>
+            <data name="http://www.3s-software.com/plcopenxml/attributes" handleUnknown="implementation">
+              <Attributes>
+                <Attribute Name="retain" Value="" />
+              </Attributes>
+            </data>
+          </addData>
+        </variable>
+        <variable name="Cfg_rLimRNeg">
+          <type><REAL /></type>
+          <initialValue><simpleValue value="-180.0" /></initialValue>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【R负限位】度</xhtml></documentation>
+          <addData>
+            <data name="http://www.3s-software.com/plcopenxml/attributes" handleUnknown="implementation">
+              <Attributes>
+                <Attribute Name="retain" Value="" />
+              </Attributes>
+            </data>
+          </addData>
+        </variable>
+        <variable name="Cfg_rVelBaseMaxX">
+          <type><REAL /></type>
+          <initialValue><simpleValue value="1.0" /></initialValue>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【X速度基准】诊断倍率分母；≥最大 Jog/Auto</xhtml></documentation>
+          <addData>
+            <data name="http://www.3s-software.com/plcopenxml/attributes" handleUnknown="implementation">
+              <Attributes>
+                <Attribute Name="retain" Value="" />
+              </Attributes>
+            </data>
+          </addData>
+        </variable>
+        <variable name="Cfg_rPhaseMax">
+          <type><REAL /></type>
+          <initialValue><simpleValue value="0.01" /></initialValue>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【跟轨相位限幅】u；连续 Phasing</xhtml></documentation>
+          <addData>
+            <data name="http://www.3s-software.com/plcopenxml/attributes" handleUnknown="implementation">
+              <Attributes>
+                <Attribute Name="retain" Value="" />
+              </Attributes>
+            </data>
+          </addData>
+        </variable>
+        <variable name="Cfg_rSyncWarn">
+          <type><REAL /></type>
+          <initialValue><simpleValue value="0.02" /></initialValue>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【同步预警】|M1-M2|；降速</xhtml></documentation>
+          <addData>
+            <data name="http://www.3s-software.com/plcopenxml/attributes" handleUnknown="implementation">
+              <Attributes>
+                <Attribute Name="retain" Value="" />
+              </Attributes>
+            </data>
+          </addData>
+        </variable>
+        <variable name="Cfg_rSyncFault">
+          <type><REAL /></type>
+          <initialValue><simpleValue value="0.05" /></initialValue>
+          <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">【同步跳闸】已废；保留 RETAIN 布局</xhtml></documentation>
+          <addData>
+            <data name="http://www.3s-software.com/plcopenxml/attributes" handleUnknown="implementation">
+              <Attributes>
+                <Attribute Name="retain" Value="" />
+              </Attributes>
+            </data>
+          </addData>
         </variable>
 <addData>
           <data name="http://www.3s-software.com/plcopenxml/pathstructure" handleUnknown="discard">
@@ -24898,6 +25760,36 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
         </addData>
       </task>
     </data>
+    <data name="http://www.3s-software.com/plcopenxml/task" handleUnknown="implementation">
+      <task name="SoftMotion_PlanningTask" priority="15">
+        <pouInstance name="SoftMotion_PlanningPrg" typeName="">
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml" />
+          </documentation>
+        </pouInstance>
+        <addData>
+          <data name="http://www.3s-software.com/plcopenxml/pathstructure" handleUnknown="discard">
+            <pathStructure isFolder="False" name="Device" namespace="1ee21fdd-5562-44a0-a3ce-665d74916d50" factoryName="Inovance.InoPro.InoDeviceObject.DeviceObjectFactory" factoryGuid="{84d12aa5-3225-473b-9df6-18af40889bdf}" objectGuid="d7de5ac3-3f30-45ac-8468-ec250b4e523b">
+              <pathStructure isFolder="False" name="Plc Logic" namespace="00000000-0000-0000-0000-000000000000" factoryName="_3S.CoDeSys.PlcLogicObject.PlcLogicObjectFactory" factoryGuid="{8ceeba4e-ac7a-4fbd-9415-bfb2d98668ab}" objectGuid="8a291c6e-c5c5-4a07-8c04-1100df0e1491">
+                <pathStructure isFolder="False" name="Application" namespace="e5b60c93-5445-4e40-ada9-cd9c005549b4" factoryName="_3S.CoDeSys.ApplicationObject.ApplicationObjectFactory" factoryGuid="{ECADC42E-716E-4ff3-A93C-0CD143F9743F}" objectGuid="69822df8-b9c0-4a01-9450-b2cdc030688c">
+                  <pathStructure isFolder="False" name="Task Configuration" namespace="00000000-0000-0000-0000-000000000000" factoryName="_3S.CoDeSys.TaskConfigObject.TaskConfigObjectFactory" factoryGuid="{977AAA11-CA74-4883-9815-218B43EEE295}" objectGuid="eebbacfc-2f6f-4552-bff0-2d75f9684214">
+                    <pathStructure isFolder="False" name="SoftMotion_PlanningTask" namespace="75385b7c-a270-4b54-9e3f-c7fb8fce1761" factoryName="_3S.CoDeSys.TaskObject.TaskObjectFactory" factoryGuid="{EBBE0F73-C9FF-42e3-9DF9-113EF094F267}" objectGuid="10939b5d-f8c9-461e-a9c4-7f7bd729bec2" />
+                  </pathStructure>
+                </pathStructure>
+              </pathStructure>
+            </pathStructure>
+          </data>
+          <data name="http://www.3s-software.com/plcopenxml/tasksettings" handleUnknown="implementation">
+            <TaskSettings KindOfTask="Freewheeling" IntervalUnit="ms" WithinSPSTimeSlicing="true">
+              <Watchdog Enabled="false" TimeUnit="ms" />
+            </TaskSettings>
+          </data>
+          <data name="http://www.3s-software.com/plcopenxml/objectid" handleUnknown="discard">
+            <ObjectId>10939b5d-f8c9-461e-a9c4-7f7bd729bec2</ObjectId>
+          </data>
+        </addData>
+      </task>
+    </data>
     <data name="http://www.3s-software.com/plcopenxml/application" handleUnknown="implementation">
       <resource name="Application">
         <addData>
@@ -24959,6 +25851,7 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
             <Parameter Name="DWUUID" Value="2779097685" />
           </Parameters>
         </Library>
+        <Library Name="#SM3_Drive_ETC_Inovance" Namespace="SM3_Drive_ETC_Inovance" HideWhenReferencedAsDependency="false" PublishSymbolsInContainer="false" SystemLibrary="false" LinkAllContent="false" DefaultResolution="SM3_Drive_ETC_Inovance, 1.0.5.0 (Inovance)" PlaceHolderRediretion="SM3_Drive_ETC_Inovance, 1.0.5.0 (Inovance)" />
         <addData>
           <data name="http://www.3s-software.com/plcopenxml/pathstructure" handleUnknown="discard">
             <pathStructure isFolder="False" name="Device" namespace="1ee21fdd-5562-44a0-a3ce-665d74916d50" factoryName="Inovance.InoPro.InoDeviceObject.DeviceObjectFactory" factoryGuid="{84d12aa5-3225-473b-9df6-18af40889bdf}" objectGuid="d7de5ac3-3f30-45ac-8468-ec250b4e523b">
@@ -24982,17 +25875,20 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
             <Object Name="PRG_Axis_Control" ObjectId="a1b2c3d4-e5f6-4789-a012-444444444444" />
             <Folder Name="FB">
               <Object Name="FB_XLineTrack" ObjectId="92cd9ff9-634c-4ba6-b757-ed5688751163" />
+              <Object Name="FB_XDual" ObjectId="d4e5f6a7-b8c9-4012-c345-d6e7f8a90002" />
               <Object Name="FB_Force" ObjectId="a1b2c3d4-e5f6-4789-a012-888888888888" />
               <Object Name="FB_ForceFollow" ObjectId="a1b2c3d4-e5f6-4789-a012-999999999999" />
               <Object Name="FB_Servo" ObjectId="095f55bd-5910-4f8e-b349-f7b40f09358c" />
             </Folder>
             <Object Name="ETHERCAT" ObjectId="e0ea87e6-e4c2-4a3b-ba24-406b35fe0e37" />
             <Object Name="MainTask" ObjectId="c581ad1f-00ae-406a-b6a2-6e668ae5b04c" />
+            <Object Name="SoftMotion_PlanningTask" ObjectId="10939b5d-f8c9-461e-a9c4-7f7bd729bec2" />
             <Object Name="PRG_TcpHmi" ObjectId="a1b2c3d4-e5f6-4789-a012-555555555555" />
             <Object Name="库管理器" ObjectId="ad0436d6-6cec-4e4e-925c-e30bc36c75e4" />
             <Object Name="PLC_PRG" ObjectId="ff3e658d-23f1-4e79-9e6a-94708f19c17b" />
             <Object Name="GVL" ObjectId="5efdcb87-523c-4708-aac8-457600d7cdba" />
             <Object Name="PRG_Logic" ObjectId="a1b2c3d4-e5f6-4789-a012-333333333333" />
+            <Object Name="SoftMotion_PlanningPrg" ObjectId="21dbddb9-4dc6-4d15-9ff3-bcfa519d1774" />
           </Object>
           <Object Name="ETHERCAT" ObjectId="5da2d1f6-29ad-42f1-ab50-c5f30c9e97b0">
             <Object Name="MDX_EC_2" ObjectId="6cd616c7-2c84-4688-8a03-eece06df1466">
@@ -25019,6 +25915,7 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
             <Object Name="modbusTcp" ObjectId="af5638db-a550-4fc9-9ced-8a9aa3addaaa" />
           </Object>
         </Object>
+        <Object Name="Axis_Virtual" ObjectId="a895d7bb-a1a8-4fbe-9bbd-ed5ace8fa467" />
       </ProjectStructure>
     </data>
   </addData>

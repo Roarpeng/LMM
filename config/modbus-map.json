@@ -315,6 +315,62 @@
         "offset": 36,
         "scale": 1000,
         "zh": "【力跟随Kp】越大响应越快，过大易抖。"
+      },
+      {
+        "name": "HMI_rAccX",
+        "type": "SCALED_DINT",
+        "offset": 38,
+        "scale": 1000.0,
+        "zh": "【X加速度】RETAIN 掉电保持；<1 时 PLC 取 100。 2 WORD, signed, scale ×1000, high word first。"
+      },
+      {
+        "name": "HMI_rDecX",
+        "type": "SCALED_DINT",
+        "offset": 40,
+        "scale": 1000.0,
+        "zh": "【X减速度】RETAIN。 2 WORD, signed, scale ×1000, high word first。"
+      },
+      {
+        "name": "HMI_rAccY",
+        "type": "SCALED_DINT",
+        "offset": 42,
+        "scale": 1000.0,
+        "zh": "【Y加速度】RETAIN。 2 WORD, signed, scale ×1000, high word first。"
+      },
+      {
+        "name": "HMI_rDecY",
+        "type": "SCALED_DINT",
+        "offset": 44,
+        "scale": 1000.0,
+        "zh": "【Y减速度】RETAIN。 2 WORD, signed, scale ×1000, high word first。"
+      },
+      {
+        "name": "HMI_rAccZ",
+        "type": "SCALED_DINT",
+        "offset": 46,
+        "scale": 1000.0,
+        "zh": "【Z加速度】RETAIN。 2 WORD, signed, scale ×1000, high word first。"
+      },
+      {
+        "name": "HMI_rDecZ",
+        "type": "SCALED_DINT",
+        "offset": 48,
+        "scale": 1000.0,
+        "zh": "【Z减速度】RETAIN。 2 WORD, signed, scale ×1000, high word first。"
+      },
+      {
+        "name": "HMI_rAccR",
+        "type": "SCALED_DINT",
+        "offset": 50,
+        "scale": 1000.0,
+        "zh": "【R加速度】RETAIN。 2 WORD, signed, scale ×1000, high word first。"
+      },
+      {
+        "name": "HMI_rDecR",
+        "type": "SCALED_DINT",
+        "offset": 52,
+        "scale": 1000.0,
+        "zh": "【R减速度】RETAIN。 2 WORD, signed, scale ×1000, high word first。"
       }
     ]
   },
