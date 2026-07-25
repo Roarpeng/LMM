@@ -10,6 +10,7 @@
 | PLC 角色 | Modbus TCP **Master** |
 | Gateway | Modbus TCP **Server** `0.0.0.0:502`，`web/live` HTTP `:8080` |
 | 一键启动 | 仓库根：`.\tools\start-webhmi.ps1`（真机 `MOCK_PLC=0`） |
+| 调试冒烟 | `.\tools\start-webhmi.ps1 -Mock` |
 | 命令区 | Holding `1000..1063`（PLC FC03 读） |
 | 状态区 | Holding `1100..1163`（PLC FC16 写） |
 | 地址表 | `config/modbus-map.json` → [MODBUS_MAP.md](MODBUS_MAP.md) |

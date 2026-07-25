@@ -603,7 +603,9 @@
 
   const S = {
     connected: false, mode: '—',
-    eDevState: 0, eOpMode: 0, alarm: 0, step: 0,
+    eDevState: 0, eOpMode: 0,
+    devStop: true, devRun: false, devError: false,
+    alarm: 0, step: 0,
     busy: false, done: false, force: 0,
     tareBusy: false, tareDone: false, forceOk: false,
     forceTo: false, forceSlave: false,
@@ -712,9 +714,12 @@
   }
 
   function render() {
-    const stop = S.eDevState === 0, run = S.eDevState === 1, err = S.eDevState === 2;
+    const stop = S.devStop, run = S.devRun, err = S.devError;
+    $('lamp-stop').textContent = 'HMI_xDevStop=' + (stop ? 'T' : 'F');
     $('lamp-stop').className = 'pill' + (stop ? ' on ok' : '');
+    $('lamp-run').textContent = 'HMI_xDevRun=' + (run ? 'T' : 'F');
     $('lamp-run').className = 'pill' + (run ? ' on ok' : '');
+    $('lamp-err').textContent = 'HMI_xDevError=' + (err ? 'T' : 'F');
     $('lamp-err').className = 'pill' + (err ? ' on bad' : '');
     $('p-alarm').textContent = 'Alarm=' + S.alarm;
     $('p-alarm').className = 'pill' + (S.alarm ? ' warn' : '');
@@ -743,8 +748,11 @@
     $('fb-done').innerHTML = 'X=' + bit(S.moveDoneX) + '  Y=' + bit(S.moveDoneY);
 
     $('fb-dev').textContent =
-      S.eDevState + ' (' + ['STOP', 'RUN', 'ERR'][S.eDevState] + ') / ' +
-      (S.eOpMode ? 'AUTO' : 'MAN');
+      'eDev=' + S.eDevState +
+      ' Stop=' + (S.devStop ? 'T' : 'F') +
+      ' Run=' + (S.devRun ? 'T' : 'F') +
+      ' Err=' + (S.devError ? 'T' : 'F') +
+      ' / ' + (S.eOpMode ? 'AUTO' : 'MAN');
     $('fb-tcp').textContent = S.tcpComm + ' (' + (TCP_TXT[S.tcpComm] || '?') + ')';
     $('fb-tcp2').innerHTML = bit(S.tcpConn) + ' / ' + bit(S.tcpTo);
     $('fb-fdiag').innerHTML = bit(S.forceOk) + ' / ' + bit(S.forceTo) + ' / ' + bit(S.forceSlave);
@@ -826,6 +834,9 @@
   function ingestStatus(msg) {
     if (msg._gateway) S.mode = msg._gateway;
     S.eDevState = msg.HMI_eDevState ?? S.eDevState;
+    S.devStop = !!msg.HMI_xDevStop;
+    S.devRun = !!msg.HMI_xDevRun;
+    S.devError = !!msg.HMI_xDevError;
     S.eOpMode = msg.HMI_eOpMode ?? S.eOpMode;
     S.alarm = msg.HMI_iAlarmShow ?? S.alarm;
     S.step = msg.HMI_iAutoStepShow ?? S.step;

@@ -52,3 +52,26 @@ test('force simulation starts false and its checkbox is not selected', () => {
   assert.doesNotMatch(checkbox, /\bchecked\b/);
   assert.match(html, /HMI_xForceSimEnable:\s*false/);
 });
+
+test('status pills bind HMI_xDevStop / HMI_xDevRun / HMI_xDevError by name', () => {
+  assert.match(html, /HMI_xDevStop/);
+  assert.match(html, /HMI_xDevRun/);
+  assert.match(html, /HMI_xDevError/);
+  assert.match(html, /msg\.HMI_xDevStop/);
+  assert.match(html, /msg\.HMI_xDevRun/);
+  assert.match(html, /msg\.HMI_xDevError/);
+});
+
+test('live page mentions every modbus-map command and status field name', () => {
+  const map = JSON.parse(
+    fs.readFileSync(path.join(__dirname, '..', '..', 'config', 'modbus-map.json'), 'utf8'),
+  );
+  const missing = [];
+  for (const f of map.command.fields) {
+    if (!html.includes(f.name)) missing.push('cmd:' + f.name);
+  }
+  for (const f of map.status.fields) {
+    if (!html.includes(f.name)) missing.push('st:' + f.name);
+  }
+  assert.deepEqual(missing, [], 'missing map fields in web/live/index.html:\n' + missing.join('\n'));
+});
