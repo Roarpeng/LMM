@@ -2,7 +2,7 @@
 """check_lmm.py — LMM.xml 静态校验（注入后 / 导入 InoProShop 前必跑）。
 
 检查项:
-  1. XML 可解析；POU 恰好为契约的 8 个；死 POU 无残留引用
+  1. XML 可解析；POU 恰好为契约集合；死 POU 无残留引用
   2. 每个 POU 有 interface + body/ST
   3. ST 结构配对（IF/CASE/FOR/WHILE 与 END_* 计数）、END_* 后分号
   4. ST 不得引用已删除的 GVL 变量；GVL 无未使用变量（AT 地址映射除外）
@@ -21,13 +21,16 @@ NS = "{http://www.plcopen.org/xml/tc6_0200}"
 
 EXPECTED_POUS = {
     "PLC_PRG", "PRG_TcpHmi", "PRG_Logic", "PRG_Axis_Control",
-    "FB_Servo", "FB_Force", "FB_ForceFollow", "FB_XLineTrack",
+    "FB_Servo", "FB_Force", "FB_ForceFollow", "FB_XLineTrack", "FB_XDual",
+    "SoftMotion_PlanningPrg",  # SoftMotion 库生成，勿手改
 }
-DEAD_POUS = ["FB_TCPServer", "PRG_Force485", "FB_XDiff"]
+SKIP_ST_CHECK = {"SoftMotion_PlanningPrg"}
+DEAD_POUS = ["FB_TCPServer", "PRG_Force485", "FB_XDiff", "FB_GantryX"]
 DEAD_GVL = ["JogVel", "HomeReq", "CaliForReq", "ClearBruch", "yLength",
             "eDevState", "xEnablePermit", "xIlk_BlockYWhenZ",
             "I_xLimRPos", "I_xLimRNeg", "I_xHomeY", "I_xHomeZ", "I_xHomeR",
-            "Tcp_uiPort", "AxisCmd_rZVelCmd", "AxisCmd_xUseZVelCmd"]
+            "Tcp_uiPort", "AxisCmd_rZVelCmd", "AxisCmd_xUseZVelCmd",
+            "JogACC", "JogDEC", "AxisCmd_rAcc", "AxisCmd_rDec"]
 
 errors = []
 warnings = []
@@ -61,6 +64,8 @@ def main():
     # ---- 2/3. 每个 POU 的结构与 ST 语法 ----
     all_st = {}
     for name, pou in pous.items():
+        if name in SKIP_ST_CHECK:
+            continue
         if pou.find(NS + "interface") is None:
             err(f"{name}: 缺 interface")
         st = pou.find(".//" + NS + "ST")
@@ -84,11 +89,17 @@ def main():
         if "Implicit_Enum" in body or "Implicit_Enum" in ET.tostring(pou, encoding="unicode"):
             err(f"{name}: 仍含 Implicit_Enum")
 
-    # ---- 4. GVL 引用闭环 ----
-    gvl = None
+    # ---- 3b. PRG_Axis_Control 禁词（Virtual/Gear 已废） ----
+    axis_st = all_st.get("PRG_Axis_Control", "")
+    for bad in ("FB_GantryX", "Axis_Virtual", "MC_GearIn", "MC_GearOut", "MC_Phasing"):
+        if bad in axis_st:
+            err(f"PRG_Axis_Control 仍引用禁词: {bad}")
+
+    # ---- 4. GVL 引用闭环（合并所有 globalVars，含 GVL_RETAIN） ----
+    gvars = {}
     for g in root.iter(NS + "globalVars"):
-        gvl = g
-    gvars = {v.get("name"): v for v in gvl.findall(NS + "variable")}
+        for v in g.findall(NS + "variable"):
+            gvars[v.get("name")] = v
     code_all = strip_comments("\n".join(all_st.values()))
     for d in DEAD_GVL:
         if re.search(rf"\b{re.escape(d)}\b", code_all):
@@ -111,7 +122,7 @@ def main():
             warn(f"GVL 变量未被任何 ST 引用: {gn}")
 
     # ---- 5. Modbus 契约一致性 ----
-    mmap = json.load(open(ROOT / "config" / "modbus-map.json"))
+    mmap = json.load(open(ROOT / "config" / "modbus-map.json", encoding="utf-8"))
     tcp = all_st.get("PRG_TcpHmi", "")
     for sec, arr in [("command", "MB_CmdIn"), ("status", "MB_StatusOut")]:
         for f in mmap[sec]["fields"]:

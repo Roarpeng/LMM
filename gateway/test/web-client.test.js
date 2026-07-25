@@ -38,10 +38,11 @@ test('web client requires explicit local control claim before command writes', (
 });
 
 test('range initialization updates local display without claiming or writing', () => {
-  const bindRange = section('function bindRange(', "bindRange('p-velx'");
+  const bindParam = section('function bindParam(', "bindParam('p-velx'");
 
-  assert.match(bindRange, /sync\(false\)/);
-  assert.match(bindRange, /addEventListener\(['"]input['"][^]*sync\(true\)/);
+  assert.match(bindParam, /apply\(r\.value,\s*false\)/);
+  assert.match(bindParam, /addEventListener\(['"]input['"][^]*apply\(r\.value,\s*true\)/);
+  assert.match(bindParam, /if\s*\(\s*user\)\s*\{\s*controlClaimed\s*=\s*true/);
 });
 
 test('force simulation starts false and its checkbox is not selected', () => {

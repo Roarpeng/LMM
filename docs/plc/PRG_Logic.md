@@ -63,3 +63,5 @@ xIlk_BlockYPlus := I_xLimYPos OR (AxisFb_rPosY >= Cfg_rLimYPos);   (* 其余同�
 
 1001 急停（锁存或按下）→ 1002 轴故障 → 1007 使能未就绪（Power 2s 无 Ready）→
 1006 力从站失败 → 1005 力超时；否则 0。
+
+> **1008 已废除**（原 X 同步跳闸）。`xFaultAggregate` 不再 OR `AxisFb_xSyncFault`；X 双驱无编码器互差联锁。

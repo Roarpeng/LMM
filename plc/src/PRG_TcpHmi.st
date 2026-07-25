@@ -29,6 +29,10 @@ IF NOT xInit THEN
     Tcp_iAutoPasses := 1;
     Tcp_rHeadingErr := 0.0;
     Tcp_rKpTrack := 0.0; Tcp_rKpForce := 1.0;
+    Tcp_rAccX := 100.0; Tcp_rDecX := 100.0;
+    Tcp_rAccY := 100.0; Tcp_rDecY := 100.0;
+    Tcp_rAccZ := 100.0; Tcp_rDecZ := 100.0;
+    Tcp_rAccR := 100.0; Tcp_rDecR := 100.0;
     Tcp_iCommStatus := 0;
     Tcp_wLastHb := 0; Tcp_wLastSeq := 16#FFFF; Tcp_wStatusSeq := 0;
     tonHb(IN := FALSE);
@@ -109,6 +113,22 @@ IF xValid THEN
         Tcp_rKpTrack := DINT_TO_REAL(DWORD_TO_DINT(dwTmp)) / 1000.0;
         dwTmp := SHL(WORD_TO_DWORD(MB_CmdIn[36]), 16) OR WORD_TO_DWORD(MB_CmdIn[37]);
         Tcp_rKpForce := DINT_TO_REAL(DWORD_TO_DINT(dwTmp)) / 1000.0;
+        dwTmp := SHL(WORD_TO_DWORD(MB_CmdIn[38]), 16) OR WORD_TO_DWORD(MB_CmdIn[39]);
+        Tcp_rAccX := DINT_TO_REAL(DWORD_TO_DINT(dwTmp)) / 1000.0;
+        dwTmp := SHL(WORD_TO_DWORD(MB_CmdIn[40]), 16) OR WORD_TO_DWORD(MB_CmdIn[41]);
+        Tcp_rDecX := DINT_TO_REAL(DWORD_TO_DINT(dwTmp)) / 1000.0;
+        dwTmp := SHL(WORD_TO_DWORD(MB_CmdIn[42]), 16) OR WORD_TO_DWORD(MB_CmdIn[43]);
+        Tcp_rAccY := DINT_TO_REAL(DWORD_TO_DINT(dwTmp)) / 1000.0;
+        dwTmp := SHL(WORD_TO_DWORD(MB_CmdIn[44]), 16) OR WORD_TO_DWORD(MB_CmdIn[45]);
+        Tcp_rDecY := DINT_TO_REAL(DWORD_TO_DINT(dwTmp)) / 1000.0;
+        dwTmp := SHL(WORD_TO_DWORD(MB_CmdIn[46]), 16) OR WORD_TO_DWORD(MB_CmdIn[47]);
+        Tcp_rAccZ := DINT_TO_REAL(DWORD_TO_DINT(dwTmp)) / 1000.0;
+        dwTmp := SHL(WORD_TO_DWORD(MB_CmdIn[48]), 16) OR WORD_TO_DWORD(MB_CmdIn[49]);
+        Tcp_rDecZ := DINT_TO_REAL(DWORD_TO_DINT(dwTmp)) / 1000.0;
+        dwTmp := SHL(WORD_TO_DWORD(MB_CmdIn[50]), 16) OR WORD_TO_DWORD(MB_CmdIn[51]);
+        Tcp_rAccR := DINT_TO_REAL(DWORD_TO_DINT(dwTmp)) / 1000.0;
+        dwTmp := SHL(WORD_TO_DWORD(MB_CmdIn[52]), 16) OR WORD_TO_DWORD(MB_CmdIn[53]);
+        Tcp_rDecR := DINT_TO_REAL(DWORD_TO_DINT(dwTmp)) / 1000.0;
     END_IF;
 ELSIF wMagic <> 0 AND wMagic <> 19533 THEN
     Tcp_iCommStatus := 2;
@@ -259,6 +279,10 @@ IF eCtrlSrc = 1 THEN
     HMI_rHeadingErr := Tcp_rHeadingErr;
     HMI_rKpTrack := Tcp_rKpTrack;
     HMI_rKpForce := Tcp_rKpForce;
+    HMI_rAccX := Tcp_rAccX; HMI_rDecX := Tcp_rDecX;
+    HMI_rAccY := Tcp_rAccY; HMI_rDecY := Tcp_rDecY;
+    HMI_rAccZ := Tcp_rAccZ; HMI_rDecZ := Tcp_rDecZ;
+    HMI_rAccR := Tcp_rAccR; HMI_rDecR := Tcp_rDecR;
 END_IF;
 
 HMI_xEStop := EStop AND Tcp_xEStop AND HMI_xEStopReq;

@@ -37,6 +37,10 @@ function createMockPlc(initialCommands = {}) {
     posY: 0,
     posZ: 0,
     posR: 0,
+    posM1: 0,
+    posM2: 0,
+    velCmdM1: 0,
+    velCmdM2: 0,
     homedY: false,
     homedZ: false,
     homedR: false,
@@ -104,7 +108,30 @@ function createMockPlc(initialCommands = {}) {
       state.homeBusyR = false;
     }
 
+    state.velCmdM1 = 0;
+    state.velCmdM2 = 0;
     if (safe && !req.HMI_xStop && state.eOpMode === 0 && !homeBusy) {
+      const trim = Math.max(-0.2, Math.min(0.2,
+        Number(req.HMI_rKpTrack || 0) * Number(req.HMI_rHeadingErr || 0)));
+      if (req.HMI_xJogXPos) {
+        const v = Number(req.HMI_rJogVelX || 0);
+        state.velCmdM1 = v + trim;
+        state.velCmdM2 = v - trim;
+      } else if (req.HMI_xJogXNeg) {
+        const v = -Number(req.HMI_rJogVelX || 0);
+        state.velCmdM1 = v + trim;
+        state.velCmdM2 = v - trim;
+      } else if (req.HMI_xSpinLeft) {
+        const v = Number(req.HMI_rSpinVel || 0);
+        state.velCmdM1 = v;
+        state.velCmdM2 = -v;
+      } else if (req.HMI_xSpinRight) {
+        const v = Number(req.HMI_rSpinVel || 0);
+        state.velCmdM1 = -v;
+        state.velCmdM2 = v;
+      }
+      state.posM1 += state.velCmdM1 * dt;
+      state.posM2 += state.velCmdM2 * dt;
       if (req.HMI_xJogYPos) state.posY += Number(req.HMI_rJogVelY || 0) * dt;
       if (req.HMI_xJogYNeg) state.posY -= Number(req.HMI_rJogVelY || 0) * dt;
       if (req.HMI_xJogZPos) state.posZ += Number(req.HMI_rJogVelZ || 0) * dt;
@@ -158,13 +185,23 @@ function createMockPlc(initialCommands = {}) {
       HMI_xHomeBusyR: state.homeBusyR,
       Tcp_xConnected: true,
       Tcp_xTimeout: false,
+      AxisFb_rPosM1: state.posM1,
+      AxisFb_rPosM2: state.posM2,
       AxisFb_rPosY: state.posY,
       AxisFb_rPosZ: state.posZ,
       AxisFb_rPosR: state.posR,
+      AxisFb_rVelCmdM1: state.velCmdM1,
+      AxisFb_rVelCmdM2: state.velCmdM2,
       AxisFb_xHomedY: state.homedY,
       AxisFb_xHomedZ: state.homedZ,
       AxisFb_xHomedR: state.homedR,
       AxisFb_xReady: true,
+      AxisFb_xFaultM1: false,
+      AxisFb_xFaultM2: false,
+      AxisFb_xFaultY: false,
+      AxisFb_xFaultZ: false,
+      AxisFb_xFaultR: false,
+      Force_xCommOk: true,
     };
   }
 

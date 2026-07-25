@@ -6,16 +6,22 @@
 
 ## 启动
 
+**真机联调（推荐一键）：**
+
+```powershell
+# 仓库根目录
+.\tools\start-webhmi.ps1
+# 自动 npm install（如需）→ MOCK_PLC=0 → 打开 http://127.0.0.1:8080/
+```
+
 ```bash
 cd gateway
 npm install
-npm start          # 显式 MOCK_PLC=1，无 PLC 可测 web/live
-
-# 生产模式（不会自动回退 Mock）：
-MODBUS_HOST=0.0.0.0 MODBUS_PORT=502 npm run start:plc
+npm run start:plc   # 真机：Gateway 作 Modbus TCP Server :502
+npm start           # 仅本地 Mock（无 PLC）
 ```
 
-打开：http://127.0.0.1:8080/
+打开：http://127.0.0.1:8080/（页面为宽松调试台，含 X 双驱监视）
 
 ## 环境变量
 

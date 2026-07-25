@@ -6,9 +6,10 @@
 
 ## 工程内容
 
-- POU（8 个）：`PLC_PRG` + `PRG_TcpHmi` / `PRG_Logic` / `PRG_Axis_Control` + `FB_Servo` / `FB_Force` / `FB_ForceFollow` / `FB_XLineTrack`
+- POU（9 个）：`PLC_PRG` + `PRG_TcpHmi` / `PRG_Logic` / `PRG_Axis_Control` + `FB_Servo` / `FB_Force` / `FB_ForceFollow` / `FB_XLineTrack` / **`FB_XDual`**
 - GVL：唯一全局变量表（`plc/GVL.st` 注入）
 - 任务：`ETHERCAT`(4ms, prio0)=EtherCAT_Task+PRG_Axis_Control；`MainTask`(4ms, prio1)=PLC_PRG
+- X 轴：`PRG_Axis_Control` 使用 `FB_XDual`（LineTrack + 双 Servo）；**无** `FB_GantryX` / `Axis_Virtual`
 
 ## 导入步骤
 
@@ -34,7 +35,10 @@
 
 ## 联调检查单
 
-- [ ] 编译 0 错；两个任务挂载正确
+- [ ] 编译 0 错；两个任务挂载正确；**无** `FB_GantryX` / 未解析 `Axis_Virtual` 引用
+- [ ] 设备树：**禁用或删除** `Axis_Virtual`；核对 `Axis` / `Axis_1` 仍为 M1 / M2
+- [ ] X 手动：JogX± 双轴同向；SpinL/R 一正一反；松手减速停
+- [ ] X 自动：一步 `MoveRel` 走距到达 → `MoveDoneX`；**无报警 1008**
 - [ ] 面板 Jog 六向 + R 双向点动；Web 点动按住动松开停
 - [ ] Y/Z/R 撞 Cfg 限位即停；改小限位后仍能向回点动
 - [ ] 回零 Y/Z/R 完成置 0
