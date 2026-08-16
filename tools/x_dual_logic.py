@@ -70,16 +70,147 @@ def m1_vel_execute(*, motion_req, soft_hold, vel_abs, vel_error):
     return bool(motion_req) and abs(vel_abs) > 0.001
 
 
-def m1_regulator_on(*, soft_hold, x_enable=True, x_stop=False):
-    """0.23 SoftHold：线轴保持调节器，禁止松调节器造成「丢使能」。"""
-    del soft_hold
-    return bool(x_enable) and not bool(x_stop)
+def m1_regulator_on(*, soft_hold=False, x_enable=True, x_stop=False, e_mode=0,
+                    moving=False, stopping=False):
+    """0.45：点动中上调节器；松手后短窗 stopping 仍保持，好让 Halt 刹完再卸。"""
+    del soft_hold, moving
+    return x_reg_on(enable=x_enable, stop=x_stop, e_mode=e_mode, stopping=stopping)
 
 
-def suppress_fault(*, soft_hold, axis_error, i_hold_state=0):
-    """0.23：SoftHold 与 Decel（iHoldState=1）都抑制 Fault，避免松手→StopAll→掉使能。"""
-    hold_idle = bool(soft_hold) or int(i_hold_state) == 1
+def x_reg_on(*, enable, stop, e_mode, pos_zeroed=True, set_pos_req=False, stopping=False):
+    """调节器：运动中或松手短窗。置零不得钉死。"""
+    del pos_zeroed, set_pos_req
+    if (not enable) or stop:
+        return False
+    return int(e_mode) != 0 or bool(stopping)
+
+
+def x_power_fb_enable(*, enable=True):
+    """MC_Power.Enable 恒 TRUE（对齐 FB_Servo）。卸使能只走 bRegulatorOn。"""
+    del enable
+    return True
+
+
+def x_power_settled(*, status, e_mode, reg_on, settled_ton=False, was_stopping=False,
+                    standstill=True, ready_prev=False):
+    """冷启动：80ms+standstill 闭锁一次。运动中不得因离开 standstill 掉 Execute。"""
+    if (not status) or int(e_mode) == 0 or (not reg_on):
+        return False
+    if was_stopping or ready_prev:
+        return True
+    return bool(settled_ton) and bool(standstill)
+
+
+def vel_fb_hold(prev, target, *, eps=0.004):
+    """FB Velocity 死区：小于 eps 的 trim/残差噪声不改目标，避免 Acc 反复重爬。"""
+    if abs(float(target) - float(prev)) < abs(float(eps)):
+        return float(prev)
+    return float(target)
+
+
+def can_drop_regulator(*, standstill_m1, standstill_m2):
+    """只有双轴 standstill 才能卸调节器。超时也不得在运动中卸使能。"""
+    return bool(standstill_m1) and bool(standstill_m2)
+
+
+def stop_fallback(*, stopping, timeout, standstill_m1, standstill_m2):
+    """Halt 迟迟不到静止才改发 Stop；仍然等到 standstill 再卸使能。"""
+    if (not stopping) or (not timeout):
+        return False
+    return not (bool(standstill_m1) and bool(standstill_m2))
+
+
+def suppress_fault(*, soft_hold, axis_error, i_hold_state=0, jog_grace_done=True):
+    """0.23 SoftHold/Decel 抑 Fault；0.37 再按起步宽限内也抑，避免残留 bError→StopAll。"""
+    hold_idle = bool(soft_hold) or int(i_hold_state) == 1 or (not bool(jog_grace_done))
     return bool(axis_error) and not hold_idle
+
+
+def vel_execute(*, req, dir_flip, vel_error, busy=False):
+    """起步失败才撤 Execute；已经 Busy 时再撤会单边掉速、龙门拉扯。"""
+    if (not req) or dir_flip:
+        return False
+    if vel_error and not busy:
+        return False
+    return True
+
+
+def gantry_drop_retry(*, err_m1, err_m2, busy_m1, busy_m2):
+    """任一侧起步 Error 则两侧一起撤；两侧都 Busy 则不撤。"""
+    if not (err_m1 or err_m2):
+        return False
+    return not (busy_m1 and busy_m2)
+
+
+def sync_expect_step(*, expect, trim, dt, capture, pos_diff):
+    """本段开始锁定当前 ΔPos；之后只把视觉差速积进期望。"""
+    if capture:
+        return float(pos_diff)
+    return float(expect) + 2.0 * float(trim) * float(dt)
+
+
+def sync_residual(pos_m1, pos_m2, expect):
+    return (float(pos_m1) - float(pos_m2)) - float(expect)
+
+
+def friction_pos_corr(resid, *, kp=0.3, deadband=0.01, trim_max=0.08):
+    """只纠残差（摩擦/安装），不纠视觉故意造出的 ΔPos。"""
+    if abs(float(resid)) <= abs(float(deadband)):
+        return 0.0
+    raw = float(kp) * float(resid)
+    lim = abs(float(trim_max))
+    if raw > lim:
+        return lim
+    if raw < -lim:
+        return -lim
+    return raw
+
+
+def vision_friction_velocities(v_appl, trim, pos_corr, vel_corr1=0.0, vel_corr2=0.0):
+    v1 = float(v_appl) + float(trim) - 0.5 * float(pos_corr) + float(vel_corr1)
+    v2 = float(v_appl) - float(trim) + 0.5 * float(pos_corr) + float(vel_corr2)
+    return v1, v2
+
+
+def heading_trim(*, kp, heading, trim_max, deadband=0.003):
+    """0.40：减去死区再乘 Kp，过边界连续。"""
+    h = float(heading)
+    db = abs(float(deadband))
+    if abs(h) <= db:
+        return 0.0
+    if h > 0.0:
+        raw = (h - db) * float(kp)
+    else:
+        raw = (h + db) * float(kp)
+    lim = abs(float(trim_max))
+    if raw > lim:
+        return lim
+    if raw < -lim:
+        return -lim
+    return raw
+
+
+def trim_lpf(prev, raw, *, dt, tc):
+    """只滤视觉 trim，不滤残差。"""
+    if abs(float(tc)) <= 0.001:
+        return float(raw)
+    alpha = float(dt) / (float(tc) + float(dt))
+    return float(prev) + alpha * (float(raw) - float(prev))
+
+
+def apply_axis_ratio(vel, ratio):
+    r = float(ratio)
+    if r < 0.1:
+        r = 0.1
+    return float(vel) * r
+
+
+def need_halt_level(*, power_gate, e_mode, moving, stop, still_done=False, stopping=False):
+    """0.45：仅松手短窗且还在动时 Halt；停稳即撤，禁止电平保位（0.42 对打根因）。"""
+    del power_gate, still_done
+    if stop or int(e_mode) != 0 or (not stopping):
+        return False
+    return bool(moving)
 
 
 def m1_track_execute(*, soft_hold, tick, abs_error=False):
@@ -121,6 +252,108 @@ def m2_need_halt(*, power_gate, soft_hold, stop, req_vel):
     return bool(power_gate) and (not soft_hold) and (not stop) and (not req_vel)
 
 
+def applied_base_velocity(*, e_mode, r_base, stop=False, enable=True):
+    """0.36：按下即目标速度，松开即 0。禁止 PLC 再爬 rVelAppl。"""
+    if stop or (not enable) or e_mode == 0:
+        return 0.0
+    if e_mode == 1:
+        return float(r_base)
+    return 0.0
+
+
+def vel_request_no_coast(*, e_mode, soft_hold, power_gate, vel_cmd, vel_appl=0.0,
+                         vel_error=False, eps=0.001, power_status=True, power_settled=True):
+    """Status 为真且已 settle 才出速度，避免上使能当拍 Execute 连冲。"""
+    del vel_appl, soft_hold
+    if vel_error or (not power_gate) or e_mode == 0 or (not power_status) or (not power_settled):
+        return False
+    return abs(vel_cmd) > eps
+
+
+def one_shot_trim_retrigger(*, gate_apply, already_applied, cmd_m1, exec_m1, cmd_m2, exec_m2, eps=0.005):
+    """幅值变化不撤 Execute。"""
+    del gate_apply, already_applied, cmd_m1, exec_m1, cmd_m2, exec_m2, eps
+    return False
+
+
+def vision_retrigger_ok(*, at_speed, gap_ok, cmd_m1, exec_m1, cmd_m2, exec_m2, eps=0.008):
+    """幅值变化不撤 Execute。与 FB_Servo 力跟随相同：Execute 保持，每拍写 Velocity。"""
+    del at_speed, gap_ok, cmd_m1, exec_m1, cmd_m2, exec_m2, eps
+    return False
+
+
+def trim_start_locked(*, e_mode, gate_done):
+    """幅值差速不单独等待。"""
+    del e_mode, gate_done
+    return False
+
+
+def ramp_lock_fb_vel(*, e_mode, straight_edge, locked_prev, vel_act_m1, vel_act_m2, vel_appl, timeout=False):
+    """爬坡期间 FB 只吃基速，避免每拍 trim 改 Velocity 把加速曲线打成多次过冲。"""
+    if int(e_mode) != 1:
+        return False
+    if straight_edge:
+        return True
+    if timeout:
+        return False
+    if not locked_prev:
+        return False
+    need = 0.8 * abs(float(vel_appl))
+    if need <= 0.001:
+        return False
+    if abs(float(vel_act_m1)) >= need and abs(float(vel_act_m2)) >= need:
+        return False
+    return True
+
+
+def vel_error_holdoff(*, err, err_prev=False, holdoff_prev=False, holdoff_done=False):
+    """Error 上升沿锁 150ms 再允许 Execute，禁止 4ms 连打。"""
+    if holdoff_done:
+        return False
+    if bool(err) and not bool(err_prev):
+        return True
+    return bool(holdoff_prev)
+
+
+def corr_limit_for_base(r_base, *, frac=0.25, abs_max=0.08):
+    """残差修正不得超过基速的 frac，否则小 JogVel 会被纠成爬行。"""
+    lim = abs(float(abs_max))
+    b = abs(float(r_base))
+    if b > 0.001:
+        cap = abs(float(frac)) * b
+        if cap < lim:
+            lim = cap
+    return lim
+
+
+def floor_cmd_vs_base(cmd, vel_appl, ratio, *, frac=0.5):
+    """点动时任一侧不得被 trim/corr 拧到接近 0（单边停、对侧走 = 摇摆）。"""
+    r = float(ratio)
+    if r < 0.1:
+        r = 0.1
+    scaled = float(vel_appl) * r
+    if abs(scaled) <= 0.001:
+        return 0.0
+    lo = abs(float(frac)) * abs(scaled)
+    c = float(cmd)
+    if scaled > 0.0:
+        if c < 0.0:
+            c = 0.0
+        if c < lo:
+            c = lo
+        return c
+    if c > 0.0:
+        c = 0.0
+    if c > -lo:
+        c = -lo
+    return c
+
+
+def dual_jog_vel_request(*, e_mode, power_settled, vel_appl, eps=0.001):
+    """直行点动两侧同起同停，不得因单侧 cmd≈0 只撤一侧 Execute。"""
+    return int(e_mode) == 1 and bool(power_settled) and abs(float(vel_appl)) > eps
+
+
 def dual_vel_request(*, e_mode, soft_hold, soft_hold_exit, power_gate, vel_cmd, vel_error=False, eps=0.001):
     """0.27 双速度：Jog 可立刻再触发；SoftHoldExit 不再挡运动。
 
@@ -139,14 +372,37 @@ def softhold_exit_should_reset():
 
 
 def dual_sync_velocities(r_base, r_heading_trim, r_sync_corr):
-    """0.29 双 CSV 对称差速：平均≈r_base，视觉/同步成对作用，避免只拧 M2 拉扯。
-
-    视觉：M1=+trim, M2=-trim（与旧式 M2=M1-2*trim 差速等价）
-    同步：M1 超前(sync>0) → M1 减速、M2 加速各一半
-    """
+    """0.29 双 CSV 对称差速（已弃：两侧互拧导致前进摇晃）。"""
     v1 = float(r_base) + float(r_heading_trim) - 0.5 * float(r_sync_corr)
     v2 = float(r_base) - float(r_heading_trim) + 0.5 * float(r_sync_corr)
     return v1, v2
+
+
+def hybrid_follow_velocities(r_base, r_heading_trim, r_sync_corr):
+    """0.32 混架（已弃：用户要求双速度以配合视觉走直）。"""
+    v1 = float(r_base)
+    v2 = float(r_base) - 2.0 * float(r_heading_trim) + float(r_sync_corr)
+    return v1, v2
+
+
+def vision_dual_velocities(r_base_appl, r_heading_trim, r_sync_corr=0.0):
+    """0.35：视觉角度→差速走直；编码器位置不参与速度（只用于走距）。"""
+    del r_sync_corr
+    v1 = float(r_base_appl) + float(r_heading_trim)
+    v2 = float(r_base_appl) - float(r_heading_trim)
+    return v1, v2
+
+
+def distance_from_avg(pos_m1, pos_m2, start):
+    """位置仅作里程：平均位移相对起点。"""
+    return 0.5 * (float(pos_m1) + float(pos_m2)) - float(start)
+
+
+def encoder_sync_gain(*, heading_trim, vis_gate=0.02):
+    """视觉已在纠偏时压低编码器同步，避免两套差速抢方向。"""
+    if abs(heading_trim) >= vis_gate:
+        return 0.25
+    return 1.0
 
 
 def clamp_sync_corr(r_sync_err, *, kp=0.1, deadband=0.05, trim_max=0.15, r_base=0.0):
@@ -164,8 +420,8 @@ def clamp_sync_corr(r_sync_err, *, kp=0.1, deadband=0.05, trim_max=0.15, r_base=
     return corr
 
 
-def soft_acc(r_acc, *, lo=0.8, hi=None):
-    """0.31：仅保底下限；上限交给 HMI rAcc（0.30 的 hi=4 会钳死现场调参）。"""
+def soft_acc(r_acc, *, lo=0.05, hi=None):
+    """仅把未填/近零抬到下限；与点动速度同量级的 Acc 必须原样生效。"""
     a = abs(float(r_acc))
     if a < lo:
         return lo
@@ -181,6 +437,37 @@ def slew_velocity(prev, target, step_max):
     if abs(d) <= step:
         return float(target)
     return float(prev) + step if d > 0.0 else float(prev) - step
+
+
+def sm3_track_acc(user_acc, *, floor=10.0):
+    """用户 Acc 只用于 PLC 爬速；送给 SM3 的 Acc 不得低于 floor，避免慢梯形拐点过冲。"""
+    a = abs(float(user_acc))
+    f = abs(float(floor))
+    if a > f:
+        return a
+    return f
+
+
+def slew_start_nonzero(prev, target, step_max, *, eps=0.001):
+    """0.53 实验：第一拍非零。0.54 不再用爬速，改上升沿锁目标。"""
+    v = slew_velocity(prev, target, step_max)
+    if abs(v) < abs(float(eps)) and abs(float(target)) > abs(float(eps)):
+        step = abs(float(step_max))
+        if step < abs(float(eps)):
+            step = abs(float(eps))
+        return step if float(target) >= 0.0 else -step
+    return v
+
+
+def vel_latch_on_exec(*, exec_now, exec_prev, target, latched_prev, in_vel=False, eps=0.004):
+    """Execute 上升沿锁死目标速度。爬坡中不改；到速后才允许死区更新。"""
+    if exec_now and not exec_prev:
+        return abs(float(target))
+    if not exec_now:
+        return 0.0
+    if in_vel and abs(abs(float(target)) - float(latched_prev)) >= abs(float(eps)):
+        return abs(float(target))
+    return float(latched_prev)
 
 
 def sync_scale_at_speed(*, r_base, r_vel_act_m1, r_vel_act_m2, ratio=0.7):
