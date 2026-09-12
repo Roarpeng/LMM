@@ -62,7 +62,7 @@ test('rejects holding-register addresses outside the two mapped images', async (
   );
 });
 
-test('FC03 reads a valid 64-word command image from address 1000', async () => {
+test('FC03 reads a valid 64-word command image from the command base address', async () => {
   const { vector } = createModbusStore();
 
   const decoded = decodeCommandImage(await readCommandImage(vector));
@@ -72,7 +72,7 @@ test('FC03 reads a valid 64-word command image from address 1000', async () => {
   assert.equal(decoded.diagnostics.heartbeat, 0);
 });
 
-test('publishes status from one complete FC16 transaction at 1100', async () => {
+test('publishes status from one complete FC16 transaction at the status base address', async () => {
   const published = [];
   const { vector } = createModbusStore({
     onStatus: (status) => published.push(status),
@@ -145,6 +145,7 @@ test('production command image starts fail-safe', async () => {
   const decoded = decodeCommandImage(await readCommandImage(vector));
 
   assert.equal(decoded.values.HMI_xStop, true);
+  assert.equal(decoded.values.HMI_xEStop, true);
   assert.equal(decoded.values.HMI_xEnable, false);
   assert.equal(decoded.values.HMI_xStart, false);
   assert.equal(decoded.values.HMI_xJogXPos, false);
@@ -152,6 +153,17 @@ test('production command image starts fail-safe', async () => {
   assert.equal(decoded.values.HMI_xAutoStart, false);
   assert.equal(decoded.values.HMI_xForceTare, false);
   assert.equal(decoded.values.HMI_xForceSimEnable, false);
+});
+
+test('advanceHeartbeat refreshes only the heartbeat word', async () => {
+  const { vector, advanceHeartbeat } = createModbusStore();
+  const before = decodeCommandImage(await readCommandImage(vector));
+  advanceHeartbeat();
+  const after = decodeCommandImage(await readCommandImage(vector));
+
+  assert.equal(after.valid, true);
+  assert.equal(after.diagnostics.heartbeat, (before.diagnostics.heartbeat + 1) & 0xffff);
+  assert.equal(after.diagnostics.sequence, before.diagnostics.sequence);
 });
 
 test('invalid web values reject atomically and preserve the command image', async () => {
@@ -195,4 +207,21 @@ test('safe command transition atomically disables every boolean action', async (
   for (const [key, expected] of Object.entries(FAIL_SAFE_COMMAND_VALUES)) {
     assert.equal(decoded.values[key], expected, key);
   }
+});
+
+test('gateway relay encodes the vision block (words 56..59)', async () => {
+  const { vector, applyVisionWrite, releaseVision } = createModbusStore();
+  applyVisionWrite({ enable: true, velM1: -0.4, velM2: -0.385 });
+  let decoded = decodeCommandImage(await readCommandImage(vector));
+  assert.equal(decoded.values.Vis_xEnable, true);
+  assert.equal(decoded.values.Vis_rVelM1Set, -0.4);
+  assert.equal(decoded.values.Vis_rVelM2Set, -0.385);
+  assert.equal(decoded.values.Vis_wSeq, 1);
+  applyVisionWrite({ enable: true, velM1: 0.2, velM2: 0.2 });
+  decoded = decodeCommandImage(await readCommandImage(vector));
+  assert.equal(decoded.values.Vis_wSeq, 2);
+  releaseVision();
+  decoded = decodeCommandImage(await readCommandImage(vector));
+  assert.equal(decoded.values.Vis_xEnable, false);
+  assert.equal(decoded.values.Vis_rVelM1Set, 0);
 });

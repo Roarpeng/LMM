@@ -1,16 +1,18 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  One-click start LMM WebHMI (PLC mode: Modbus TCP Server :502)
+  One-click start LMM WebHMI (Gateway Modbus master -> PLC slave)
 .EXAMPLE
   .\tools\start-webhmi.ps1
   .\tools\start-webhmi.ps1 -Mock
+  .\tools\start-webhmi.ps1 -PlcHost 192.168.1.88 -PlcPort 502
 #>
 param(
   [switch]$Mock,
   [int]$HttpPort = 8080,
-  [string]$ModbusHost = '0.0.0.0',
-  [int]$ModbusPort = 502,
+  [string]$PlcHost = '192.168.1.88',
+  [int]$PlcPort = 502,
+  [int]$PlcUnitId = 1,
   [switch]$NoBrowser
 )
 
@@ -31,15 +33,16 @@ try {
 
   $env:HTTP_PORT = "$HttpPort"
   $env:WS_PORT = "$HttpPort"
-  $env:MODBUS_HOST = $ModbusHost
-  $env:MODBUS_PORT = "$ModbusPort"
+  $env:PLC_HOST = $PlcHost
+  $env:PLC_PORT = "$PlcPort"
+  $env:PLC_UNIT_ID = "$PlcUnitId"
   if ($Mock) {
     $env:MOCK_PLC = '1'
     Write-Host '[webhmi] mode=MOCK (no PLC)'
   } else {
     $env:MOCK_PLC = '0'
-    Write-Host ("[webhmi] mode=PLC  Modbus Server {0}:{1}" -f $ModbusHost, $ModbusPort)
-    Write-Host '[webhmi] PLC Master must target this host; FC03@1000 / FC16@1100 / len=64'
+    Write-Host ("[webhmi] mode=PLC  Gateway MASTER -> PLC SLAVE {0}:{1} unit={2}" -f $PlcHost, $PlcPort, $PlcUnitId)
+    Write-Host '[webhmi] FC16@4096(0x1000) write cmd / FC03@4352(0x1100) read status'
   }
 
   $url = "http://127.0.0.1:${HttpPort}/"

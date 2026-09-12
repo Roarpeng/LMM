@@ -12,9 +12,15 @@
 | 5 | [HMI.md](HMI.md) | 触摸屏 / WebHMI 变量中文用法总表 |
 | 6 | [TCP_HMI.md](TCP_HMI.md) | WebHMI ↔ Gateway ↔ Modbus TCP 通讯契约 |
 | 6b | [MODBUS_MAP.md](MODBUS_MAP.md) | Holding 1000/1100 地址表（生成，勿手改） |
+| 6c | [VISION_MODBUS_TCP.md](VISION_MODBUS_TCP.md) | 视觉纠偏 Modbus TCP（IP / 寄存器 / 字节） |
+| 6d | [VISION_DIRECT.md](VISION_DIRECT.md) | X 轴视觉直控（0.60）+ 双电机速度通用透传（0.63） |
 | 7 | [PLC_PRG.md](PLC_PRG.md) | 主入口与任务一览 |
 | 8 | [IMPORT_LMM_XML.md](IMPORT_LMM_XML.md) | 导入 InoProShop / 联调检查单 |
 | 9 | [WEB_PLC_ALIGN.md](WEB_PLC_ALIGN.md) | Web live ↔ PLC 对齐速查 |
+
+WebHMI v2 + 0.63 速度透传设计/计划：
+[`../superpowers/specs/2026-09-12-x-speed-webhmi-v2-design.md`](../superpowers/specs/2026-09-12-x-speed-webhmi-v2-design.md) /
+[`../superpowers/plans/2026-09-12-x-speed-webhmi-v2.md`](../superpowers/plans/2026-09-12-x-speed-webhmi-v2.md)。
 
 历史（勿再用）：`REFACTOR_3POU.md`（重构契约，已落地）；
 `FB_TCPServer` / `FB_Force485` / `PRG_Force485` / `FB_XDiff` 文档在 `attic/docs/`。

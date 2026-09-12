@@ -29,6 +29,14 @@ python3 tools/check_lmm.py
 | `src/FB_Force.st` | 功能块 | 力原始值换算 + 软件去皮 + 看门狗 |
 | `src/FB_ForceFollow.st` | 功能块 | Z 恒力 P 律 |
 
+## g 线（当前在役 `LMM_g_*.xml`）
+
+`plc/g/*.st` 是 g 线 POU 源：`FB_Servo` / `FB_XDual` / `PRG_Axis_Control` / `PRG_Logic`。
+改完用 `python3 tools/inject_g.py <in>.xml <out>.xml` 注入（只替换同名 POU，不动设备树）。
+GVL 与 `PRG_TcpHmi` 的增量（0.60 视觉直控、0.63 通用速度透传）用幂等补丁脚本
+`tools/patch_g060.py` / `tools/patch_g063.py` 按行插入。基线 `LMM_g_0.62.xml`（InoProShop 重存）
+→ 生成 `LMM_g_0.63.xml`。
+
 > 已删除 `FB_GantryX` / Virtual 龙门路径；`PRG_Axis_Control` 实例 `fbX : FB_XDual`。
 
 数据流单向环：`HMI_* →(Logic) AxisCmd_* →(Axis) AxisFb_* →(回读)`。

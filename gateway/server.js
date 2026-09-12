@@ -3,12 +3,12 @@
 
 /**
  * LMM WebHMI gateway
- * Browser <-WebSocket/JSON-> Gateway <-Modbus TCP-> PLC master
+ * Browser <-WebSocket/JSON-> Gateway (Modbus master) -> PLC slave
+ * 目标默认 PLC_HOST=192.168.1.88 PLC_PORT=502；启动日志与 GET /health 可核对。
  */
 const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
-const ModbusRTU = require('modbus-serial');
 const { WebSocketServer, WebSocket } = require('ws');
 
 const map = require('../config/modbus-map.json');
@@ -16,15 +16,19 @@ const { createMockPlc } = require('./lib/mock-plc');
 const { createModbusStore } = require('./lib/modbus-store');
 
 const ROOT = path.join(__dirname, '..', 'web', 'live');
+const statusFieldList = [
+  ...map.status.fields,
+  ...((map.directx && map.directx.status && map.directx.status.fields) || []),
+];
 const statusDefaults = Object.freeze(Object.fromEntries(
-  map.status.fields.map((field) => [field.name, field.type === 'BOOL' ? false : 0]),
+  statusFieldList.map((field) => [field.name, field.type === 'BOOL' ? false : 0]),
 ));
 
 function resolveGatewayMode(env = process.env) {
-  return env.MOCK_PLC === '1' ? 'mock' : 'modbus-server';
+  return env.MOCK_PLC === '1' ? 'mock' : 'modbus-master';
 }
 
-function createOfflineStatus(previous = {}, mode = 'modbus-server') {
+function createOfflineStatus(previous = {}, mode = 'modbus-master') {
   return {
     t: 's',
     ...statusDefaults,
@@ -54,9 +58,39 @@ function mime(filePath) {
   return 'application/octet-stream';
 }
 
-function createHttpServer(root = ROOT) {
+function createHttpServer(root = ROOT, options = {}) {
+  const onVision = options.onVision;
+  const onHealth = options.onHealth;
   return http.createServer((request, response) => {
     let url = request.url.split('?')[0];
+    if (url === '/health') {
+      response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      response.end(JSON.stringify(onHealth ? onHealth() : { ok: true }));
+      return;
+    }
+    if (request.method === 'POST' && url === '/vision' && onVision) {
+      let body = '';
+      request.on('data', (chunk) => {
+        body += chunk;
+        if (body.length > 4096) request.destroy();
+      });
+      request.on('end', () => {
+        try {
+          onVision(JSON.parse(body || '{}'));
+          response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+          response.end(JSON.stringify({ ok: true }));
+        } catch (error) {
+          response.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+          response.end(JSON.stringify({ ok: false, error: error.message }));
+        }
+      });
+      return;
+    }
+    if (url === '/map') {
+      response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      response.end(JSON.stringify(map));
+      return;
+    }
     if (url === '/') url = '/index.html';
     const filePath = path.normalize(path.join(root, url));
     if (!filePath.startsWith(root)) {
@@ -78,14 +112,24 @@ function createHttpServer(root = ROOT) {
 
 function startGateway(env = process.env) {
   const mode = resolveGatewayMode(env);
+  // 现场对齐：从站 Internal I/O 映射若不在 1000/1100，可用环境变量临时改基址（不改文件）。
+  if (env.PLC_CMD_BASE) map.command.baseAddress = Number(env.PLC_CMD_BASE);
+  if (env.PLC_STATUS_BASE) map.status.baseAddress = Number(env.PLC_STATUS_BASE);
   const httpPort = Number(env.HTTP_PORT || env.WS_PORT || 8080);
-  const modbusHost = env.MODBUS_HOST || '0.0.0.0';
-  const modbusPort = Number(env.MODBUS_PORT || 502);
-  const unitID = Number(env.MODBUS_UNIT_ID || 1);
+  // PLC slave target (master mode). Prefer PLC_*; fall back to MODBUS_* aliases.
+  const plcHost = env.PLC_HOST || env.MODBUS_HOST || '192.168.1.88';
+  const plcPort = Number(env.PLC_PORT || env.MODBUS_PORT || 502);
+  const unitID = Number(env.PLC_UNIT_ID || env.MODBUS_UNIT_ID || 1);
+  const pollMs = Number(env.PLC_POLL_MS || 50);
   const writerLeaseMs = Number(env.WRITER_LEASE_MS || 1000);
   const statusTimeoutMs = Number(env.STATUS_TIMEOUT_MS || 1000);
   const statusCheckMs = Number(env.STATUS_CHECK_MS || 100);
-  const httpServer = createHttpServer();
+  const visionTimeoutMs = Number(env.VISION_TIMEOUT_MS || 200);
+  let handleVision = () => {};
+  const httpServer = createHttpServer(ROOT, {
+    onVision: (message) => handleVision(message),
+    onHealth: () => buildHealth(),
+  });
   const wss = new WebSocketServer({ server: httpServer });
   let latestStatus = createOfflineStatus({}, mode);
   let lastValidStatusAt = 0;
@@ -93,6 +137,8 @@ function startGateway(env = process.env) {
   let leaseOwner = null;
   let leaseTimer = null;
   let closing = false;
+  let clientSeq = 0;
+  const startedAt = Date.now();
 
   function broadcast(message) {
     const payload = JSON.stringify(message);
@@ -119,7 +165,19 @@ function startGateway(env = process.env) {
     },
   });
 
-  let modbusServer = null;
+  let visionLastAt = 0;
+  let visionTimer = setInterval(() => {
+    if (visionLastAt && Date.now() - visionLastAt > visionTimeoutMs) {
+      store.releaseVision();
+      visionLastAt = 0;
+    }
+  }, 100);
+  handleVision = (message) => {
+    store.applyVisionWrite(message);
+    visionLastAt = Date.now();
+  };
+
+  let modbusMaster = null;
   let mockPlc = null;
   let mockTimer = null;
   let statusTimer = null;
@@ -131,41 +189,49 @@ function startGateway(env = process.env) {
     leaseOwner = null;
     store.safeguardCommands();
     if (mockPlc) mockPlc.applyWrite(store.getCommandValues());
+    broadcast({ t: 'lease', owner: null });
   }
 
   function renewWriterLease(ws) {
     leaseOwner = ws;
     clearTimeout(leaseTimer);
     leaseTimer = setTimeout(() => safeguardAndRelease(ws), writerLeaseMs);
+    broadcast({ t: 'lease', owner: ws._clientId ?? null });
   }
 
   if (mode === 'mock') {
     mockPlc = createMockPlc();
-    latestStatus = { ...mockPlc.statusMessage(), _gateway: mode };
+    latestStatus = { ...statusDefaults, ...mockPlc.statusMessage(), _gateway: mode };
     let lastTick = Date.now();
     mockTimer = setInterval(() => {
       const now = Date.now();
       mockPlc.tick((now - lastTick) / 1000);
       lastTick = now;
-      latestStatus = { ...mockPlc.statusMessage(), _gateway: mode };
+      latestStatus = { ...statusDefaults, ...mockPlc.statusMessage(), _gateway: mode };
+      statusIsOffline = false;
+      lastValidStatusAt = now;
       broadcast(latestStatus);
     }, 100);
     console.log('[gateway] MOCK_PLC=1 — in-process mock');
   } else {
-    modbusServer = new ModbusRTU.ServerTCP(store.vector, {
-      host: modbusHost,
-      port: modbusPort,
+    const { createModbusMaster } = require('./lib/modbus-master');
+    modbusMaster = createModbusMaster({
+      host: plcHost,
+      port: plcPort,
       unitID,
+      store,
+      pollMs,
+      onError(error) {
+        console.warn('[gateway] Modbus master:', error.message || error);
+      },
+      onConnected() {
+        console.log(`[gateway] Modbus master connected ${plcHost}:${plcPort} unit=${unitID}`);
+      },
+      onDisconnected() {
+        console.warn('[gateway] Modbus master disconnected');
+      },
     });
-    modbusServer.on('initialized', () => {
-      console.log(`[gateway] Modbus TCP listening ${modbusHost}:${modbusPort} unit=${unitID}`);
-    });
-    modbusServer.on('serverError', (error) => {
-      console.error('[gateway] Modbus TCP server error:', error.message);
-    });
-    modbusServer.on('socketError', (error) => {
-      console.warn('[gateway] Modbus TCP socket error:', error.message);
-    });
+    modbusMaster.start();
     statusTimer = setInterval(() => {
       if (
         !statusIsOffline
@@ -177,10 +243,30 @@ function startGateway(env = process.env) {
         broadcast(latestStatus);
       }
     }, statusCheckMs);
+    console.log(`[gateway] Modbus master → PLC slave ${plcHost}:${plcPort} unit=${unitID}`);
+    console.log(`[gateway] cmd@${map.command.baseAddress} status@${map.status.baseAddress} (len ${map.protocol.imageWords})`);
+  }
+
+  function buildHealth() {
+    const now = Date.now();
+    return {
+      ok: true,
+      mode,
+      clients: wss.clients.size,
+      leaseOwner: leaseOwner ? leaseOwner._clientId ?? null : null,
+      statusIsOffline,
+      lastValidStatusAgeMs: lastValidStatusAt ? now - lastValidStatusAt : null,
+      mock: Boolean(mockPlc),
+      master: modbusMaster ? modbusMaster.getDiagnostics() : null,
+      visionLastAgeMs: visionLastAt ? now - visionLastAt : null,
+      uptimeMs: now - startedAt,
+    };
   }
 
   wss.on('connection', (ws) => {
+    ws._clientId = ++clientSeq;
     ws.send(JSON.stringify(latestStatus));
+    ws.send(JSON.stringify({ t: 'hello', clientId: ws._clientId, mode }));
     ws.on('close', () => safeguardAndRelease(ws));
     ws.on('message', (raw) => {
       let message;
@@ -193,7 +279,7 @@ function startGateway(env = process.env) {
 
       if (message.t === 'ping') {
         if (leaseOwner === ws) renewWriterLease(ws);
-        ws.send(JSON.stringify({ t: 'pong' }));
+        ws.send(JSON.stringify({ t: 'pong', lease: leaseOwner === ws }));
         return;
       }
       if (message.t !== 'w') return;
@@ -209,6 +295,8 @@ function startGateway(env = process.env) {
         store.applyWebWrite(message);
         if (mockPlc) mockPlc.applyWrite(message);
         renewWriterLease(ws);
+        // 写入确认：让页面能区分「点了但没到网关」与「网关已收下」
+        ws.send(JSON.stringify({ t: 'wack', seq: message.seq ?? null, at: Date.now() }));
       } catch (error) {
         ws.send(JSON.stringify({
           t: 'err',
@@ -251,13 +339,16 @@ function startGateway(env = process.env) {
       clearTimeout(leaseTimer);
       clearInterval(mockTimer);
       clearInterval(statusTimer);
+      clearInterval(visionTimer);
       for (const client of wss.clients) client.terminate();
 
       const closes = [
         closeComponent((done) => wss.close(done)),
         closeComponent((done) => httpServer.close(done)),
       ];
-      if (modbusServer) closes.push(closeComponent((done) => modbusServer.close(done)));
+      if (modbusMaster) {
+        closes.push(Promise.resolve(modbusMaster.close()));
+      }
       if (typeof httpServer.closeAllConnections === 'function') {
         httpServer.closeAllConnections();
       }
@@ -280,7 +371,7 @@ function startGateway(env = process.env) {
     close,
     httpServer,
     mode,
-    modbusServer,
+    modbusMaster,
     store,
     wss,
     get closing() {

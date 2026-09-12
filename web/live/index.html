@@ -1,436 +1,147 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>LMM WebHMI · 真机调试台</title>
-  <style>
-    :root {
-      --bg: #0f1318; --panel: #1a222b; --panel2: #141a21; --line: #3a4654;
-      --text: #eef3f8; --muted: #9aabbc; --ok: #3dba7e; --warn: #e0a53a;
-      --danger: #e05454; --accent: #5eb3e8;
-      --x: #5eb3e8; --y: #6bcf8e; --z: #d4a24a; --r: #b08fd4;
-      --mono: "IBM Plex Mono", "Cascadia Mono", ui-monospace, monospace;
-      --sans: "IBM Plex Sans", "Noto Sans SC", system-ui, sans-serif;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0; color: var(--text); font-family: var(--sans);
-      background: var(--bg); line-height: 1.45; font-size: 15px;
-    }
-    header {
-      display: flex; flex-wrap: wrap; justify-content: space-between;
-      gap: 1rem 1.5rem; padding: 1.1rem 1.5rem;
-      border-bottom: 1px solid var(--line); background: #0a0e12;
-      position: sticky; top: 0; z-index: 20;
-    }
-    h1 { margin: 0; font-size: 1.35rem; font-weight: 650; letter-spacing: .02em; }
-    .meta { color: var(--muted); font-size: .9rem; margin-top: .25rem; }
-    .hdr-pills { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
-    .wrap {
-      display: grid;
-      grid-template-columns: minmax(340px, 1fr) minmax(420px, 1.25fr) minmax(360px, 1fr);
-      gap: 1.1rem; padding: 1.1rem 1.4rem 2rem;
-      max-width: 1880px; margin: 0 auto;
-    }
-    @media (max-width: 1280px) {
-      .wrap { grid-template-columns: 1fr; }
-    }
-    section {
-      background: var(--panel); border: 1px solid var(--line);
-      border-radius: 10px; padding: 1rem 1.15rem; margin-bottom: 1.1rem;
-    }
-    section:last-child { margin-bottom: 0; }
-    section h2 {
-      margin: 0 0 .85rem; font-size: .78rem; letter-spacing: .08em;
-      text-transform: uppercase; color: var(--muted); font-weight: 700;
-    }
-    .pills { display: flex; flex-wrap: wrap; gap: .45rem; margin-bottom: .65rem; }
-    .pill {
-      font-size: .82rem; padding: .35rem .7rem; border-radius: 999px;
-      border: 1px solid var(--line); background: var(--panel2);
-      font-variant-numeric: tabular-nums;
-    }
-    .pill.ok { border-color: var(--ok); color: var(--ok); }
-    .pill.bad { border-color: var(--danger); color: var(--danger); }
-    .pill.warn { border-color: var(--warn); color: var(--warn); }
-    .pill.on { background: #1a3a2a; border-color: var(--ok); color: var(--ok); }
-    button, .hold {
-      font: inherit; color: var(--text); cursor: pointer;
-      border: 1px solid var(--line); background: #2a333d;
-      border-radius: 6px; padding: .65rem .9rem; font-size: .95rem;
-      user-select: none; -webkit-user-select: none; touch-action: none;
-      min-height: 2.6rem;
-    }
-    button:hover:not(:disabled), .hold:hover:not(:disabled) { border-color: var(--accent); }
-    button:disabled, .hold:disabled { opacity: .35; cursor: not-allowed; }
-    button.danger { background: #5a2626; border-color: var(--danger); }
-    button.primary { background: #1e4a3a; border-color: var(--ok); }
-    button.active, .hold.active { background: #1e4a6e; border-color: var(--accent); }
-    .row { display: flex; flex-wrap: wrap; gap: .55rem; align-items: center; margin: .55rem 0; }
-    label.opt {
-      display: inline-flex; align-items: center; gap: .4rem;
-      font-size: .92rem; padding: .45rem .7rem; border: 1px solid var(--line);
-      border-radius: 6px; cursor: pointer; background: var(--panel2);
-    }
-    label.opt input { accent-color: var(--accent); width: 1rem; height: 1rem; }
-    .params {
-      display: grid;
-      grid-template-columns: 7.5rem 1fr 5.5rem 4.8rem;
-      gap: .55rem .65rem; align-items: center;
-      font-size: .9rem; margin: .55rem 0;
-    }
-    .params input[type=range] { width: 100%; }
-    .params input[type=number] {
-      width: 100%; font: inherit; font-family: var(--mono);
-      color: var(--accent); background: var(--panel2);
-      border: 1px solid var(--line); border-radius: 5px;
-      padding: .35rem .45rem; text-align: right;
-    }
-    .params .lab { color: var(--muted); }
-    .hint { font-size: .85rem; color: var(--muted); margin: .4rem 0 0; line-height: 1.5; }
-    .cmd-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .55rem; }
-    .axis-card {
-      border: 1px solid var(--line); border-radius: 8px; padding: .75rem .85rem;
-      background: var(--panel2);
-    }
-    .axis-card h3 { margin: 0 0 .55rem; font-size: 1rem; }
-    .axis-card.x h3 { color: var(--x); }
-    .axis-card.y h3 { color: var(--y); }
-    .axis-card.z h3 { color: var(--z); }
-    .axis-card.r h3 { color: var(--r); }
-    .schematic {
-      position: relative; height: 300px; border: 1px dashed var(--line);
-      border-radius: 8px; background: #121820; overflow: hidden;
-    }
-    .rail {
-      position: absolute; top: 16px; bottom: 36px; width: 12px;
-      background: linear-gradient(180deg, #2a4058, #1e2a36); border-radius: 2px;
-    }
-    .rail.left { left: 18%; }
-    .rail.right { right: 18%; }
-    .axis-label {
-      position: absolute; font-size: .75rem; color: var(--muted); font-weight: 700;
-    }
-    .axis-label.x { left: 8px; top: 50%; transform: translateY(-50%); writing-mode: vertical-rl; color: var(--x); }
-    .axis-label.y { bottom: 10px; left: 50%; transform: translateX(-50%); color: var(--y); }
-    .gantry {
-      position: absolute; left: 18%; right: 18%; top: 50%;
-      height: 16px; margin-top: -8px; background: #3a4654; border-radius: 3px;
-      transition: top .05s linear; transform-origin: center;
-    }
-    .leg {
-      position: absolute; top: 50%; width: 28px; height: 28px; margin-top: -14px;
-      background: #4a9fd8; border-radius: 4px; display: flex; align-items: center;
-      justify-content: center; font-size: .72rem; font-weight: 700; color: #0e1216;
-    }
-    .leg.m1 { left: -8px; }
-    .leg.m2 { right: -8px; }
-    .leg.fault { background: var(--danger); color: #fff; }
-    .carriage {
-      position: absolute; top: 50%; left: 50%;
-      width: 40px; height: 30px; margin: -24px 0 0 -20px;
-      background: var(--y); border-radius: 4px; font-size: .75rem;
-      display: flex; align-items: center; justify-content: center; color: #102018;
-      font-weight: 700; transition: left .05s linear; z-index: 2;
-    }
-    .zblock {
-      position: absolute; left: 50%; top: 50%;
-      width: 22px; height: 18px; margin: 10px 0 0 -11px;
-      background: var(--z); border-radius: 3px; font-size: .68rem;
-      display: flex; align-items: center; justify-content: center; color: #1a1408;
-      font-weight: 700; z-index: 3;
-    }
-    .x-monitor {
-      display: grid; grid-template-columns: 1fr 1fr; gap: .85rem;
-    }
-    .metric {
-      background: #0c1015; border: 1px solid var(--line); border-radius: 10px;
-      padding: 1rem 1.1rem; min-height: 6.5rem;
-    }
-    .metric .k {
-      font-size: .78rem; color: var(--muted); letter-spacing: .04em;
-      text-transform: uppercase; margin-bottom: .35rem;
-    }
-    .metric .v {
-      font-family: var(--mono); font-size: 1.85rem; font-weight: 650;
-      font-variant-numeric: tabular-nums; line-height: 1.15;
-    }
-    .metric .sub {
-      margin-top: .4rem; font-family: var(--mono); font-size: .9rem; color: var(--muted);
-    }
-    .metric.wide { grid-column: 1 / -1; }
-    .metric.delta .v { color: var(--warn); }
-    .metric.warn-hi .v { color: var(--danger); }
-    .spark {
-      height: 72px; width: 100%; display: block; margin-top: .75rem;
-      background: #0a0d10; border: 1px solid var(--line); border-radius: 6px;
-    }
-    .fb-table { width: 100%; border-collapse: collapse; font-size: .9rem; }
-    .fb-table th, .fb-table td {
-      border-bottom: 1px solid var(--line); padding: .55rem .4rem; text-align: left;
-      vertical-align: top;
-    }
-    .fb-table th { color: var(--muted); font-weight: 500; width: 42%; }
-    .fb-table td { font-family: var(--mono); font-variant-numeric: tabular-nums; }
-    .bit { color: var(--ok); } .bit.off { color: #55606c; }
-    .log {
-      height: 220px; overflow: auto; font-family: var(--mono);
-      font-size: .78rem; background: #0a0d10; border: 1px solid var(--line);
-      border-radius: 8px; padding: .65rem .75rem; color: var(--muted);
-    }
-    .log div { margin-bottom: .35rem; white-space: pre-wrap; }
-    .steps { display: grid; gap: .4rem; }
-    .step {
-      display: flex; gap: .65rem; align-items: center;
-      font-size: .9rem; padding: .55rem .65rem;
-      border: 1px solid var(--line); border-radius: 6px; background: var(--panel2);
-    }
-    .step .n {
-      width: 1.7rem; height: 1.7rem; border-radius: 50%;
-      display: grid; place-content: center; font-size: .8rem; font-weight: 700;
-      background: #2a333d; color: var(--muted); flex-shrink: 0;
-    }
-    .step.active { border-color: var(--accent); background: #173047; }
-    .step.active .n { background: var(--accent); color: #0e1216; }
-    .step.done { border-color: #2a5a40; }
-    .step.done .n { background: var(--ok); color: #0e1216; }
-    .force-bar {
-      height: 14px; background: #0a0d10; border-radius: 6px; overflow: hidden;
-      border: 1px solid var(--line); margin: .55rem 0;
-    }
-    .force-bar > i {
-      display: block; height: 100%; width: 0%;
-      background: linear-gradient(90deg, var(--z), var(--ok));
-      transition: width .05s linear;
-    }
-    .panel-hidden { display: none !important; }
-    .col { min-width: 0; }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>LMM WebHMI v2 · 操作台</title>
+<style>
+:root{
+  --bg:#0d1117; --panel:#161d26; --panel2:#1d2733; --line:#2c3846; --text:#e8eff7; --muted:#93a4b8;
+  --ok:#3dba7e; --warn:#e0a53a; --danger:#e05454; --accent:#5eb3e8; --accent2:#7c8cff;
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --tap:46px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,"Noto Sans SC",sans-serif;font-size:14px}
+body{padding-bottom:2rem}
+button{font:inherit;color:var(--text);background:var(--panel2);border:1px solid var(--line);border-radius:10px;
+  min-height:var(--tap);padding:.5rem .85rem;cursor:pointer;touch-action:manipulation;transition:filter .1s,background .1s}
+button:hover{filter:brightness(1.12)}
+button:active{filter:brightness(.92)}
+button:disabled{opacity:.4;cursor:not-allowed}
+button.primary{background:#1d4f7a;border-color:#2f6f9f}
+button.danger{background:#7a2020;border-color:#a33}
+button.warn{background:#6a4d15;border-color:#a37a2f}
+button.hold.active{background:#1d5f8a;border-color:var(--accent);box-shadow:0 0 0 2px rgba(94,179,232,.35) inset}
+input,select,textarea{font:inherit;color:var(--text);background:#0b1017;border:1px solid var(--line);border-radius:8px;padding:.35rem .5rem}
+input[type=number]{width:5.6rem}
+input[type=range]{width:100%;accent-color:var(--accent);background:transparent;border:none;padding:0}
+input[type=checkbox]{width:1.15rem;height:1.15rem;accent-color:var(--accent)}
+a{color:var(--accent)}
+header.top{position:sticky;top:0;z-index:30;background:#080c11;border-bottom:1px solid var(--line);
+  padding:.55rem .8rem;display:flex;flex-wrap:wrap;gap:.5rem .9rem;align-items:center}
+.brand{font-weight:700;font-size:1.05rem;letter-spacing:.02em}
+.brand .ver{font-size:.7rem;color:var(--accent);border:1px solid var(--line);border-radius:6px;padding:.05rem .35rem;margin-left:.35rem}
+.pills{display:flex;flex-wrap:wrap;gap:.35rem}
+.pill{font-size:.78rem;padding:.24rem .6rem;border-radius:999px;border:1px solid var(--line);background:var(--panel2);
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+.pill.ok{border-color:var(--ok);color:var(--ok)}
+.pill.warn{border-color:var(--warn);color:var(--warn)}
+.pill.bad{border-color:var(--danger);color:var(--danger)}
+.pill.on{background:#12351f}
+nav.tabs{display:flex;gap:.3rem;flex-wrap:wrap;margin-left:auto}
+nav.tabs button{border-radius:999px;min-height:38px;padding:.3rem .95rem}
+nav.tabs button.active{background:#1d4f7a;border-color:#3f8fd0}
+.modebar{display:flex;align-items:center;gap:.8rem;flex-wrap:wrap;padding:.5rem .9rem;
+  background:var(--panel);border-bottom:1px solid var(--line)}
+.modebar label{display:inline-flex;align-items:center;gap:.35rem;cursor:pointer}
+.wrap{padding:.9rem;max-width:1900px;margin:0 auto}
+.panel{display:none}
+.panel.active{display:block}
+.grid{display:grid;gap:.85rem;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));align-items:start}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:.85rem .95rem}
+.card.wide{grid-column:1/-1}
+.card h2{margin:.1rem 0 .7rem;font-size:.78rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.row{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:.35rem 0}
+.row.spread{justify-content:space-between}
+.lab{color:var(--muted);font-size:.82rem;min-width:4.2rem}
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:.55rem}
+.metric{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:.5rem .6rem}
+.metric .k{color:var(--muted);font-size:.74rem}
+.metric .v{font-family:var(--mono);font-size:1.35rem;font-variant-numeric:tabular-nums;margin-top:.15rem}
+.metric.big .v{font-size:2.05rem}
+.metric.good .v{color:var(--ok)} .metric.warn2 .v{color:var(--warn)} .metric.bad2 .v{color:var(--danger)}
+.metric .sub{color:var(--muted);font-size:.7rem;margin-top:.1rem;font-family:var(--mono)}
+.jogpad{display:grid;grid-template-columns:repeat(3,1fr);gap:.4rem;max-width:340px}
+.jogpad .spacer{visibility:hidden}
+.jogpad button{min-height:52px;font-size:1.02rem}
+.slider{display:grid;grid-template-columns:4.6rem 1fr 5.6rem;gap:.5rem;align-items:center;margin:.3rem 0}
+table{width:100%;border-collapse:collapse;font-size:.82rem}
+th,td{border-bottom:1px solid var(--line);padding:.32rem .45rem;text-align:left;vertical-align:middle}
+th{color:var(--muted);font-weight:600;position:sticky;top:0;background:var(--panel)}
+td.mono,th.mono{font-family:var(--mono)}
+.tblwrap{max-height:430px;overflow:auto;border:1px solid var(--line);border-radius:10px}
+.steps{display:flex;gap:.3rem;flex-wrap:wrap;margin:.4rem 0}
+.steps .step{flex:1;min-width:64px;text-align:center;font-size:.72rem;padding:.4rem .2rem;border:1px solid var(--line);
+  border-radius:8px;color:var(--muted);background:var(--panel2)}
+.steps .step.active{border-color:var(--accent);color:var(--accent);background:#11293a}
+.steps .step.done{border-color:var(--ok);color:var(--ok);background:#10281b}
+.bar{height:14px;border-radius:7px;background:var(--panel2);border:1px solid var(--line);overflow:hidden;margin:.35rem 0}
+.bar > i{display:block;height:100%;background:linear-gradient(90deg,#2f6f9f,#5eb3e8);width:0;transition:width .2s}
+canvas{width:100%;height:120px;background:#0a0f15;border:1px solid var(--line);border-radius:10px;display:block}
+.log{max-height:360px;overflow:auto;font-family:var(--mono);font-size:.78rem;background:#0a0f15;border:1px solid var(--line);
+  border-radius:10px;padding:.5rem;line-height:1.5}
+.log > div{border-bottom:1px dotted #1e2833;padding:.1rem 0;white-space:pre-wrap;word-break:break-all}
+pre.health{max-height:300px;overflow:auto;background:#0a0f15;border:1px solid var(--line);border-radius:10px;
+  padding:.5rem;font-size:.76rem;font-family:var(--mono)}
+.hint{color:var(--muted);font-size:.76rem;margin:.5rem 0 0}
+.badge{display:inline-block;font-size:.68rem;border:1px solid var(--line);border-radius:6px;padding:.02rem .3rem;color:var(--muted);margin-left:.3rem}
+.fault{color:var(--danger)}
+.banner{display:none;padding:.55rem .9rem;font-size:.86rem;font-weight:600;border-bottom:1px solid var(--line)}
+.banner.bad{background:#3a1414;color:#ffb4b4}
+.banner.warn{background:#3a2f10;color:#ffdf9c}
+#toast{position:fixed;right:1rem;bottom:1rem;display:flex;flex-direction:column;gap:.4rem;z-index:50;max-width:340px}
+#toast div{background:#2a1414;border:1px solid #a33;border-radius:10px;padding:.5rem .7rem;font-size:.8rem}
+@media (max-width:760px){ .metric.big .v{font-size:1.7rem} nav.tabs{width:100%;margin-left:0} nav.tabs button{flex:1} }
+</style>
 </head>
 <body>
-  <header>
-    <div>
-      <h1>LMM WebHMI · 真机调试台</h1>
-      <div class="meta">WS → Gateway Modbus Server :502 ← PLC Master · 启动：<code>.\tools\start-webhmi.ps1</code></div>
-    </div>
-    <div class="hdr-pills">
-      <span class="pill" id="conn">WS: —</span>
-      <span class="pill" id="plc-mode">PLC: —</span>
-      <span class="pill" id="tcp-st">Tcp=—</span>
-      <span class="pill" id="ctrl-src">控制源=—</span>
-      <span class="pill" id="hz">刷新=—</span>
-    </div>
-  </header>
+<header class="top">
+  <div class="brand">LMM WebHMI<span class="ver">v2</span></div>
+  <div class="pills">
+    <span class="pill" id="conn">WS: —</span>
+    <span class="pill" id="gw-mode">PLC: —</span>
+    <span class="pill" id="plc-online">在线: —</span>
+    <span class="pill" id="lat">RTT: —</span>
+    <span class="pill" id="lease">控制权: —</span>
+    <span class="pill" id="ctrl-src">控制源: —</span>
+    <span class="pill" id="hb">心跳: —</span>
+    <span class="pill" id="plc-target">PLC: —</span>
+    <span class="pill" id="ack">送达: —</span>
+  </div>
+  <nav class="tabs" id="tabs">
+    <button type="button" data-tab="auto" class="active">自动</button>
+    <button type="button" data-tab="manual">手动</button>
+    <button type="button" data-tab="xdual">X 双驱</button>
+    <button type="button" data-tab="debug">调试</button>
+    <button type="button" data-tab="log">日志</button>
+  </nav>
+</header>
 
-  <div class="wrap">
-    <!-- ===== 左：安全 / 模式 / 手动·自动 ===== -->
-    <div class="col">
-      <section>
-        <h2>安全 · 设备态</h2>
-        <div class="pills">
-          <span class="pill" id="lamp-stop">Stop</span>
-          <span class="pill" id="lamp-run">Run</span>
-          <span class="pill" id="lamp-err">Error</span>
-          <span class="pill" id="p-alarm">Alarm=0</span>
-          <span class="pill" id="p-ready">Ready=—</span>
-        </div>
-        <div class="row">
-          <button type="button" class="danger" id="btn-estop">急停按住 → FALSE</button>
-          <button type="button" id="btn-start">启动 Start</button>
-          <button type="button" id="btn-stop">停止（短按）</button>
-          <button type="button" id="btn-reset">复位 Reset</button>
-        </div>
-        <p class="hint">急停三路 AND（面板∧触摸屏∧Web）。复位 = <code>HMI_xStopHold3s</code> 脉冲。</p>
-      </section>
+<div class="modebar">
+  <strong>运行模式</strong>
+  <label><input type="radio" name="opmode" value="0" /> 手动</label>
+  <label><input type="radio" name="opmode" value="1" /> 自动</label>
+  <span class="pill" id="lamp-stop">Stop</span>
+  <span class="pill" id="lamp-run">Run</span>
+  <span class="pill" id="lamp-err">Error</span>
+  <span class="pill" id="p-alarm">Alarm 0</span>
+  <span class="pill" id="p-ready">Ready —</span>
+  <button type="button" class="danger" id="btn-estop">急停请求（按住=FALSE）</button>
+  <button type="button" id="btn-start">启动</button>
+  <button type="button" id="btn-stop">停止</button>
+  <button type="button" id="btn-reset">复位</button>
+  <span class="lab" style="color:var(--muted);font-size:.78rem">报警 1001 = 急停锁存：松开物理急停后按一次「复位」</span>
+</div>
 
-      <section>
-        <h2>模式</h2>
-        <div class="row">
-          <label class="opt"><input type="radio" name="opmode" value="0" checked /> 手动</label>
-          <label class="opt"><input type="radio" name="opmode" value="1" /> 自动</label>
-        </div>
-      </section>
+<div id="banner" class="banner"></div>
 
-      <section>
-        <h2>加减速 Acc / Dec（常显）</h2>
-        <div class="params">
-          <span class="lab">AccX</span>
-          <input type="range" id="p-accx" min="1" max="500" step="1" value="100" />
-          <input type="number" id="n-accx" step="1" value="100" />
-          <span class="lab">—</span>
-          <span class="lab">DecX</span>
-          <input type="range" id="p-decx" min="1" max="500" step="1" value="100" />
-          <input type="number" id="n-decx" step="1" value="100" />
-          <span class="lab">—</span>
-          <span class="lab">AccY</span>
-          <input type="range" id="p-accy" min="1" max="500" step="1" value="100" />
-          <input type="number" id="n-accy" step="1" value="100" />
-          <span class="lab">—</span>
-          <span class="lab">DecY</span>
-          <input type="range" id="p-decy" min="1" max="500" step="1" value="100" />
-          <input type="number" id="n-decy" step="1" value="100" />
-          <span class="lab">—</span>
-          <span class="lab">AccZ</span>
-          <input type="range" id="p-accz" min="1" max="500" step="1" value="100" />
-          <input type="number" id="n-accz" step="1" value="100" />
-          <span class="lab">—</span>
-          <span class="lab">DecZ</span>
-          <input type="range" id="p-decz" min="1" max="500" step="1" value="100" />
-          <input type="number" id="n-decz" step="1" value="100" />
-          <span class="lab">—</span>
-          <span class="lab">AccR</span>
-          <input type="range" id="p-accr" min="1" max="500" step="1" value="100" />
-          <input type="number" id="n-accr" step="1" value="100" />
-          <span class="lab">—</span>
-          <span class="lab">DecR</span>
-          <input type="range" id="p-decr" min="1" max="500" step="1" value="100" />
-          <input type="number" id="n-decr" step="1" value="100" />
-          <span class="lab">—</span>
-        </div>
-      </section>
-
-      <section id="panel-manual">
-        <h2>手动点动 · 速度</h2>
-        <div class="params">
-          <span class="lab" title="HMI_rJogVelX">VelX 直行</span>
-          <input type="range" id="p-velx" min="0.05" max="2" step="0.05" value="0.4" />
-          <input type="number" id="n-velx" step="0.05" value="0.4" />
-          <span class="lab">m/s</span>
-          <span class="lab" title="HMI_rSpinVel">SpinVel</span>
-          <input type="range" id="p-spin" min="0.05" max="2" step="0.05" value="0.3" />
-          <input type="number" id="n-spin" step="0.05" value="0.3" />
-          <span class="lab">m/s</span>
-          <span class="lab">VelY</span>
-          <input type="range" id="p-vely" min="0.05" max="2" step="0.05" value="0.3" />
-          <input type="number" id="n-vely" step="0.05" value="0.3" />
-          <span class="lab">m/s</span>
-          <span class="lab">VelZ</span>
-          <input type="range" id="p-velz" min="0.05" max="1" step="0.05" value="0.2" />
-          <input type="number" id="n-velz" step="0.05" value="0.2" />
-          <span class="lab">m/s</span>
-          <span class="lab">VelR</span>
-          <input type="range" id="p-velr" min="0.05" max="1" step="0.05" value="0.2" />
-          <input type="number" id="n-velr" step="0.05" value="0.2" />
-          <span class="lab">°/s</span>
-        </div>
-        <div class="cmd-grid" style="margin-top:.75rem">
-          <div class="axis-card x">
-            <h3>X · M1+M2</h3>
-            <div class="row">
-              <button type="button" class="hold" data-act="x+">X+</button>
-              <button type="button" class="hold" data-act="x-">X−</button>
-            </div>
-            <div class="row">
-              <button type="button" class="hold" data-act="spinL">左旋</button>
-              <button type="button" class="hold" data-act="spinR">右旋</button>
-            </div>
-          </div>
-          <div class="axis-card y">
-            <h3>Y · M3</h3>
-            <div class="row">
-              <button type="button" class="hold" data-act="y+">Y+</button>
-              <button type="button" class="hold" data-act="y-">Y−</button>
-            </div>
-          </div>
-          <div class="axis-card z">
-            <h3>Z · M4</h3>
-            <div class="row">
-              <button type="button" class="hold" data-act="z+">Z+</button>
-              <button type="button" class="hold" data-act="z-">Z−</button>
-            </div>
-            <div class="row">
-              <label class="opt"><input type="checkbox" id="force-guide" /> 力引导 ForceGuide</label>
-            </div>
-          </div>
-          <div class="axis-card r">
-            <h3>R · M5</h3>
-            <div class="row">
-              <button type="button" class="hold" data-act="r+">R+</button>
-              <button type="button" class="hold" data-act="r-">R−</button>
-            </div>
-          </div>
-        </div>
-
-        <h2 style="margin-top:1.25rem">回零</h2>
-        <div class="row">
-          <label class="opt"><input type="radio" name="home-axis" value="1" checked /> Y</label>
-          <label class="opt"><input type="radio" name="home-axis" value="2" /> Z</label>
-          <label class="opt"><input type="radio" name="home-axis" value="3" /> R</label>
-          <button type="button" class="primary" id="btn-home-exec">执行 HomeExec</button>
-        </div>
-        <div class="row">
-          <button type="button" id="btn-home-y">Y回零</button>
-          <button type="button" id="btn-home-z">Z回零</button>
-          <button type="button" id="btn-home-r">R回零</button>
-        </div>
-        <div class="pills">
-          <span class="pill" id="p-homed-y">Y Homed=F</span>
-          <span class="pill" id="p-homed-z">Z Homed=F</span>
-          <span class="pill" id="p-homed-r">R Homed=F</span>
-          <span class="pill" id="p-home-busy">Busy=—</span>
-        </div>
-      </section>
-
-      <section id="panel-auto" class="panel-hidden">
-        <h2>自动参数 · 力控</h2>
-        <div class="params">
-          <span class="lab">DistX</span>
-          <input type="range" id="p-dx" min="0.1" max="5" step="0.1" value="1.0" />
-          <input type="number" id="n-dx" step="0.1" value="1" />
-          <span class="lab">m</span>
-          <span class="lab">道数</span>
-          <input type="range" id="p-npass" min="1" max="50" step="1" value="1" />
-          <input type="number" id="n-npass" step="1" value="1" />
-          <span class="lab">—</span>
-          <span class="lab">VelX</span>
-          <input type="range" id="p-avx" min="0.05" max="2" step="0.05" value="0.4" />
-          <input type="number" id="n-avx" step="0.05" value="0.4" />
-          <span class="lab">m/s</span>
-          <span class="lab">跨距</span>
-          <input type="range" id="p-base" min="4" max="6" step="0.1" value="5.0" />
-          <input type="number" id="n-base" step="0.1" value="5" />
-          <span class="lab">m</span>
-          <span class="lab">VelY</span>
-          <input type="range" id="p-avy" min="0.05" max="2" step="0.05" value="0.3" />
-          <input type="number" id="n-avy" step="0.05" value="0.3" />
-          <span class="lab">m/s</span>
-          <span class="lab">VelZ</span>
-          <input type="range" id="p-avz" min="0.05" max="1" step="0.05" value="0.15" />
-          <input type="number" id="n-avz" step="0.05" value="0.15" />
-          <span class="lab">m/s</span>
-          <span class="lab">F_set</span>
-          <input type="range" id="p-fset" min="10" max="500" step="5" value="100" />
-          <input type="number" id="n-fset" step="5" value="100" />
-          <span class="lab">N</span>
-          <span class="lab">KpForce</span>
-          <input type="range" id="p-kpf" min="0" max="10" step="0.1" value="1" />
-          <input type="number" id="n-kpf" step="0.1" value="1" />
-          <span class="lab">—</span>
-          <span class="lab">KpTrack</span>
-          <input type="range" id="p-kpt" min="0" max="5" step="0.05" value="0" />
-          <input type="number" id="n-kpt" step="0.05" value="0" />
-          <span class="lab">—</span>
-          <span class="lab">HeadingErr</span>
-          <input type="range" id="p-herr" min="-1" max="1" step="0.01" value="0" />
-          <input type="number" id="n-herr" step="0.01" value="0" />
-          <span class="lab">rad</span>
-          <span class="lab">ForceSim</span>
-          <input type="range" id="p-fsim" min="0" max="500" step="5" value="0" />
-          <input type="number" id="n-fsim" step="5" value="0" />
-          <span class="lab">N</span>
-        </div>
-        <div class="row">
-          <label class="opt"><input type="checkbox" id="force-sim" /> 力模拟 ForceSimEnable</label>
-        </div>
-        <div class="force-bar"><i id="force-fill"></i></div>
-        <p class="hint" id="force-lab">F_act=0 / F_set=100 N</p>
-        <div class="row">
-          <button type="button" id="btn-tare">去皮</button>
-          <button type="button" id="btn-untare">取消去皮</button>
-          <span class="pill" id="p-tare">Tare=—</span>
-          <span class="pill" id="p-force-diag">Force=—</span>
-        </div>
+<div class="wrap">
+  <!-- ================= AUTO ================= -->
+  <section class="panel active" id="panel-auto">
+    <div class="grid">
+      <div class="card">
+        <h2>自动循环</h2>
         <div class="row">
           <button type="button" class="primary" id="btn-auto-start">自动启动</button>
           <button type="button" class="danger" id="btn-auto-abort">中止</button>
@@ -438,137 +149,291 @@
           <span class="pill" id="p-busy">Busy=F</span>
           <span class="pill" id="p-done">Done=F</span>
         </div>
-        <div class="steps" id="steps" style="margin-top:.85rem">
-          <div class="step" data-s="0"><span class="n">0</span><span>Idle</span></div>
-          <div class="step" data-s="1"><span class="n">1</span><span>X 走距（可纠偏）· HoldR</span></div>
-          <div class="step" data-s="2"><span class="n">2</span><span>Y Abs→0</span></div>
-          <div class="step" data-s="3"><span class="n">3</span><span>去皮 + Z 压到力</span></div>
-          <div class="step" data-s="4"><span class="n">4</span><span>Y 走跨距恒力 · HoldR</span></div>
-          <div class="step" data-s="5"><span class="n">5</span><span>多道判定</span></div>
-          <div class="step" data-s="6"><span class="n">6</span><span>Done</span></div>
+        <div class="steps" id="steps">
+          <div class="step" data-s="0">0 Idle</div>
+          <div class="step" data-s="1">1 X走距</div>
+          <div class="step" data-s="2">2 Y归位</div>
+          <div class="step" data-s="3">3 Z压到力</div>
+          <div class="step" data-s="4">4 Y走跨距</div>
+          <div class="step" data-s="5">5 多道/收尾</div>
         </div>
-        <p class="hint">手动时 KpTrack 在 PLC 侧为 0；自动步1 才用 KpTrack×HeadingErr。</p>
-      </section>
+        <div class="bar"><i id="force-fill"></i></div>
+        <div class="row spread"><span class="lab" id="force-lab">F_act=— / F_set=—</span><span class="pill" id="p-tare">Tare=—</span></div>
+        <p class="hint">模式=自动且安全条件满足时，自动启动上升沿生效；中止立即结束步序。</p>
+      </div>
+
+      <div class="card">
+        <h2>工艺参数</h2>
+        <div class="slider"><span class="lab">X 走距 m</span><input type="range" id="p-dx" min="0" max="3" step="0.01" value="1" /><input type="number" id="n-dx" step="0.01" value="1" /></div>
+        <div class="slider"><span class="lab">X 速度</span><input type="range" id="p-avx" min="0.05" max="1.5" step="0.01" value="0.4" /><input type="number" id="n-avx" step="0.01" value="0.4" /></div>
+        <div class="slider"><span class="lab">Y 速度</span><input type="range" id="p-avy" min="0.05" max="1.5" step="0.01" value="0.3" /><input type="number" id="n-avy" step="0.01" value="0.3" /></div>
+        <div class="slider"><span class="lab">Z 速度</span><input type="range" id="p-avz" min="0.02" max="0.8" step="0.01" value="0.15" /><input type="number" id="n-avz" step="0.01" value="0.15" /></div>
+        <div class="slider"><span class="lab">跨距 m</span><input type="range" id="p-base" min="4" max="6" step="0.1" value="5" /><input type="number" id="n-base" step="0.1" value="5" /></div>
+        <div class="slider"><span class="lab">恒力 N</span><input type="range" id="p-fset" min="0" max="500" step="1" value="100" /><input type="number" id="n-fset" step="1" value="100" /></div>
+        <div class="slider"><span class="lab">道数</span><input type="range" id="p-npass" min="1" max="20" step="1" value="1" /><input type="number" id="n-npass" step="1" value="1" /></div>
+      </div>
+
+      <div class="card">
+        <h2>力 / 纠偏整定</h2>
+        <div class="slider"><span class="lab">Kp 力</span><input type="range" id="p-kpf" min="0" max="10" step="0.1" value="1" /><input type="number" id="n-kpf" step="0.1" value="1" /></div>
+        <div class="slider"><span class="lab">Kp 纠偏</span><input type="range" id="p-kpt" min="0" max="3" step="0.01" value="0" /><input type="number" id="n-kpt" step="0.01" value="0" /></div>
+        <div class="slider"><span class="lab">航向误差</span><input type="range" id="p-herr" min="-0.5" max="0.5" step="0.01" value="0" /><input type="number" id="n-herr" step="0.01" value="0" /></div>
+        <div class="row"><span class="lab">显示力</span><span class="pill" id="out-force">— N</span><span class="pill" id="p-force-diag">Comm —</span></div>
+        <div class="row">
+          <label><input type="checkbox" id="force-sim" /> 力模拟</label>
+          <input type="number" id="n-fsim" step="1" value="0" />
+          <button type="button" id="btn-tare">去皮</button>
+          <button type="button" id="btn-untare">取消去皮</button>
+          <label><input type="checkbox" id="force-guide" /> 力引导</label>
+        </div>
+      </div>
     </div>
+  </section>
 
-    <!-- ===== 中：示意 + X 双驱监视 ===== -->
-    <div class="col">
-      <section>
-        <h2>龙门示意</h2>
-        <div class="schematic" id="schematic">
-          <div class="axis-label x">X↑ M1/M2</div>
-          <div class="axis-label y">← Y →</div>
-          <div class="rail left"></div>
-          <div class="rail right"></div>
-          <div class="gantry" id="gantry">
-            <div class="leg m1" id="leg-m1">M1</div>
-            <div class="leg m2" id="leg-m2">M2</div>
-            <div class="carriage" id="carriage">Y</div>
-            <div class="zblock" id="zblock">Z</div>
+  <!-- ================= MANUAL ================= -->
+  <section class="panel" id="panel-manual">
+    <div class="grid">
+      <div class="card">
+        <h2>点动 Jog（按住动 / 松开停）</h2>
+        <div class="row" style="gap:1.2rem;align-items:flex-start">
+          <div>
+            <div class="hint">XY 平面</div>
+            <div class="jogpad">
+              <span class="spacer"></span><button type="button" class="hold" data-act="y+">Y+</button><span class="spacer"></span>
+              <button type="button" class="hold" data-act="x-">X−</button><span class="spacer"></span><button type="button" class="hold" data-act="x+">X+</button>
+              <span class="spacer"></span><button type="button" class="hold" data-act="y-">Y−</button><span class="spacer"></span>
+            </div>
+            <div class="hint" style="margin-top:.6rem">Z 升降</div>
+            <div class="jogpad" style="grid-template-columns:1fr 1fr">
+              <button type="button" class="hold" data-act="z+">Z+</button>
+              <button type="button" class="hold" data-act="z-">Z−</button>
+            </div>
+            <div class="hint" style="margin-top:.6rem">R 旋转 / 原地转</div>
+            <div class="jogpad" style="grid-template-columns:1fr 1fr">
+              <button type="button" class="hold" data-act="r+">R+</button>
+              <button type="button" class="hold" data-act="r-">R−</button>
+              <button type="button" class="hold" data-act="spinL">左旋</button>
+              <button type="button" class="hold" data-act="spinR">右旋</button>
+            </div>
+          </div>
+          <div style="flex:1;min-width:230px">
+            <div class="slider"><span class="lab">X 直行</span><input type="range" id="p-velx" min="0.05" max="1.5" step="0.01" value="0.4" /><input type="number" id="n-velx" step="0.01" value="0.4" /></div>
+            <div class="slider"><span class="lab">旋转</span><input type="range" id="p-spin" min="0.05" max="1.5" step="0.01" value="0.3" /><input type="number" id="n-spin" step="0.01" value="0.3" /></div>
+            <div class="slider"><span class="lab">Y 点动</span><input type="range" id="p-vely" min="0.05" max="1.5" step="0.01" value="0.3" /><input type="number" id="n-vely" step="0.01" value="0.3" /></div>
+            <div class="slider"><span class="lab">Z 点动</span><input type="range" id="p-velz" min="0.02" max="0.8" step="0.01" value="0.2" /><input type="number" id="n-velz" step="0.01" value="0.2" /></div>
+            <div class="slider"><span class="lab">R 点动</span><input type="range" id="p-velr" min="0.05" max="1.5" step="0.01" value="0.2" /><input type="number" id="n-velr" step="0.01" value="0.2" /></div>
+            <p class="hint">键盘：W/S=X± · A/D=Y∓/Y± · Q/E=Z± · Z/C=R± · X/V=左/右旋</p>
           </div>
         </div>
-      </section>
+      </div>
 
-      <section>
-        <h2>X 双驱监视 · 调试主屏</h2>
-        <div class="x-monitor">
-          <div class="metric">
-            <div class="k">VelCmd M1</div>
-            <div class="v" id="m-vel1">0.000</div>
-            <div class="sub">AxisFb_rVelCmdM1</div>
-          </div>
-          <div class="metric">
-            <div class="k">VelCmd M2</div>
-            <div class="v" id="m-vel2">0.000</div>
-            <div class="sub">AxisFb_rVelCmdM2</div>
-          </div>
-          <div class="metric">
-            <div class="k">Pos M1</div>
-            <div class="v" id="m-pos1">0.000</div>
-            <div class="sub">AxisFb_rPosM1</div>
-          </div>
-          <div class="metric">
-            <div class="k">Pos M2</div>
-            <div class="v" id="m-pos2">0.000</div>
-            <div class="sub">AxisFb_rPosM2</div>
-          </div>
-          <div class="metric wide delta" id="metric-dpos">
-            <div class="k">ΔPos = M1 − M2</div>
-            <div class="v" id="m-dpos">0.000</div>
-            <div class="sub" id="m-dvel">ΔVelCmd = 0.000 · 样本 N=0</div>
-            <canvas class="spark" id="spark-dpos" width="640" height="72"></canvas>
-          </div>
+      <div class="card">
+        <h2>回零</h2>
+        <div class="row">
+          <label><input type="radio" name="home-axis" value="1" checked /> Y</label>
+          <label><input type="radio" name="home-axis" value="2" /> Z</label>
+          <label><input type="radio" name="home-axis" value="3" /> R</label>
+          <button type="button" id="btn-home-exec">按选中轴回零</button>
         </div>
-        <div class="row" style="margin-top:.9rem">
+        <div class="row">
+          <button type="button" id="btn-home-y">Y 回零</button>
+          <button type="button" id="btn-home-z">Z 回零</button>
+          <button type="button" id="btn-home-r">R 回零</button>
+        </div>
+        <div class="row">
+          <span class="pill" id="p-homed-y">Y Homed=F</span>
+          <span class="pill" id="p-homed-z">Z Homed=F</span>
+          <span class="pill" id="p-homed-r">R Homed=F</span>
+          <span class="pill" id="p-home-busy">Busy=—</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>位置 / 轴反馈</h2>
+        <table>
+          <tr><th>Y Pos</th><td id="out-posy">—</td></tr>
+          <tr><th>Z Pos</th><td id="out-posz">—</td></tr>
+          <tr><th>R Pos</th><td id="out-posr">—</td></tr>
+          <tr><th>X Pos M1/M2</th><td id="out-posx">—</td></tr>
+          <tr><th>完整就绪</th><td id="out-ready">—</td></tr>
+          <tr><th>走距完成</th><td id="out-done">—</td></tr>
+        </table>
+        <div class="row" style="margin-top:.6rem">
+          <span class="pill" id="f-m1">M1 ok</span><span class="pill" id="f-m2">M2 ok</span>
+          <span class="pill" id="f-y">Y ok</span><span class="pill" id="f-z">Z ok</span><span class="pill" id="f-r">R ok</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>加减速 Acc / Dec</h2>
+        <div class="slider"><span class="lab">Acc X</span><input type="range" id="p-accx" min="1" max="500" step="1" value="100" /><input type="number" id="n-accx" value="100" /></div>
+        <div class="slider"><span class="lab">Dec X</span><input type="range" id="p-decx" min="1" max="500" step="1" value="100" /><input type="number" id="n-decx" value="100" /></div>
+        <div class="slider"><span class="lab">Acc Y</span><input type="range" id="p-accy" min="1" max="500" step="1" value="100" /><input type="number" id="n-accy" value="100" /></div>
+        <div class="slider"><span class="lab">Dec Y</span><input type="range" id="p-decy" min="1" max="500" step="1" value="100" /><input type="number" id="n-decy" value="100" /></div>
+        <div class="slider"><span class="lab">Acc Z</span><input type="range" id="p-accz" min="1" max="500" step="1" value="100" /><input type="number" id="n-accz" value="100" /></div>
+        <div class="slider"><span class="lab">Dec Z</span><input type="range" id="p-decz" min="1" max="500" step="1" value="100" /><input type="number" id="n-decz" value="100" /></div>
+        <div class="slider"><span class="lab">Acc R</span><input type="range" id="p-accr" min="1" max="500" step="1" value="100" /><input type="number" id="n-accr" value="100" /></div>
+        <div class="slider"><span class="lab">Dec R</span><input type="range" id="p-decr" min="1" max="500" step="1" value="100" /><input type="number" id="n-decr" value="100" /></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= X DUAL ================= -->
+  <section class="panel" id="panel-xdual">
+    <div class="grid">
+      <div class="card wide">
+        <h2>X 双电机速度透传 · 调试主屏</h2>
+        <div class="metrics">
+          <div class="metric big good"><div class="k">M1 实际速度 m/s</div><div class="v" id="m1-act">0.000</div><div class="sub">AxisFb_rVelActM1</div></div>
+          <div class="metric big good"><div class="k">M2 实际速度 m/s</div><div class="v" id="m2-act">0.000</div><div class="sub">AxisFb_rVelActM2</div></div>
+          <div class="metric"><div class="k">M1 速度指令</div><div class="v" id="m1-cmd">0.000</div><div class="sub">AxisFb_rVelCmdM1</div></div>
+          <div class="metric"><div class="k">M2 速度指令</div><div class="v" id="m2-cmd">0.000</div><div class="sub">AxisFb_rVelCmdM2</div></div>
+          <div class="metric"><div class="k">ΔVel = M1−M2</div><div class="v" id="dvel">0.000</div><div class="sub">实际速度差</div></div>
+          <div class="metric"><div class="k">ΔPos = M1−M2</div><div class="v" id="dpos">0.000</div><div class="sub">同步误差 AxisFb_rSyncErr</div></div>
+          <div class="metric"><div class="k">M1 位置 m</div><div class="v" id="m1-pos">0.000</div><div class="sub">AxisFb_rPosM1</div></div>
+          <div class="metric"><div class="k">M2 位置 m</div><div class="v" id="m2-pos">0.000</div><div class="sub">AxisFb_rPosM2</div></div>
+        </div>
+        <div class="row" style="margin-top:.6rem">
+          <span class="pill" id="dm1">M1 Moving=F</span>
+          <span class="pill" id="dm2">M2 Moving=F</span>
+          <span class="pill" id="dp1">M1 Power=F</span>
+          <span class="pill" id="dp2">M2 Power=F</span>
+          <span class="pill" id="sync-warn">SyncWarn=F</span>
+          <span class="pill" id="sync-fault">SyncFault=F</span>
+          <span class="pill" id="d-act-m1">Direct M1=—</span>
+          <span class="pill" id="d-act-m2">Direct M2=—</span>
+          <span class="pill" id="d-active">直控在役=F</span>
+          <span class="pill" id="d-online">视觉在线=F</span>
+        </div>
+        <p class="hint">实际速度为两条电机编码器反馈（fActVelocity）；指令为含纠偏/差速后的给定。指令相等而 ΔPos 拉开 → 双驱位置环互顶；指令本身分叉 → 查 trim/命令源。</p>
+      </div>
+
+      <div class="card">
+        <h2>速度趋势（命令 vs 实际）</h2>
+        <canvas id="trend-vel" width="900" height="240"></canvas>
+      </div>
+      <div class="card">
+        <h2>位置趋势（M1 / M2 / ΔPos）</h2>
+        <canvas id="trend-pos" width="900" height="240"></canvas>
+      </div>
+
+      <div class="card">
+        <h2>快照 / 导出</h2>
+        <div class="row">
           <button type="button" class="primary" id="btn-snap">记录快照</button>
           <button type="button" id="btn-clear-hist">清空曲线/历史</button>
-          <label class="opt"><input type="checkbox" id="auto-snap" /> 运动中每 0.5s 自动快照</label>
+          <button type="button" id="btn-export-csv">导出 CSV</button>
+          <label><input type="checkbox" id="auto-snap" /> 点动自动快照</label>
         </div>
-        <p class="hint">指令相等而 ΔPos 拉开/抖动 → 双驱独立位置环互顶。指令本身分叉 → 查 trim/命令源。</p>
-      </section>
-
-      <section>
-        <h2>位置 · 其它轴</h2>
-        <table class="fb-table">
-          <tr><th>Y Pos</th><td id="fb-posy">—</td></tr>
-          <tr><th>Z Pos</th><td id="fb-posz">—</td></tr>
-          <tr><th>R Pos</th><td id="fb-posr">—</td></tr>
-          <tr><th>ForceShow</th><td id="fb-force">—</td></tr>
-          <tr><th>MoveDone X/Y</th><td id="fb-done">—</td></tr>
-        </table>
-      </section>
+        <div class="log" id="snap-list" style="max-height:220px"></div>
+      </div>
     </div>
+  </section>
 
-    <!-- ===== 右：全量状态 + 日志 ===== -->
-    <div class="col">
-      <section>
-        <h2>轴故障 · 力 · 通讯</h2>
-        <div class="pills" id="fault-pills">
-          <span class="pill" id="f-m1">M1</span>
-          <span class="pill" id="f-m2">M2</span>
-          <span class="pill" id="f-y">Y</span>
-          <span class="pill" id="f-z">Z</span>
-          <span class="pill" id="f-r">R</span>
+  <!-- ================= DEBUG ================= -->
+  <section class="panel" id="panel-debug">
+    <div class="grid">
+      <div class="card">
+        <h2>X 直控手测（M1/M2 给定速度）</h2>
+        <div class="row"><label><input type="checkbox" id="x-direct" /> 直控使能 HMI_xDirectEnable</label></div>
+        <div class="slider"><span class="lab">M1 给定</span><input type="range" id="p-dvm1" min="-1.5" max="1.5" step="0.005" value="0" /><input type="number" id="n-dvm1" step="0.005" value="0" /></div>
+        <div class="slider"><span class="lab">M2 给定</span><input type="range" id="p-dvm2" min="-1.5" max="1.5" step="0.005" value="0" /><input type="number" id="n-dvm2" step="0.005" value="0" /></div>
+        <div class="row">
+          <button type="button" id="btn-dvm-fwd">同向 +0.3</button>
+          <button type="button" id="btn-dvm-rev">同向 −0.3</button>
+          <button type="button" id="btn-dvm-stop">M1/M2=0</button>
+          <button type="button" class="danger" id="btn-dvm-off">退出直控</button>
         </div>
-        <table class="fb-table">
-          <tr><th>HMI_eDevState / OpMode</th><td id="fb-dev">—</td></tr>
-          <tr><th>Tcp_iCommStatus</th><td id="fb-tcp">—</td></tr>
-          <tr><th>Tcp Connected / Timeout</th><td id="fb-tcp2">—</td></tr>
-          <tr><th>Force Comm / TO / SlaveFail</th><td id="fb-fdiag">—</td></tr>
-          <tr><th>Tare Busy / Done</th><td id="fb-tare">—</td></tr>
-          <tr><th>AxisFb_xReady</th><td id="fb-ready">—</td></tr>
-          <tr><th>Lamp EStop / Ok / Fault</th><td id="fb-lamps">—</td></tr>
-        </table>
-      </section>
+        <p class="hint">直控为调试用：手动模式、与点动/自动互斥；Web 关闭或断线时网关安全侧清零。</p>
+      </div>
 
-      <section>
-        <h2>当前命令镜像（本页写出）</h2>
-        <table class="fb-table" id="cmd-mirror">
-          <tr><th>AutoMode</th><td id="cm-mode">MAN</td></tr>
-          <tr><th>Jog / Spin</th><td id="cm-jog">—</td></tr>
-          <tr><th>VelX / Spin / AccX</th><td id="cm-vel">—</td></tr>
-          <tr><th>ForceGuide / KpTrack / Herr</th><td id="cm-track">—</td></tr>
-        </table>
-      </section>
+      <div class="card">
+        <h2>命令控制台（白名单 JSON）</h2>
+        <textarea id="cmd-json" rows="5" style="width:100%" placeholder='{"HMI_rJogVelX":0.5,"HMI_rSpinVel":0.3}'></textarea>
+        <div class="row">
+          <button type="button" class="primary" id="btn-send-json">发送</button>
+          <button type="button" id="btn-preset-safe">急停=FALSE</button>
+          <button type="button" id="btn-preset-normal">急停=TRUE</button>
+          <button type="button" id="btn-preset-auto">切自动</button>
+          <button type="button" id="btn-preset-manual">切手动</button>
+        </div>
+        <p class="hint">仅接受 config/modbus-map.json 白名单内的命令字段；非法字段返回 err。</p>
+      </div>
 
-      <section>
-        <h2>快照与动作日志</h2>
+      <div class="card">
+        <h2>网关健康 /health</h2>
+        <div class="row"><button type="button" id="btn-health">刷新</button><span class="pill" id="health-age">—</span></div>
+        <pre class="health" id="health">点刷新…</pre>
+      </div>
+
+      <div class="card wide">
+        <h2>寄存器表（/map · 命令 1000..1063 / 状态 1100..1163）</h2>
+        <div class="tblwrap"><table id="regtable">
+          <thead><tr><th>区</th><th>Holding</th><th>变量</th><th>类型</th><th>当前值</th><th>说明</th></tr></thead>
+          <tbody></tbody>
+        </table></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= LOG ================= -->
+  <section class="panel" id="panel-log">
+    <div class="grid">
+      <div class="card wide">
+        <h2>事件 / 报警日志</h2>
+        <div class="row"><button type="button" id="btn-log-clear">清空</button><button type="button" id="btn-log-export">导出 CSV</button></div>
         <div class="log" id="log"></div>
-      </section>
+      </div>
     </div>
-  </div>
+  </section>
+</div>
 
-  <script>
+<div id="toast"></div>
+
+<script>
 (() => {
+  'use strict';
+  const $ = (id) => document.getElementById(id);
   const STEP_NAME = ['Idle', 'MoveX', 'Y→0', 'PressZ', 'MoveY+F', 'Multi', 'Done'];
-  const ACT = {
-    'x+': 'HMI_xJogXPos', 'x-': 'HMI_xJogXNeg',
-    spinL: 'HMI_xSpinLeft', spinR: 'HMI_xSpinRight',
-    'y+': 'HMI_xJogYPos', 'y-': 'HMI_xJogYNeg',
-    'z+': 'HMI_xJogZPos', 'z-': 'HMI_xJogZNeg',
-    'r+': 'HMI_xJogRPos', 'r-': 'HMI_xJogRNeg',
-  };
   const TCP_TXT = ['offline', 'connecting', 'online', 'timeout', 'error'];
+
+  const CMD_LABELS = {
+    HMI_xEStop: '急停请求', HMI_xStop: '停止', HMI_xStopHold3s: '复位', HMI_xStart: '启动', HMI_xEnable: '启动别名',
+    HMI_xAutoMode: '自动模式', HMI_xJogXPos: 'X+', HMI_xJogXNeg: 'X-', HMI_xSpinLeft: '左旋', HMI_xSpinRight: '右旋',
+    HMI_xJogYPos: 'Y+', HMI_xJogYNeg: 'Y-', HMI_xJogZPos: 'Z+', HMI_xJogZNeg: 'Z-', HMI_xJogRPos: 'R+', HMI_xJogRNeg: 'R-',
+    HMI_xHomeY: 'Y回零', HMI_xHomeZ: 'Z回零', HMI_xHomeR: 'R回零', HMI_xHomeExec: '回零执行',
+    HMI_xAutoStart: '自动启动', HMI_xAutoAbort: '自动中止',
+    HMI_xForceSimEnable: '力模拟', HMI_xForceTare: '去皮', HMI_xForceUntare: '取消去皮', HMI_xForceGuide: '力引导',
+    HMI_iHomeAxis: '回零轴', HMI_iAutoPasses: '道数',
+    HMI_rJogVelX: 'X直行速度', HMI_rSpinVel: '旋转速度', HMI_rJogVelY: 'Y点动速度', HMI_rJogVelZ: 'Z点动速度', HMI_rJogVelR: 'R点动速度',
+    HMI_rAutoDistX: '自动X走距', HMI_rAutoVelX: '自动X速度', HMI_rAutoVelY: '自动Y速度', HMI_rAutoVelZ: '自动Z速度',
+    HMI_rWheelBase: '跨距', HMI_rForceSet: '恒力设定', HMI_rForceSim: '力模拟值', HMI_rHeadingErr: '航向误差',
+    HMI_rKpTrack: '纠偏Kp', HMI_rKpForce: '力Kp',
+    HMI_rAccX: 'X加速度', HMI_rDecX: 'X减速度', HMI_rAccY: 'Y加速度', HMI_rDecY: 'Y减速度',
+    HMI_rAccZ: 'Z加速度', HMI_rDecZ: 'Z减速度', HMI_rAccR: 'R加速度', HMI_rDecR: 'R减速度',
+    HMI_xDirectEnable: '直控使能', HMI_rVelM1Set: '直控M1给定', HMI_rVelM2Set: '直控M2给定',
+  };
+  const STATUS_LABELS = {
+    Tcp_iCommStatus: '通讯诊断', HMI_eDevState: '设备态', HMI_eOpMode: '运行方式', HMI_iAlarmShow: '报警号',
+    HMI_iAutoStepShow: '自动步号', HMI_xDevStop: '停止灯', HMI_xDevRun: '运行灯', HMI_xDevError: '故障灯',
+    HMI_xLampEStop: '急停灯', HMI_xLampEnableOk: '就绪灯', HMI_xLampFault: '故障指示',
+    HMI_xAutoBusy: '自动忙', HMI_xAutoDone: '自动完成',
+    HMI_xHomedY: 'Y已回零', HMI_xHomedZ: 'Z已回零', HMI_xHomedR: 'R已回零',
+    HMI_xHomeBusyY: 'Y回零中', HMI_xHomeBusyZ: 'Z回零中', HMI_xHomeBusyR: 'R回零中',
+    Tcp_xConnected: '远程连接', Tcp_xTimeout: '远程超时',
+    Force_xCommOk: '力通讯', Force_xTimeout: '力超时', Force_xSlaveFail: '力从站失败', Force_xTareBusy: '去皮中', Force_xTareDone: '去皮完成',
+    AxisFb_xReady: '全轴就绪', AxisFb_xMoveDoneX: 'X走距完成', AxisFb_xMoveDoneY: 'Y完成',
+    AxisFb_xFaultM1: 'M1故障', AxisFb_xFaultM2: 'M2故障', AxisFb_xFaultY: 'Y故障', AxisFb_xFaultZ: 'Z故障', AxisFb_xFaultR: 'R故障',
+    AxisFb_xHomedY: 'Y回零(轴)', AxisFb_xHomedZ: 'Z回零(轴)', AxisFb_xHomedR: 'R回零(轴)',
+    HMI_rForceShow: '力显示',
+    AxisFb_rPosM1: 'M1位置', AxisFb_rPosM2: 'M2位置', AxisFb_rPosY: 'Y位置', AxisFb_rPosZ: 'Z位置', AxisFb_rPosR: 'R位置',
+    AxisFb_rVelCmdM1: 'M1速度指令', AxisFb_rVelCmdM2: 'M2速度指令',
+    AxisFb_rVelActM1: 'M1实际速度', AxisFb_rVelActM2: 'M2实际速度',
+    AxisFb_xMovingM1: 'M1运动中', AxisFb_xMovingM2: 'M2运动中', AxisFb_xPoweredM1: 'M1使能', AxisFb_xPoweredM2: 'M2使能',
+    AxisFb_xSyncWarn: 'X同步预警', AxisFb_xSyncFault: 'X同步故障', AxisFb_rSyncErr: 'X同步误差',
+    Direct_xActive: '直控在役', Direct_xOnline: '视觉在线', Direct_xEnable: '直控使能',
+    Direct_rVelM1Act: '直控M1实际速度', Direct_rVelM2Act: '直控M2实际速度', Direct_wSeqEcho: '视觉序号回显',
+  };
 
   const W = {
     HMI_xEStop: true,
@@ -582,42 +447,33 @@
     HMI_xJogYPos: false, HMI_xJogYNeg: false,
     HMI_xJogZPos: false, HMI_xJogZNeg: false,
     HMI_xJogRPos: false, HMI_xJogRNeg: false,
-    HMI_xHomeY: false, HMI_xHomeZ: false, HMI_xHomeR: false,
-    HMI_iHomeAxis: 1, HMI_xHomeExec: false,
-    HMI_rJogVelX: 0.4, HMI_rSpinVel: 0.3,
-    HMI_rJogVelY: 0.3, HMI_rJogVelZ: 0.2, HMI_rJogVelR: 0.2,
-    HMI_rAccX: 100, HMI_rDecX: 100,
-    HMI_rAccY: 100, HMI_rDecY: 100,
-    HMI_rAccZ: 100, HMI_rDecZ: 100,
-    HMI_rAccR: 100, HMI_rDecR: 100,
+    HMI_xHomeY: false, HMI_xHomeZ: false, HMI_xHomeR: false, HMI_xHomeExec: false,
     HMI_xAutoStart: false, HMI_xAutoAbort: false,
-    HMI_rAutoDistX: 1.0, HMI_rAutoVelX: 0.4,
-    HMI_rAutoVelY: 0.3, HMI_rAutoVelZ: 0.15,
-    HMI_rWheelBase: 5.0, HMI_rForceSet: 100,
-    HMI_iAutoPasses: 1,
-    HMI_xForceSimEnable: false, HMI_rForceSim: 0,
-    HMI_xForceTare: false, HMI_xForceUntare: false,
-    HMI_xForceGuide: false,
-    HMI_rKpForce: 1.0, HMI_rKpTrack: 0.0, HMI_rHeadingErr: 0.0,
+    HMI_xForceSimEnable: false,
+    HMI_xForceTare: false, HMI_xForceUntare: false, HMI_xForceGuide: false,
+    HMI_iHomeAxis: 1, HMI_iAutoPasses: 1,
+    HMI_rJogVelX: 0.4, HMI_rSpinVel: 0.3, HMI_rJogVelY: 0.3, HMI_rJogVelZ: 0.2, HMI_rJogVelR: 0.2,
+    HMI_rAutoDistX: 1.0, HMI_rAutoVelX: 0.4, HMI_rAutoVelY: 0.3, HMI_rAutoVelZ: 0.15,
+    HMI_rWheelBase: 5.0, HMI_rForceSet: 100, HMI_rForceSim: 0,
+    HMI_rHeadingErr: 0.0, HMI_rKpTrack: 0.0, HMI_rKpForce: 1.0,
+    HMI_rAccX: 100, HMI_rDecX: 100, HMI_rAccY: 100, HMI_rDecY: 100,
+    HMI_rAccZ: 100, HMI_rDecZ: 100, HMI_rAccR: 100, HMI_rDecR: 100,
+    HMI_xDirectEnable: false, HMI_rVelM1Set: 0, HMI_rVelM2Set: 0,
   };
+  const S = {};
+  const D = {};
 
-  const S = {
-    connected: false, mode: '—',
-    eDevState: 0, eOpMode: 0,
-    devStop: true, devRun: false, devError: false,
-    alarm: 0, step: 0,
-    busy: false, done: false, force: 0,
-    tareBusy: false, tareDone: false, forceOk: false,
-    forceTo: false, forceSlave: false,
-    lampEStop: false, lampOk: false, lampFault: false,
-    posM1: 0, posM2: 0, posY: 0, posZ: 0, posR: 0,
-    vel1: 0, vel2: 0,
-    ready: false, moveDoneX: false, moveDoneY: false,
-    faultM1: false, faultM2: false, faultY: false, faultZ: false, faultR: false,
-    homedY: false, homedZ: false, homedR: false,
-    homeBusyY: false, homeBusyZ: false, homeBusyR: false,
-    tcpComm: 0, tcpConn: false, tcpTo: false,
-    lastRx: 0, rxCount: 0,
+  const ACT = {
+    'x+': 'HMI_xJogXPos', 'x-': 'HMI_xJogXNeg',
+    spinL: 'HMI_xSpinLeft', spinR: 'HMI_xSpinRight',
+    'y+': 'HMI_xJogYPos', 'y-': 'HMI_xJogYNeg',
+    'z+': 'HMI_xJogZPos', 'z-': 'HMI_xJogZNeg',
+    'r+': 'HMI_xJogRPos', 'r-': 'HMI_xJogRNeg',
+  };
+  const KEYMAP = {
+    KeyW: 'x+', KeyS: 'x-', KeyA: 'y-', KeyD: 'y+',
+    KeyQ: 'z+', KeyE: 'z-', KeyZ: 'r+', KeyC: 'r-',
+    KeyX: 'spinL', KeyV: 'spinR',
   };
 
   let ws = null;
@@ -625,30 +481,46 @@
   let dirty = false;
   let controlClaimed = false;
   let lastSend = 0;
-  let stopHoldTimer = null;
+  let clientId = null;
+  let leaseOwner = null;
+  let rtt = null;
+  let MAP = null;
+  const regCells = {};
+  const HIST_MAX = 240;
+  const HIST = { t: [], vel1: [], vel2: [], act1: [], act2: [], p1: [], p2: [] };
+  const logs = [];
   let lastAutoSnap = 0;
-  const dposHist = [];
-  const HIST_MAX = 120;
 
-  const $ = (id) => document.getElementById(id);
-  const logEl = $('log');
-  function log(m) {
-    const d = document.createElement('div');
-    d.textContent = new Date().toLocaleTimeString() + '  ' + m;
-    logEl.prepend(d);
-    while (logEl.children.length > 200) logEl.removeChild(logEl.lastChild);
+  const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+  const fmt = (v, d) => {
+    if (typeof v === 'boolean') return v ? 'T' : 'F';
+    const n = Number(v);
+    return Number.isFinite(n) ? n.toFixed(d == null ? 3 : d) : '—';
+  };
+  const setText = (id, v) => { const el = $(id); if (!el) return; const s = String(v); if (el.textContent !== s) el.textContent = s; };
+  const setPill = (id, on, cls) => { const el = $(id); if (!el) return; el.classList.toggle(cls || 'ok', !!on); };
+
+  function log(msg, kind) {
+    const line = new Date().toLocaleTimeString() + '  ' + msg;
+    logs.push({ at: Date.now(), kind: kind || 'info', msg });
+    const el = $('log');
+    if (el) {
+      const d = document.createElement('div');
+      d.textContent = line;
+      if (kind === 'err') d.style.color = 'var(--danger)';
+      if (kind === 'warn') d.style.color = 'var(--warn)';
+      el.prepend(d);
+      while (el.children.length > 400) el.removeChild(el.lastChild);
+    }
+    if (kind === 'err') toast(msg);
   }
-
-  function setConn(ok, mode) {
-    S.connected = ok;
-    if (mode) S.mode = mode;
-    const c = $('conn');
-    c.textContent = ok ? 'WS: Connected' : 'WS: Disconnected';
-    c.className = 'pill ' + (ok ? 'ok' : 'bad');
-    $('plc-mode').textContent = 'PLC: ' + S.mode;
-    document.querySelectorAll('.hold, #btn-auto-start, #btn-start').forEach((el) => {
-      el.disabled = !ok;
-    });
+  function toast(msg) {
+    const box = $('toast');
+    if (!box) return;
+    const d = document.createElement('div');
+    d.textContent = msg;
+    box.appendChild(d);
+    setTimeout(() => { if (d.parentNode) d.parentNode.removeChild(d); }, 4000);
   }
 
   function flush(force) {
@@ -656,284 +528,465 @@
     if (!controlClaimed || !dirty) return;
     if (!force && now - lastSend < 50) return;
     if (!ws || ws.readyState !== 1) return;
-    ws.send(JSON.stringify({ t: 'w', seq: ++seq, ...W }));
+    ws.send(JSON.stringify(Object.assign({ t: 'w', seq: ++seq }, W)));
     lastSend = now;
     dirty = false;
+    if (now - lastWriteLog > 1000) { lastWriteLog = now; log('→ 写入网关 seq=' + seq); }
   }
 
-  function patch(partial, userInitiated = true) {
+  function patch(partial, userInitiated) {
     Object.assign(W, partial);
-    if (userInitiated) controlClaimed = true;
+    if (userInitiated !== false) controlClaimed = true;
     if (!controlClaimed) return;
     dirty = true;
     flush(true);
   }
 
-  function bit(v) {
-    return '<span class="bit' + (v ? '' : ' off') + '">' + (v ? 'T' : 'F') + '</span>';
-  }
-
-  function drawSpark() {
-    const c = $('spark-dpos');
-    if (!c) return;
-    const ctx = c.getContext('2d');
-    const w = c.width, h = c.height;
-    ctx.clearRect(0, 0, w, h);
-    ctx.strokeStyle = '#3a4654';
-    ctx.beginPath();
-    ctx.moveTo(0, h / 2); ctx.lineTo(w, h / 2);
-    ctx.stroke();
-    if (dposHist.length < 2) return;
-    let max = 1e-6;
-    for (const v of dposHist) max = Math.max(max, Math.abs(v));
-    ctx.strokeStyle = '#e0a53a';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    dposHist.forEach((v, i) => {
-      const x = (i / (HIST_MAX - 1)) * (w - 2) + 1;
-      const y = h / 2 - (v / max) * (h * 0.42);
-      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-    });
-    ctx.stroke();
-  }
-
-  function snapshot(tag) {
-    const dpos = S.posM1 - S.posM2;
-    const dvel = S.vel1 - S.vel2;
-    const line = [
-      tag || 'SNAP',
-      'vel=' + S.vel1.toFixed(3) + '/' + S.vel2.toFixed(3),
-      'pos=' + S.posM1.toFixed(4) + '/' + S.posM2.toFixed(4),
-      'dPos=' + dpos.toFixed(4),
-      'dVel=' + dvel.toFixed(4),
-      'Y/Z/R=' + S.posY.toFixed(3) + '/' + S.posZ.toFixed(3) + '/' + Number(S.posR).toFixed(2),
-      'alm=' + S.alarm,
-      'step=' + S.step,
-    ].join('  ');
-    log(line);
-  }
-
-  function render() {
-    const stop = S.devStop, run = S.devRun, err = S.devError;
-    $('lamp-stop').textContent = 'HMI_xDevStop=' + (stop ? 'T' : 'F');
-    $('lamp-stop').className = 'pill' + (stop ? ' on ok' : '');
-    $('lamp-run').textContent = 'HMI_xDevRun=' + (run ? 'T' : 'F');
-    $('lamp-run').className = 'pill' + (run ? ' on ok' : '');
-    $('lamp-err').textContent = 'HMI_xDevError=' + (err ? 'T' : 'F');
-    $('lamp-err').className = 'pill' + (err ? ' on bad' : '');
-    $('p-alarm').textContent = 'Alarm=' + S.alarm;
-    $('p-alarm').className = 'pill' + (S.alarm ? ' warn' : '');
-    $('p-ready').textContent = 'Ready=' + (S.ready ? 'T' : 'F');
-    $('p-ready').className = 'pill' + (S.ready ? ' on ok' : '');
-
-    $('tcp-st').textContent = 'Tcp=' + (TCP_TXT[S.tcpComm] || S.tcpComm);
-    $('tcp-st').className = 'pill ' + (S.tcpConn && !S.tcpTo ? 'ok' : 'warn');
-    $('ctrl-src').textContent = controlClaimed ? '控制源=本页(Web写租约)' : '控制源=未占用';
-
-    const dpos = S.posM1 - S.posM2;
-    const dvel = S.vel1 - S.vel2;
-    $('m-vel1').textContent = S.vel1.toFixed(3);
-    $('m-vel2').textContent = S.vel2.toFixed(3);
-    $('m-pos1').textContent = S.posM1.toFixed(4);
-    $('m-pos2').textContent = S.posM2.toFixed(4);
-    $('m-dpos').textContent = (dpos >= 0 ? '+' : '') + dpos.toFixed(4);
-    $('m-dvel').textContent = 'ΔVelCmd = ' + dvel.toFixed(4) + ' · 样本 N=' + dposHist.length;
-    const md = $('metric-dpos');
-    md.classList.toggle('warn-hi', Math.abs(dpos) > 0.02);
-
-    $('fb-posy').textContent = S.posY.toFixed(4) + ' m';
-    $('fb-posz').textContent = S.posZ.toFixed(4) + ' m';
-    $('fb-posr').textContent = Number(S.posR).toFixed(3) + ' °';
-    $('fb-force').textContent = S.force.toFixed(2) + ' N';
-    $('fb-done').innerHTML = 'X=' + bit(S.moveDoneX) + '  Y=' + bit(S.moveDoneY);
-
-    $('fb-dev').textContent =
-      'eDev=' + S.eDevState +
-      ' Stop=' + (S.devStop ? 'T' : 'F') +
-      ' Run=' + (S.devRun ? 'T' : 'F') +
-      ' Err=' + (S.devError ? 'T' : 'F') +
-      ' / ' + (S.eOpMode ? 'AUTO' : 'MAN');
-    $('fb-tcp').textContent = S.tcpComm + ' (' + (TCP_TXT[S.tcpComm] || '?') + ')';
-    $('fb-tcp2').innerHTML = bit(S.tcpConn) + ' / ' + bit(S.tcpTo);
-    $('fb-fdiag').innerHTML = bit(S.forceOk) + ' / ' + bit(S.forceTo) + ' / ' + bit(S.forceSlave);
-    $('fb-tare').innerHTML = bit(S.tareBusy) + ' / ' + bit(S.tareDone);
-    $('fb-ready').innerHTML = bit(S.ready);
-    $('fb-lamps').innerHTML = bit(S.lampEStop) + ' / ' + bit(S.lampOk) + ' / ' + bit(S.lampFault);
-
-    const setFault = (id, on, name) => {
-      const el = $(id);
-      el.textContent = name + (on ? ' FAULT' : ' ok');
-      el.className = 'pill' + (on ? ' bad' : ' ok');
-    };
-    setFault('f-m1', S.faultM1, 'M1');
-    setFault('f-m2', S.faultM2, 'M2');
-    setFault('f-y', S.faultY, 'Y');
-    setFault('f-z', S.faultZ, 'Z');
-    setFault('f-r', S.faultR, 'R');
-    $('leg-m1').classList.toggle('fault', S.faultM1);
-    $('leg-m2').classList.toggle('fault', S.faultM2);
-
-    $('p-homed-y').textContent = 'Y Homed=' + (S.homedY ? 'T' : 'F');
-    $('p-homed-y').className = 'pill' + (S.homedY ? ' on ok' : '');
-    $('p-homed-z').textContent = 'Z Homed=' + (S.homedZ ? 'T' : 'F');
-    $('p-homed-z').className = 'pill' + (S.homedZ ? ' on ok' : '');
-    $('p-homed-r').textContent = 'R Homed=' + (S.homedR ? 'T' : 'F');
-    $('p-homed-r').className = 'pill' + (S.homedR ? ' on ok' : '');
-    const busy = S.homeBusyY ? 'Y' : S.homeBusyZ ? 'Z' : S.homeBusyR ? 'R' : '—';
-    $('p-home-busy').textContent = 'Busy=' + busy;
-    $('p-home-busy').className = 'pill' + (busy !== '—' ? ' warn' : '');
-
-    if ($('p-step')) {
-      $('p-step').textContent = 'Step=' + S.step + ' ' + (STEP_NAME[S.step] || '');
-      $('p-busy').textContent = 'Busy=' + (S.busy ? 'T' : 'F');
-      $('p-done').textContent = 'Done=' + (S.done ? 'T' : 'F');
-      document.querySelectorAll('#steps .step').forEach((el) => {
-        const n = Number(el.dataset.s);
-        el.classList.toggle('active', n === S.step);
-        el.classList.toggle('done', n < S.step && S.step > 0);
-      });
-      const fset = W.HMI_rForceSet || 1;
-      $('force-fill').style.width = Math.min(100, (S.force / fset) * 100) + '%';
-      $('force-lab').textContent = 'F_act=' + S.force.toFixed(1) + ' / F_set=' + fset + ' N';
-      const pt = $('p-tare');
-      pt.textContent = S.tareBusy ? 'Tare=Busy' : (S.tareDone ? 'Tare=Done' : 'Tare=—');
-      pt.className = 'pill' + (S.tareBusy ? ' warn' : (S.tareDone ? ' on' : ''));
-      $('p-force-diag').textContent =
-        'Comm=' + (S.forceOk ? 'OK' : '—') +
-        (S.forceTo ? ' TO' : '') + (S.forceSlave ? ' SlaveFail' : '');
-      $('p-force-diag').className = 'pill' + (S.forceTo || S.forceSlave ? ' bad' : (S.forceOk ? ' ok' : ''));
-    }
-
-    $('panel-manual').classList.toggle('panel-hidden', W.HMI_xAutoMode);
-    $('panel-auto').classList.toggle('panel-hidden', !W.HMI_xAutoMode);
-
-    const jogs = [];
-    Object.keys(ACT).forEach((k) => { if (W[ACT[k]]) jogs.push(k); });
-    $('cm-mode').textContent = W.HMI_xAutoMode ? 'AUTO' : 'MAN';
-    $('cm-jog').textContent = jogs.length ? jogs.join(' ') : '—';
-    $('cm-vel').textContent =
-      W.HMI_rJogVelX.toFixed(2) + ' / ' + W.HMI_rSpinVel.toFixed(2) + ' / AccX=' + W.HMI_rAccX;
-    $('cm-track').textContent =
-      (W.HMI_xForceGuide ? 'Guide ' : '') +
-      'KpT=' + W.HMI_rKpTrack + ' Herr=' + W.HMI_rHeadingErr;
-
-    const gy = $('gantry');
-    if (gy) {
-      gy.style.top = (50 + Math.max(-30, Math.min(30, S.posZ * 5))) + '%';
-      const car = $('carriage');
-      if (car) car.style.left = (50 + Math.max(-40, Math.min(40, S.posY * 8))) + '%';
-    }
-    drawSpark();
-
-    if (S.lastRx) {
-      const age = Date.now() - S.lastRx;
-      $('hz').textContent = '刷新≈' + (age < 2000 ? Math.round(1000 / Math.max(age, 1)) + 'Hz*' : '停');
-    }
-  }
-
-  function ingestStatus(msg) {
-    if (msg._gateway) S.mode = msg._gateway;
-    S.eDevState = msg.HMI_eDevState ?? S.eDevState;
-    S.devStop = !!msg.HMI_xDevStop;
-    S.devRun = !!msg.HMI_xDevRun;
-    S.devError = !!msg.HMI_xDevError;
-    S.eOpMode = msg.HMI_eOpMode ?? S.eOpMode;
-    S.alarm = msg.HMI_iAlarmShow ?? S.alarm;
-    S.step = msg.HMI_iAutoStepShow ?? S.step;
-    S.busy = !!msg.HMI_xAutoBusy;
-    S.done = !!msg.HMI_xAutoDone;
-    S.force = Number(msg.HMI_rForceShow ?? S.force);
-    S.tareBusy = !!msg.Force_xTareBusy;
-    S.tareDone = !!msg.Force_xTareDone;
-    S.forceOk = !!msg.Force_xCommOk;
-    S.forceTo = !!msg.Force_xTimeout;
-    S.forceSlave = !!msg.Force_xSlaveFail;
-    S.lampEStop = !!msg.HMI_xLampEStop;
-    S.lampOk = !!msg.HMI_xLampEnableOk;
-    S.lampFault = !!msg.HMI_xLampFault;
-    S.posM1 = Number(msg.AxisFb_rPosM1 ?? S.posM1);
-    S.posM2 = Number(msg.AxisFb_rPosM2 ?? S.posM2);
-    S.posY = Number(msg.AxisFb_rPosY ?? S.posY);
-    S.posZ = Number(msg.AxisFb_rPosZ ?? S.posZ);
-    S.posR = Number(msg.AxisFb_rPosR ?? S.posR);
-    S.vel1 = Number(msg.AxisFb_rVelCmdM1 ?? S.vel1);
-    S.vel2 = Number(msg.AxisFb_rVelCmdM2 ?? S.vel2);
-    S.ready = !!msg.AxisFb_xReady;
-    S.moveDoneX = !!msg.AxisFb_xMoveDoneX;
-    S.moveDoneY = !!msg.AxisFb_xMoveDoneY;
-    S.faultM1 = !!msg.AxisFb_xFaultM1;
-    S.faultM2 = !!msg.AxisFb_xFaultM2;
-    S.faultY = !!msg.AxisFb_xFaultY;
-    S.faultZ = !!msg.AxisFb_xFaultZ;
-    S.faultR = !!msg.AxisFb_xFaultR;
-    S.homedY = !!(msg.HMI_xHomedY ?? msg.AxisFb_xHomedY);
-    S.homedZ = !!(msg.HMI_xHomedZ ?? msg.AxisFb_xHomedZ);
-    S.homedR = !!(msg.HMI_xHomedR ?? msg.AxisFb_xHomedR);
-    S.homeBusyY = !!msg.HMI_xHomeBusyY;
-    S.homeBusyZ = !!msg.HMI_xHomeBusyZ;
-    S.homeBusyR = !!msg.HMI_xHomeBusyR;
-    S.tcpComm = msg.Tcp_iCommStatus ?? S.tcpComm;
-    S.tcpConn = !!msg.Tcp_xConnected;
-    S.tcpTo = !!msg.Tcp_xTimeout;
-    S.lastRx = Date.now();
-    S.rxCount += 1;
-
-    dposHist.push(S.posM1 - S.posM2);
-    if (dposHist.length > HIST_MAX) dposHist.shift();
-
-    const moving = W.HMI_xJogXPos || W.HMI_xJogXNeg || W.HMI_xSpinLeft || W.HMI_xSpinRight;
-    if ($('auto-snap').checked && moving && Date.now() - lastAutoSnap > 500) {
-      lastAutoSnap = Date.now();
-      snapshot('AUTO');
-    }
-
-    setConn(true, msg.Tcp_xConnected === false && S.mode !== 'mock' ? 'offline' : (S.mode || 'live'));
-    render();
+  function pulse(partial, ms) {
+    patch(partial);
+    log('pulse ' + JSON.stringify(partial));
+    setTimeout(() => patch(partial, false), ms || 130);
   }
 
   function connect() {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     ws = new WebSocket(proto + '://' + location.host);
     ws.onopen = () => {
-      setConn(true, S.mode);
+      setConn(true);
       log('WS open');
       ws.send(JSON.stringify({ t: 'ping' }));
     };
     ws.onclose = () => {
       controlClaimed = false;
       dirty = false;
-      setConn(false, S.mode);
-      log('WS closed — retry 2s');
+      leaseOwner = null;
+      setConn(false);
+      log('WS closed — retry 2s', 'warn');
       Object.keys(ACT).forEach((k) => { W[ACT[k]] = false; });
       W.HMI_xStart = false; W.HMI_xEnable = false;
       W.HMI_xAutoStart = false; W.HMI_xStop = false;
       W.HMI_xEStop = true; W.HMI_xForceGuide = false;
       setTimeout(connect, 2000);
     };
-    ws.onerror = () => log('WS error');
+    ws.onerror = () => log('WS error', 'err');
     ws.onmessage = (ev) => {
       let msg;
-      try { msg = JSON.parse(ev.data); } catch { return; }
-      if (msg.t === 'pong') return;
-      if (msg.t === 'err') { log('err ' + (msg.msg || msg.code)); return; }
+      try { msg = JSON.parse(ev.data); } catch (e) { return; }
+      if (msg.t === 'pong') { if (typeof msg.rttBase === 'number') {} applyPong(msg); return; }
+      if (msg.t === 'hello') { clientId = msg.clientId; if (msg.mode) S._gateway = msg.mode; return; }
+      if (msg.t === 'lease') { leaseOwner = msg.owner; return; }
+      if (msg.t === 'wack') { lastAckAt = Date.now(); setText('ack', '送达: ' + new Date(lastAckAt).toLocaleTimeString()); return; }
+      if (msg.t === 'err') { log('err ' + (msg.msg || msg.code), 'err'); return; }
       if (msg.t === 's' || msg.HMI_eDevState !== undefined) ingestStatus(msg);
     };
   }
 
-  function bindParam(rangeId, numId, key, digits) {
+  function applyPong(msg) {
+    if (typeof msg.rtt === 'number') rtt = msg.rtt;
+    else if (lastPingAt) rtt = Date.now() - lastPingAt;
+    setText('lat', 'RTT: ' + (rtt == null ? '—' : rtt + 'ms'));
+  }
+
+  let lastPingAt = 0;
+
+  function bindParam(rangeId, numId, key, digits, onUser) {
     const r = $(rangeId), n = $(numId);
+    if (!r || !n) return;
     const apply = (v, user) => {
-      const num = Number(v);
-      if (Number.isNaN(num)) return;
-      W[key] = num;
-      r.value = String(num);
-      n.value = digits === 0 ? String(Math.round(num)) : num.toFixed(digits);
+      const x = Number(v);
+      if (!Number.isFinite(x)) return;
+      W[key] = x;
+      r.value = String(x);
+      n.value = digits === 0 ? String(Math.round(x)) : x.toFixed(digits);
       if (user) { controlClaimed = true; dirty = true; flush(false); }
+      if (onUser) onUser(x);
     };
     r.addEventListener('input', () => apply(r.value, true));
     n.addEventListener('change', () => apply(n.value, true));
     apply(r.value, false);
   }
+
+  function setCheckbox(id, key) {
+    const el = $(id);
+    if (!el) return;
+    el.addEventListener('change', () => patch(setKey({}, key, el.checked)));
+  }
+  function setKey(o, k, v) { o[k] = v; return o; }
+
+  document.querySelectorAll('input[name=opmode]').forEach((r) => {
+    r.addEventListener('change', () => { patch({ HMI_xAutoMode: r.value === '1' }); render(); });
+  });
+  document.querySelectorAll('input[name=home-axis]').forEach((r) => {
+    r.addEventListener('change', () => patch({ HMI_iHomeAxis: Number(r.value) }));
+  });
+
+  function hold(btn, key, on) {
+    btn.classList.toggle('active', on);
+    const o = {}; o[key] = on; patch(o);
+  }
+  function bindHold(btn) {
+    const act = btn.dataset.act;
+    const key = ACT[act];
+    if (!key) return;
+    const down = (e) => { e.preventDefault(); if (btn.disabled) return; hold(btn, key, true); };
+    const up = (e) => { e.preventDefault(); hold(btn, key, false); };
+    btn.addEventListener('pointerdown', down);
+    btn.addEventListener('pointerup', up);
+    btn.addEventListener('pointerleave', up);
+    btn.addEventListener('pointercancel', up);
+  }
+
+  // ---- keyboard jog (ignored while typing) ----
+  function typingTarget(e) {
+    const t = e.target;
+    return t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT');
+  }
+  window.addEventListener('keydown', (e) => {
+    if (typingTarget(e) || e.repeat) return;
+    if (e.code === 'Space') { e.preventDefault(); patch({ HMI_xStop: true }); return; }
+    const act = KEYMAP[e.code];
+    if (!act) return;
+    e.preventDefault();
+    const btn = document.querySelector('.hold[data-act="' + act + '"]');
+    if (btn && !btn.disabled) hold(btn, ACT[act], true);
+  });
+  window.addEventListener('keyup', (e) => {
+    if (typingTarget(e)) return;
+    if (e.code === 'Space') { patch({ HMI_xStop: false }, false); return; }
+    const act = KEYMAP[e.code];
+    if (!act) return;
+    const btn = document.querySelector('.hold[data-act="' + act + '"]');
+    if (btn) hold(btn, ACT[act], false);
+  });
+
+  function setConn(ok) {
+    S.connected = ok;
+    const c = $('conn');
+    if (c) { c.textContent = ok ? 'WS: Connected' : 'WS: Disconnected'; c.className = 'pill ' + (ok ? 'ok' : 'bad'); }
+    document.querySelectorAll('.hold, #btn-start, #btn-auto-start').forEach((el) => { el.disabled = !ok; });
+    updateBanner();
+  }
+
+  function ingestStatus(msg) {
+    if (msg._gateway) S._gateway = msg._gateway;
+    for (const k in msg) { if (k !== 't' && k !== '_gateway') S[k] = msg[k]; }
+    S.HMI_xDevStop = !!msg.HMI_xDevStop;
+    S.HMI_xDevRun = !!msg.HMI_xDevRun;
+    S.HMI_xDevError = !!msg.HMI_xDevError;
+    S.__rxWall = Date.now();
+    pushHistory();
+    schedule();
+  }
+
+  function pushHistory() {
+    HIST.t.push(performance.now());
+    HIST.vel1.push(num(S.AxisFb_rVelCmdM1));
+    HIST.vel2.push(num(S.AxisFb_rVelCmdM2));
+    HIST.act1.push(num(S.AxisFb_rVelActM1));
+    HIST.act2.push(num(S.AxisFb_rVelActM2));
+    HIST.p1.push(num(S.AxisFb_rPosM1));
+    HIST.p2.push(num(S.AxisFb_rPosM2));
+    const keys = ['t', 'vel1', 'vel2', 'act1', 'act2', 'p1', 'p2'];
+    if (HIST.t.length > HIST_MAX) keys.forEach((k) => { HIST[k].shift(); });
+    if ($('auto-snap') && $('auto-snap').checked) {
+      const moving = W.HMI_xJogXPos || W.HMI_xJogXNeg || W.HMI_xSpinLeft || W.HMI_xSpinRight;
+      if (moving && Date.now() - lastAutoSnap > 500) { lastAutoSnap = Date.now(); snapshot('AUTO'); }
+    }
+  }
+
+  let rafPending = false;
+  function schedule() {
+    if (rafPending) return;
+    rafPending = true;
+    requestAnimationFrame(() => { rafPending = false; render(); });
+  }
+
+  function render() {
+    // top pills
+    const mode = S._gateway || '—';
+    setText('gw-mode', 'PLC: ' + mode);
+    const comm = S.Tcp_iCommStatus;
+    const online = comm === 2 || comm === 1;
+    setText('plc-online', '在线: ' + (online ? 'YES' : (online === undefined ? '—' : 'NO')));
+    setPill('plc-online', online, 'ok');
+    setText('lease', '控制权: ' + (leaseOwner == null ? (controlClaimed ? '本页(未续)' : '空闲') : (leaseOwner === clientId ? '本页' : '其他页 #' + leaseOwner)));
+    setPill('lease', leaseOwner === clientId || (leaseOwner == null && controlClaimed), 'ok');
+    setText('ctrl-src', '控制源: ' + (S.HMI_eOpMode ? 'AUTO' : 'MAN'));
+
+    // lamps
+    const stop = S.HMI_xDevStop, run = S.HMI_xDevRun, err = S.HMI_xDevError;
+    setText('lamp-stop', 'Stop=' + (stop ? 'T' : 'F')); setPill('lamp-stop', stop, 'ok');
+    setText('lamp-run', 'Run=' + (run ? 'T' : 'F')); setPill('lamp-run', run, 'ok');
+    setText('lamp-err', 'Error=' + (err ? 'T' : 'F')); setPill('lamp-err', err, 'bad');
+    setText('p-alarm', 'Alarm=' + num(S.HMI_iAlarmShow));
+    setPill('p-alarm', num(S.HMI_iAlarmShow) !== 0, 'warn');
+    setText('p-ready', 'Ready=' + (S.AxisFb_xReady ? 'T' : 'F'));
+    setPill('p-ready', S.AxisFb_xReady, 'ok');
+    setText('hb', '心跳: ' + (S.__rxWall ? (Date.now() - S.__rxWall) + 'ms' : '—'));
+
+    // mode radios
+    const auto = !!S.HMI_eOpMode;
+    document.querySelectorAll('input[name=opmode]').forEach((r) => { r.checked = (r.value === '1') === auto; });
+
+    // auto
+    setText('p-step', 'Step=' + num(S.HMI_iAutoStepShow) + ' ' + (STEP_NAME[num(S.HMI_iAutoStepShow)] || ''));
+    setText('p-busy', 'Busy=' + (S.HMI_xAutoBusy ? 'T' : 'F'));
+    setText('p-done', 'Done=' + (S.HMI_xAutoDone ? 'T' : 'F'));
+    document.querySelectorAll('#steps .step').forEach((el) => {
+      const n = Number(el.dataset.s);
+      el.classList.toggle('active', n === num(S.HMI_iAutoStepShow));
+      el.classList.toggle('done', n < num(S.HMI_iAutoStepShow) && num(S.HMI_iAutoStepShow) > 0);
+    });
+    const fset = num(W.HMI_rForceSet) || 1;
+    const fill = $('force-fill');
+    if (fill) fill.style.width = Math.max(0, Math.min(100, (num(S.HMI_rForceShow) / fset) * 100)) + '%';
+    setText('force-lab', 'F_act=' + fmt(S.HMI_rForceShow, 1) + ' / F_set=' + fset + ' N');
+    setText('p-tare', S.Force_xTareBusy ? 'Tare=Busy' : (S.Force_xTareDone ? 'Tare=Done' : 'Tare=—'));
+    setText('out-force', fmt(S.HMI_rForceShow, 2) + ' N');
+    setText('p-force-diag', 'Comm=' + (S.Force_xCommOk ? 'OK' : '—') + (S.Force_xTimeout ? ' TO' : '') + (S.Force_xSlaveFail ? ' SlaveFail' : ''));
+    setPill('p-force-diag', S.Force_xTimeout || S.Force_xSlaveFail, 'bad');
+
+    // manual positions / homes
+    setText('out-posy', fmt(S.AxisFb_rPosY, 4) + ' m');
+    setText('out-posz', fmt(S.AxisFb_rPosZ, 4) + ' m');
+    setText('out-posr', fmt(S.AxisFb_rPosR, 3) + ' °');
+    setText('out-posx', fmt(S.AxisFb_rPosM1, 4) + ' / ' + fmt(S.AxisFb_rPosM2, 4));
+    setText('out-ready', S.AxisFb_xReady ? 'T' : 'F');
+    setText('out-done', 'X=' + (S.AxisFb_xMoveDoneX ? 'T' : 'F') + '  Y=' + (S.AxisFb_xMoveDoneY ? 'T' : 'F'));
+    setFault('f-m1', S.AxisFb_xFaultM1, 'M1'); setFault('f-m2', S.AxisFb_xFaultM2, 'M2');
+    setFault('f-y', S.AxisFb_xFaultY, 'Y'); setFault('f-z', S.AxisFb_xFaultZ, 'Z'); setFault('f-r', S.AxisFb_xFaultR, 'R');
+    setText('p-homed-y', 'Y Homed=' + (S.HMI_xHomedY ? 'T' : 'F')); setPill('p-homed-y', S.HMI_xHomedY, 'ok');
+    setText('p-homed-z', 'Z Homed=' + (S.HMI_xHomedZ ? 'T' : 'F')); setPill('p-homed-z', S.HMI_xHomedZ, 'ok');
+    setText('p-homed-r', 'R Homed=' + (S.HMI_xHomedR ? 'T' : 'F')); setPill('p-homed-r', S.HMI_xHomedR, 'ok');
+    const busy = S.HMI_xHomeBusyY ? 'Y' : S.HMI_xHomeBusyZ ? 'Z' : S.HMI_xHomeBusyR ? 'R' : '—';
+    setText('p-home-busy', 'Busy=' + busy); setPill('p-home-busy', busy !== '—', 'warn');
+
+    // xdual
+    setText('m1-act', fmt(S.AxisFb_rVelActM1, 3));
+    setText('m2-act', fmt(S.AxisFb_rVelActM2, 3));
+    setText('m1-cmd', fmt(S.AxisFb_rVelCmdM1, 3));
+    setText('m2-cmd', fmt(S.AxisFb_rVelCmdM2, 3));
+    setText('m1-pos', fmt(S.AxisFb_rPosM1, 4));
+    setText('m2-pos', fmt(S.AxisFb_rPosM2, 4));
+    setText('dvel', fmt(num(S.AxisFb_rVelActM1) - num(S.AxisFb_rVelActM2), 4));
+    setText('dpos', fmt(S.AxisFb_rSyncErr != null ? S.AxisFb_rSyncErr : (num(S.AxisFb_rPosM1) - num(S.AxisFb_rPosM2)), 4));
+    setText('dm1', 'M1 Moving=' + (S.AxisFb_xMovingM1 ? 'T' : 'F')); setPill('dm1', S.AxisFb_xMovingM1, 'ok');
+    setText('dm2', 'M2 Moving=' + (S.AxisFb_xMovingM2 ? 'T' : 'F')); setPill('dm2', S.AxisFb_xMovingM2, 'ok');
+    setText('dp1', 'M1 Power=' + (S.AxisFb_xPoweredM1 ? 'T' : 'F')); setPill('dp1', S.AxisFb_xPoweredM1, 'ok');
+    setText('dp2', 'M2 Power=' + (S.AxisFb_xPoweredM2 ? 'T' : 'F')); setPill('dp2', S.AxisFb_xPoweredM2, 'ok');
+    setText('sync-warn', 'SyncWarn=' + (S.AxisFb_xSyncWarn ? 'T' : 'F')); setPill('sync-warn', S.AxisFb_xSyncWarn, 'warn');
+    setText('sync-fault', 'SyncFault=' + (S.AxisFb_xSyncFault ? 'T' : 'F')); setPill('sync-fault', S.AxisFb_xSyncFault, 'bad');
+    setText('d-act-m1', 'Direct M1=' + fmt(S.Direct_rVelM1Act, 3));
+    setText('d-act-m2', 'Direct M2=' + fmt(S.Direct_rVelM2Act, 3));
+    setText('d-active', '直控在役=' + (S.Direct_xActive ? 'T' : 'F')); setPill('d-active', S.Direct_xActive, 'ok');
+    setText('d-online', '视觉在线=' + (S.Direct_xOnline ? 'T' : 'F')); setPill('d-online', S.Direct_xOnline, 'ok');
+
+    drawTrends();
+    refreshRegCells();
+    if ($('health-age') && healthAt) setText('health-age', (Date.now() - healthAt) + 'ms');
+  }
+
+  function setFault(id, on, name) {
+    const el = $(id);
+    if (!el) return;
+    el.textContent = name + (on ? ' FAULT' : ' ok');
+    el.className = 'pill' + (on ? ' bad' : ' ok');
+  }
+
+  function drawSeries(ctx, w, h, arr, color, t0, tspan, ymin, ymax) {
+    if (arr.length < 2 || ymax - ymin < 1e-9) return;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    const n = arr.length;
+    for (let i = 0; i < n; i += 1) {
+      const x = (i / (HIST_MAX - 1)) * (w - 2) + 1;
+      const y = h - ((arr[i] - ymin) / (ymax - ymin)) * (h - 6) - 3;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+
+  let lastTrend = 0;
+  function drawTrends() {
+    const now = performance.now();
+    if (now - lastTrend < 80) return;
+    lastTrend = now;
+    drawOne('trend-vel', [
+      { arr: HIST.act1, color: '#5eb3e8' }, { arr: HIST.act2, color: '#3dba7e' },
+      { arr: HIST.vel1, color: '#7c8cff', dash: true }, { arr: HIST.vel2, color: '#e0a53a', dash: true },
+    ]);
+    drawOne('trend-pos', [
+      { arr: HIST.p1, color: '#5eb3e8' }, { arr: HIST.p2, color: '#3dba7e' },
+      { arr: HIST.p1.map((v, i) => v - num(HIST.p2[i])), color: '#e05454' },
+    ]);
+  }
+  function drawOne(id, series) {
+    const c = $(id);
+    if (!c || !c.getContext) return;
+    const ctx = c.getContext('2d');
+    const w = c.width, h = c.height;
+    ctx.clearRect(0, 0, w, h);
+    let lo = Infinity, hi = -Infinity;
+    series.forEach((s) => s.arr.forEach((v) => { if (Number.isFinite(v)) { lo = Math.min(lo, v); hi = Math.max(hi, v); } }));
+    if (!Number.isFinite(lo)) return;
+    const pad = Math.max(1e-4, (hi - lo) * 0.1);
+    lo -= pad; hi += pad;
+    ctx.strokeStyle = '#2c3846';
+    ctx.beginPath(); ctx.moveTo(0, h / 2); ctx.lineTo(w, h / 2); ctx.stroke();
+    series.forEach((s) => {
+      if (s.dash) { ctx.setLineDash([5, 4]); drawSeries(ctx, w, h, s.arr, s.color, 0, 1, lo, hi); ctx.setLineDash([]); }
+      else drawSeries(ctx, w, h, s.arr, s.color, 0, 1, lo, hi);
+    });
+  }
+
+  function snapshot(tag) {
+    const line = [
+      tag || 'SNAP',
+      'act=' + fmt(S.AxisFb_rVelActM1, 3) + '/' + fmt(S.AxisFb_rVelActM2, 3),
+      'cmd=' + fmt(S.AxisFb_rVelCmdM1, 3) + '/' + fmt(S.AxisFb_rVelCmdM2, 3),
+      'pos=' + fmt(S.AxisFb_rPosM1, 4) + '/' + fmt(S.AxisFb_rPosM2, 4),
+      'dPos=' + fmt(S.AxisFb_rSyncErr, 4),
+      'alm=' + num(S.HMI_iAlarmShow),
+    ].join('  ');
+    log(line);
+    const el = $('snap-list');
+    if (el) {
+      const d = document.createElement('div');
+      d.textContent = new Date().toLocaleTimeString() + '  ' + line;
+      el.prepend(d);
+      while (el.children.length > 100) el.removeChild(el.lastChild);
+    }
+  }
+
+  function csvEscape(s) { const v = String(s); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }
+  function download(name, text) {
+    const blob = new Blob([text], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
+  }
+  function exportHistory() {
+    const rows = [['idx', 'velCmdM1', 'velCmdM2', 'velActM1', 'velActM2', 'posM1', 'posM2', 'dPos']];
+    for (let i = 0; i < HIST.t.length; i += 1) {
+      rows.push([i, HIST.vel1[i], HIST.vel2[i], HIST.act1[i], HIST.act2[i], HIST.p1[i], HIST.p2[i], num(HIST.p1[i]) - num(HIST.p2[i])]);
+    }
+    download('lmm-xdual-' + Date.now() + '.csv', rows.map((r) => r.map(csvEscape).join(',')).join('\n'));
+    log('导出历史 CSV ' + (rows.length - 1) + ' 行');
+  }
+  function exportLog() {
+    const rows = [['time', 'kind', 'msg']];
+    logs.forEach((l) => rows.push([new Date(l.at).toISOString(), l.kind, l.msg]));
+    download('lmm-log-' + Date.now() + '.csv', rows.map((r) => r.map(csvEscape).join(',')).join('\n'));
+  }
+
+  // ---- /map register table ----
+  function allMapFields() {
+    if (!MAP) return [];
+    const out = [];
+    const push = (section, fs) => (fs || []).forEach((f) => out.push(Object.assign({ section }, f)));
+    push('cmd', MAP.command && MAP.command.fields);
+    push('cmd', MAP.directx && MAP.directx.command && MAP.directx.command.fields);
+    push('st', MAP.status && MAP.status.fields);
+    push('st', MAP.directx && MAP.directx.status && MAP.directx.status.fields);
+    return out;
+  }
+  function buildRegTable() {
+    const tb = document.querySelector('#regtable tbody');
+    if (!tb) return;
+    tb.innerHTML = '';
+    allMapFields().forEach((f) => {
+      const base = f.section === 'cmd' ? (MAP.command.baseAddress || 1000) : (MAP.status.baseAddress || 1100);
+      const tr = document.createElement('tr');
+      const cells = [
+        f.section === 'cmd' ? 'CMD' : 'ST',
+        String(base + f.offset),
+        f.name + (f.bit !== undefined ? '.' + f.bit : ''),
+        f.type + (f.scale ? ' x' + f.scale : ''),
+        '',
+        f.zh || '',
+      ];
+      cells.forEach((c, i) => {
+        const td = document.createElement('td');
+        td.textContent = c;
+        if (i === 2 || i === 1) td.className = 'mono';
+        tr.appendChild(td);
+      });
+      tb.appendChild(tr);
+      regCells[f.name] = tr.children[4];
+    });
+  }
+  function refreshRegCells() {
+    if (!MAP) return;
+    for (const k in regCells) {
+      const v = regCells[k];
+      const raw = (k in W) ? W[k] : S[k];
+      const s = typeof raw === 'boolean' ? (raw ? 'T' : 'F') : (raw === undefined ? '—' : String(raw));
+      if (v.textContent !== s) v.textContent = s;
+    }
+  }
+
+  // ---- command console ----
+  function sendJson() {
+    const ta = $('cmd-json');
+    if (!ta) return;
+    let obj;
+    try { obj = JSON.parse(ta.value || '{}'); } catch (e) { log('JSON 解析失败: ' + e.message, 'err'); return; }
+    const allowed = {};
+    for (const k in obj) { if (CMD_LABELS[k]) allowed[k] = obj[k]; else log('忽略非白名单字段 ' + k, 'warn'); }
+    if (!Object.keys(allowed).length) { log('无可发送字段', 'warn'); return; }
+    patch(allowed);
+    log('console write ' + JSON.stringify(allowed));
+  }
+
+  let healthAt = 0;
+  let gwHealth = null;
+  let lastAckAt = 0;
+  let lastWriteLog = 0;
+  function pollHealth() {
+    fetch('/health').then((r) => r.json()).then((h) => {
+      healthAt = Date.now();
+      gwHealth = h;
+      const el = $('health');
+      if (el) el.textContent = JSON.stringify(h, null, 2);
+      updateBanner();
+    }).catch(() => { gwHealth = null; updateBanner(); });
+  }
+  function loadHealth() { pollHealth(); }
+  function updateBanner() {
+    const target = $('plc-target');
+    let text = '';
+    let cls = 'warn';
+    if (!S.connected) { text = '未连接 Gateway —— 确认服务已启动并刷新页面（真机：tools\\start-webhmi.ps1；本机 Mock：cd gateway && npm start）'; cls = 'bad'; }
+    else if (!gwHealth) { text = 'Gateway 已连接，读取 /health …'; cls = 'warn'; }
+    else if (gwHealth.mode === 'mock') { text = '当前是 MOCK 模式：不会连真机 PLC。真机请用 tools\\start-webhmi.ps1 或 npm run start:plc'; cls = 'warn'; }
+    else if (gwHealth.master && !gwHealth.master.connected) { text = 'Gateway 未连上 PLC ' + gwHealth.master.host + ':' + gwHealth.master.port + ' —— ' + (gwHealth.master.lastError || '连接中'); cls = 'bad'; }
+    else if (gwHealth.statusIsOffline) {
+      const err = gwHealth.master && gwHealth.master.lastError ? ('：' + gwHealth.master.lastError) : '（超时）';
+      text = 'PLC 无有效状态帧' + err + ' —— 检查 PLC 从站 1100..1163 映射与程序是否运行';
+      cls = 'bad';
+    }
+    if (target) {
+      if (!gwHealth) { target.textContent = 'PLC: ?'; target.className = 'pill'; }
+      else if (gwHealth.mode === 'mock') { target.textContent = 'MODE: MOCK'; target.className = 'pill warn'; }
+      else if (gwHealth.master) {
+        const ok = gwHealth.master.connected && !gwHealth.statusIsOffline;
+        target.textContent = 'PLC ' + gwHealth.master.host + ':' + gwHealth.master.port + (ok ? ' ✓' : ' ✗');
+        target.className = 'pill ' + (ok ? 'ok' : 'bad');
+      } else { target.textContent = 'MODE: ' + (gwHealth.mode || '?'); target.className = 'pill'; }
+    }
+    const banner = $('banner');
+    if (banner) {
+      banner.textContent = text;
+      banner.style.display = text ? 'block' : 'none';
+      banner.className = 'banner ' + cls;
+    }
+  }
+
+  // ---- wire up ----
+  document.querySelectorAll('button[data-act]').forEach(bindHold);
 
   bindParam('p-velx', 'n-velx', 'HMI_rJogVelX', 2);
   bindParam('p-spin', 'n-spin', 'HMI_rSpinVel', 2);
@@ -948,152 +1001,109 @@
   bindParam('p-decz', 'n-decz', 'HMI_rDecZ', 0);
   bindParam('p-accr', 'n-accr', 'HMI_rAccR', 0);
   bindParam('p-decr', 'n-decr', 'HMI_rDecR', 0);
-  bindParam('p-dx', 'n-dx', 'HMI_rAutoDistX', 1);
-  bindParam('p-npass', 'n-npass', 'HMI_iAutoPasses', 0);
+  bindParam('p-dx', 'n-dx', 'HMI_rAutoDistX', 2);
   bindParam('p-avx', 'n-avx', 'HMI_rAutoVelX', 2);
-  bindParam('p-base', 'n-base', 'HMI_rWheelBase', 1);
   bindParam('p-avy', 'n-avy', 'HMI_rAutoVelY', 2);
   bindParam('p-avz', 'n-avz', 'HMI_rAutoVelZ', 2);
+  bindParam('p-base', 'n-base', 'HMI_rWheelBase', 1);
   bindParam('p-fset', 'n-fset', 'HMI_rForceSet', 0);
+  bindParam('p-npass', 'n-npass', 'HMI_iAutoPasses', 0);
   bindParam('p-kpf', 'n-kpf', 'HMI_rKpForce', 1);
   bindParam('p-kpt', 'n-kpt', 'HMI_rKpTrack', 2);
   bindParam('p-herr', 'n-herr', 'HMI_rHeadingErr', 2);
   bindParam('p-fsim', 'n-fsim', 'HMI_rForceSim', 0);
+  bindParam('p-dvm1', 'n-dvm1', 'HMI_rVelM1Set', 3);
+  bindParam('p-dvm2', 'n-dvm2', 'HMI_rVelM2Set', 3);
 
-  document.querySelectorAll('input[name=opmode]').forEach((r) => {
-    r.addEventListener('change', () => {
-      patch({ HMI_xAutoMode: r.value === '1' });
-      render();
-    });
-  });
-  document.querySelectorAll('input[name=home-axis]').forEach((r) => {
-    r.addEventListener('change', () => patch({ HMI_iHomeAxis: Number(r.value) }));
-  });
+  setCheckbox('force-sim', 'HMI_xForceSimEnable');
+  setCheckbox('force-guide', 'HMI_xForceGuide');
+  setCheckbox('x-direct', 'HMI_xDirectEnable');
+  const xs = $('x-direct');
+  if (xs) xs.addEventListener('change', () => log('HMI_xDirectEnable=' + xs.checked));
 
+  function on(id, ev, fn) { const el = $(id); if (el) el.addEventListener(ev, fn); }
+  on('btn-estop', 'pointerdown', (e) => { e.preventDefault(); setText('btn-estop', '急停请求（按住=FALSE）'); patch({ HMI_xEStop: false }); });
+  const estopUp = (e) => { e.preventDefault(); patch({ HMI_xEStop: true }); };
+  on('btn-estop', 'pointerup', estopUp);
+  on('btn-estop', 'pointerleave', estopUp);
+  on('btn-start', 'click', () => pulse({ HMI_xStart: true, HMI_xEnable: true }, 120));
+  on('btn-stop', 'pointerdown', (e) => { e.preventDefault(); patch({ HMI_xStop: true }); });
+  on('btn-stop', 'pointerup', (e) => { e.preventDefault(); patch({ HMI_xStop: false }); });
+  on('btn-stop', 'pointerleave', (e) => { e.preventDefault(); patch({ HMI_xStop: false }); });
+  on('btn-reset', 'click', () => pulse({ HMI_xStopHold3s: true }, 150));
+  on('btn-auto-start', 'click', () => pulse({ HMI_xAutoStart: true, HMI_xAutoAbort: false }, 120));
+  on('btn-auto-abort', 'click', () => pulse({ HMI_xAutoAbort: true }, 120));
+  on('btn-tare', 'click', () => pulse({ HMI_xForceTare: true }, 120));
+  on('btn-untare', 'click', () => pulse({ HMI_xForceUntare: true }, 120));
   function pulseHome(partial) {
-    patch(partial);
-    log('home ' + JSON.stringify(partial));
-    setTimeout(() => {
-      patch({
-        HMI_xHomeExec: false, HMI_xHomeY: false, HMI_xHomeZ: false, HMI_xHomeR: false,
-      }, false);
-    }, 200);
-  }
-  $('btn-home-exec').addEventListener('click', () => {
     const sel = document.querySelector('input[name=home-axis]:checked');
-    pulseHome({ HMI_iHomeAxis: sel ? Number(sel.value) : 1, HMI_xHomeExec: true });
-  });
-  $('btn-home-y').addEventListener('click', () => pulseHome({ HMI_xHomeY: true }));
-  $('btn-home-z').addEventListener('click', () => pulseHome({ HMI_xHomeZ: true }));
-  $('btn-home-r').addEventListener('click', () => pulseHome({ HMI_xHomeR: true }));
-
-  $('force-sim').addEventListener('change', () => {
-    patch({ HMI_xForceSimEnable: $('force-sim').checked });
-  });
-  $('force-guide').addEventListener('change', () => {
-    patch({ HMI_xForceGuide: $('force-guide').checked });
-    log('ForceGuide=' + $('force-guide').checked);
-  });
-
-  function hold(btn, key, on) {
-    btn.classList.toggle('active', on);
-    const o = {}; o[key] = on; patch(o);
+    const o = Object.assign({ HMI_xHomeY: false, HMI_xHomeZ: false, HMI_xHomeR: false, HMI_xHomeExec: false }, partial);
+    if (o.HMI_xHomeExec) o.HMI_iHomeAxis = sel ? Number(sel.value) : 1;
+    patch(o);
+    setTimeout(() => patch({ HMI_xHomeY: false, HMI_xHomeZ: false, HMI_xHomeR: false, HMI_xHomeExec: false }, false), 220);
   }
-  document.querySelectorAll('.hold[data-act]').forEach((btn) => {
-    const key = ACT[btn.dataset.act];
-    if (!key) return;
-    const down = (e) => { e.preventDefault(); hold(btn, key, true); };
-    const up = (e) => { e.preventDefault(); hold(btn, key, false); };
-    btn.addEventListener('pointerdown', down);
-    btn.addEventListener('pointerup', up);
-    btn.addEventListener('pointerleave', up);
-    btn.addEventListener('pointercancel', up);
-  });
-
-  $('btn-estop').addEventListener('pointerdown', (e) => {
-    e.preventDefault();
-    $('btn-estop').classList.add('active');
-    patch({ HMI_xEStop: false });
-  });
-  const estopUp = (e) => {
-    e.preventDefault();
-    $('btn-estop').classList.remove('active');
-    patch({ HMI_xEStop: true });
-  };
-  $('btn-estop').addEventListener('pointerup', estopUp);
-  $('btn-estop').addEventListener('pointerleave', estopUp);
-
-  $('btn-start').addEventListener('click', () => {
-    patch({ HMI_xStart: true, HMI_xEnable: true });
-    setTimeout(() => patch({ HMI_xStart: false, HMI_xEnable: false }, false), 120);
-    log('HMI_xStart pulse');
-  });
-
-  $('btn-stop').addEventListener('pointerdown', (e) => {
-    e.preventDefault();
-    patch({ HMI_xStop: true });
-  });
-  const stopUp = (e) => {
-    e.preventDefault();
-    patch({ HMI_xStop: false });
-  };
-  $('btn-stop').addEventListener('pointerup', stopUp);
-  $('btn-stop').addEventListener('pointerleave', stopUp);
-
-  $('btn-reset').addEventListener('click', () => {
-    patch({ HMI_xStopHold3s: true });
-    setTimeout(() => patch({ HMI_xStopHold3s: false }, false), 150);
-    log('HMI_xStopHold3s pulse (复位)');
-  });
-
-  $('btn-auto-start').addEventListener('click', () => {
-    patch({ HMI_xAutoStart: true, HMI_xAutoAbort: false });
-    setTimeout(() => patch({ HMI_xAutoStart: false }, false), 120);
-    log('HMI_xAutoStart');
-  });
-  $('btn-auto-abort').addEventListener('click', () => {
-    patch({ HMI_xAutoAbort: true });
-    setTimeout(() => patch({ HMI_xAutoAbort: false }, false), 120);
-    log('HMI_xAutoAbort');
-  });
-  $('btn-tare').addEventListener('click', () => {
-    patch({ HMI_xForceTare: true });
-    setTimeout(() => patch({ HMI_xForceTare: false }, false), 120);
-    log('HMI_xForceTare');
-  });
-  $('btn-untare').addEventListener('click', () => {
-    patch({ HMI_xForceUntare: true });
-    setTimeout(() => patch({ HMI_xForceUntare: false }, false), 120);
-    log('HMI_xForceUntare');
-  });
-
-  $('btn-snap').addEventListener('click', () => snapshot('SNAP'));
-  $('btn-clear-hist').addEventListener('click', () => {
-    dposHist.length = 0;
-    logEl.innerHTML = '';
-    drawSpark();
+  on('btn-home-exec', 'click', () => pulseHome({ HMI_xHomeExec: true }));
+  on('btn-home-y', 'click', () => pulseHome({ HMI_xHomeY: true }));
+  on('btn-home-z', 'click', () => pulseHome({ HMI_xHomeZ: true }));
+  on('btn-home-r', 'click', () => pulseHome({ HMI_xHomeR: true }));
+  on('btn-snap', 'click', () => snapshot('SNAP'));
+  on('btn-clear-hist', 'click', () => {
+    ['t', 'vel1', 'vel2', 'act1', 'act2', 'p1', 'p2'].forEach((k) => { HIST[k].length = 0; });
+    const el = $('snap-list'); if (el) el.innerHTML = '';
+    const le = $('log'); if (le) le.innerHTML = '';
     log('历史已清空');
   });
+  on('btn-export-csv', 'click', exportHistory);
+  on('btn-log-clear', 'click', () => { logs.length = 0; const le = $('log'); if (le) le.innerHTML = ''; });
+  on('btn-log-export', 'click', exportLog);
+  on('btn-send-json', 'click', sendJson);
+  on('btn-preset-safe', 'click', () => patch({ HMI_xEStop: false }));
+  on('btn-preset-normal', 'click', () => patch({ HMI_xEStop: true }));
+  on('btn-preset-auto', 'click', () => patch({ HMI_xAutoMode: true }));
+  on('btn-preset-manual', 'click', () => patch({ HMI_xAutoMode: false }));
+  on('btn-dvm-fwd', 'click', () => patch({ HMI_rVelM1Set: 0.3, HMI_rVelM2Set: 0.3, HMI_xDirectEnable: true }));
+  on('btn-dvm-rev', 'click', () => patch({ HMI_rVelM1Set: -0.3, HMI_rVelM2Set: -0.3, HMI_xDirectEnable: true }));
+  on('btn-dvm-stop', 'click', () => patch({ HMI_rVelM1Set: 0, HMI_rVelM2Set: 0 }));
+  on('btn-dvm-off', 'click', () => patch({ HMI_xDirectEnable: false }));
+  on('btn-health', 'click', loadHealth);
+
+  document.querySelectorAll('#tabs button').forEach((b) => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('#tabs button').forEach((x) => x.classList.toggle('active', x === b));
+      ['auto', 'manual', 'xdual', 'debug', 'log'].forEach((t) => {
+        const p = $('panel-' + t);
+        if (p) p.classList.toggle('active', t === b.dataset.tab);
+      });
+      if (b.dataset.tab === 'debug') loadHealth();
+    });
+  });
+
+  fetch('/map').then((r) => r.json()).then((m) => { MAP = m; buildRegTable(); }).catch(() => {});
 
   setInterval(() => {
     if (ws && ws.readyState === 1) {
       ws.send(JSON.stringify({ t: 'ping' }));
       if (dirty) flush(false);
     }
-    if (S.lastRx) {
-      const age = Date.now() - S.lastRx;
-      $('hz').textContent = age < 3000
-        ? ('末包 ' + age + 'ms · n=' + S.rxCount)
-        : '状态超时';
-      $('hz').className = 'pill ' + (age < 3000 ? 'ok' : 'warn');
-    }
   }, 200);
+  setInterval(() => {
+    if (ws && ws.readyState === 1) { lastPingAt = Date.now(); ws.send(JSON.stringify({ t: 'ping' })); }
+  }, 1000);
 
-  setConn(false, '—');
+  window.addEventListener('error', (e) => {
+    const b = $('banner');
+    if (b) { b.textContent = '页面脚本错误：' + (e.message || e.error); b.style.display = 'block'; b.className = 'banner bad'; }
+  });
+  window.addEventListener('unhandledrejection', (e) => {
+    log('未处理异常：' + (e.reason && e.reason.message ? e.reason.message : e.reason), 'err');
+  });
+  setConn(false);
   render();
-  log('调试台就绪 — 真机请用 .\\tools\\start-webhmi.ps1');
+  log('WebHMI v2 就绪 — 真机请用 .\\tools\\start-webhmi.ps1');
+  pollHealth();
+  setInterval(pollHealth, 2000);
   connect();
 })();
-  </script>
+</script>
 </body>
 </html>

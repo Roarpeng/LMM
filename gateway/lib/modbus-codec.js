@@ -24,6 +24,20 @@ function readScaledDint(words, field) {
   return signed / field.scale;
 }
 
+function writeScaledInt(words, field, value) {
+  const scaled = Math.round(Number(value || 0) * field.scale);
+  if (!Number.isSafeInteger(scaled) || scaled < -0x8000 || scaled > 0x7fff) {
+    throw new RangeError(`${field.name} is outside signed INT range`);
+  }
+  words[field.offset] = scaled & 0xffff;
+}
+
+function readScaledInt(words, field) {
+  let v = words[field.offset] & 0xffff;
+  if (v >= 0x8000) v -= 0x10000;
+  return v / field.scale;
+}
+
 function encodeFields(words, fields, values) {
   for (const field of fields) {
     const value = values[field.name];
@@ -33,6 +47,8 @@ function encodeFields(words, fields, values) {
       words[field.offset] = toWord(value || 0);
     } else if (field.type === 'SCALED_DINT') {
       writeScaledDint(words, field, value);
+    } else if (field.type === 'SCALED_INT') {
+      writeScaledInt(words, field, value);
     } else {
       throw new TypeError(`Unsupported Modbus type: ${field.type}`);
     }
@@ -48,6 +64,8 @@ function decodeFields(words, fields) {
       values[field.name] = words[field.offset];
     } else if (field.type === 'SCALED_DINT') {
       values[field.name] = readScaledDint(words, field);
+    } else if (field.type === 'SCALED_INT') {
+      values[field.name] = readScaledInt(words, field);
     } else {
       throw new TypeError(`Unsupported Modbus type: ${field.type}`);
     }
@@ -85,7 +103,14 @@ function validateImage(words, image) {
 }
 
 function createCommandImage(values, sequence, heartbeat) {
-  return createImage(map.command, values, sequence, { heartbeat });
+  const words = createImage(map.command, values, sequence, { heartbeat });
+  if (map.directx && map.directx.command && map.directx.command.fields) {
+    encodeFields(words, map.directx.command.fields, values || {});
+  }
+  if (map.directx && map.directx.vision && map.directx.vision.fields) {
+    encodeFields(words, map.directx.vision.fields, values || {});
+  }
+  return words;
 }
 
 function encodeStatusImage(values, sequence, ack, heartbeat) {
@@ -105,7 +130,11 @@ function decodeCommandImage(words, previousSequence) {
     valid: errors.length === 0,
     isNew: errors.length === 0
       && (previousSequence == null || sequence !== toWord(previousSequence)),
-    values: errors.includes('INVALID_LENGTH') ? {} : decodeFields(words, map.command.fields),
+    values: errors.includes('INVALID_LENGTH') ? {} : Object.assign(
+      decodeFields(words, map.command.fields),
+      map.directx && map.directx.command ? decodeFields(words, map.directx.command.fields) : {},
+      map.directx && map.directx.vision ? decodeFields(words, map.directx.vision.fields) : {},
+    ),
     diagnostics: {
       errors,
       sequence,
@@ -122,9 +151,16 @@ function decodeCommandImage(words, previousSequence) {
 
 function decodeStatusImage(words) {
   const errors = validateImage(words, map.status);
+  let values = {};
+  if (!errors.includes('INVALID_LENGTH')) {
+    values = decodeFields(words, map.status.fields);
+    if (map.directx && map.directx.status) {
+      Object.assign(values, decodeFields(words, map.directx.status.fields));
+    }
+  }
   return {
     valid: errors.length === 0,
-    values: errors.includes('INVALID_LENGTH') ? {} : decodeFields(words, map.status.fields),
+    values,
     diagnostics: {
       errors,
       sequence: words && words.length === protocol.imageWords

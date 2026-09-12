@@ -1,6 +1,6 @@
 PROGRAM PRG_TcpHmi
 (* PRG_TcpHmi — Modbus TCP 过程映像编解码 + 控制源仲裁。
-   PLC=Master 读 Holding1000 / 写 Holding1100；Gateway=Server。
+   PLC=从站；Gateway=主站：FC16 写 Holding1000 命令 / FC03 读 Holding1100 状态。
    eCtrlSrc 为 GVL 变量：0=面板/触摸屏 1=远程(Web)。 *)
 VAR
     xInit : BOOL;

@@ -32,7 +32,8 @@ def main():
 
     src = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "LMM_g_0.1.xml"
     dst = Path(sys.argv[2]) if len(sys.argv) > 2 else ROOT / "LMM_g_0.2.xml"
-    xml = src.read_text(encoding="utf-8")  # 保留原 BOM
+    # 按字节读写：保留原 BOM 与 CRLF 行尾（read_text 的通用换行会把 \r\n 归一成 \n）
+    xml = src.read_bytes().decode("utf-8")
 
     for st in sorted(SRC_DIR.glob("*.st")):
         kind, name, scopes, body = parse_st(st)
@@ -40,7 +41,7 @@ def main():
         xml = inject_pou(xml, name, kind, scopes, body)
         print(f"注入 {name}: {kind}, {nvars} vars, body {len(body)} chars")
 
-    dst.write_text(xml, encoding="utf-8")
+    dst.write_bytes(xml.encode("utf-8"))
     print(f"完成 -> {dst} ({dst.stat().st_size} bytes)")
 
 

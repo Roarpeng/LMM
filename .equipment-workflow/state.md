@@ -2,29 +2,55 @@
 
 ## Meta
 - Project: LMM XYZR + 力传感
-- Entry: change-request（WebHMI Modbus TCP）
-- Updated: 2026-07-22
+- Entry: change-request（X 双电机速度透传 + WebHMI v2）
+- Updated: 2026-09-12
 
 ## Current
-- Stage: S6/S7 — WebHMI Modbus TCP 改造已落地（Gateway Server + PLC Master 过程映像）
-- Spec: `docs/superpowers/specs/2026-07-22-webhmi-modbus-tcp-design.md`
-- Plan: `docs/superpowers/plans/2026-07-22-webhmi-modbus-tcp.md`
-- 映射：`config/modbus-map.json` → `docs/plc/MODBUS_MAP.md`
-- 脚本：`tools/refactor_modbus_hmi.py`（备份 `LMM.xml.bak.modbus_hmi`）
-- 架构（以设备树为准）：浏览器 WS/JSON → Gateway Modbus TCP **Server :502** ← PLC Modbus TCP **Master**
-- 地址：命令 Holding `1000..1063` → `MB_CmdIn %IW103`；状态 Holding `1100..1163` ← `MB_StatusOut %QW44`
-- 删除：`FB_TCPServer`；`PRG_TcpHmi` 改为过程映像编解码 + 仲裁
-- 验证：`python3 -m unittest tools.test_refactor_modbus_hmi` PASS；`cd gateway && npm test` 37 PASS
-- Next: InoProShop 导入/合并 `LMM.xml` → 核对 `modbusTcp` 通道长度64、读1000/写1100 → 编译 → Gate D 联调
+- Stage: S6/S7 — WebHMI v2 与 PLC 0.63 增量已落地（Web 为验收视图，MD 为源）
+- Spec: `docs/superpowers/specs/2026-09-12-x-speed-webhmi-v2-design.md`
+- Plan: `docs/superpowers/plans/2026-09-12-x-speed-webhmi-v2.md`
+- 在役基线：`LMM_g_0.62.xml`（InoProShop 重存；Modbus 从站已配；外部 client 连 `192.168.1.88:502` 成功）
+- 通讯方向：Gateway（Modbus TCP 主站）→ PLC（从站）`192.168.1.88:502`；命令 Holding `4096..4159`（0x1000）、状态 `4352..4415`（0x1100）
+- 速度透传（两层）：
+  - Web 先行：状态 word29/30 `Direct_rVelM1Act/M2Act`（实际速度，各模式有效）已在 WebHMI v2「X 双驱」显示，**无需重烧**
+  - PLC 0.63：新增状态 word32..38（`AxisFb_rVelActM1/M2`、Moving/Powered/SyncWarn/Fault、`AxisFb_rSyncErr`）
+- 交付物：
+  - `web/live/index.html` v2（自动/手动/X 双驱/调试/日志；键盘点动、X 直控滑条、寄存器表、趋势/快照、CSV）
+  - `gateway/server.js`（`GET /health`、`t:"hello"/"lease"`、离线合并、`PLC_POLL_MS` 默认 50）
+  - `gateway/lib/mock-plc.js`（实际速度/新字段）、`gateway/lib/modbus-master.js`（`getDiagnostics()`）
+  - `tools/patch_g063.py` → `LMM_g_0.63.xml`；`gateway/scripts/smoke-webhmi.js`
+- 验证：
+  - `cd gateway && npm test` → **43 PASS**
+  - `python3 tools/patch_g063.py` 幂等；`LMM_g_0.63.xml` XML 解析 OK；`inject_g.py --check` OK
+  - Mock 冒烟 `node gateway/scripts/smoke-webhmi.js` → PASS（页面/health/map/WS hello·status·lease·新字段）
+- Next: 真机联调 WebHMI v2（自动/手动/急停与面板一致；X 双驱页 M1/M2 实际速度跟随；点动按住动/松开停）
+
+## Field findings（2026-09-12）
+- **已解决（2026-09-12）**：Gateway 连 `192.168.1.88:502` 成功；PLC 程序侧正常（`MB_StatusOut[0]=19533`、`[2]` 每周期跳）。
+- 根因：InoProShop 从站映射「起始地址」字段是**十六进制**，填 `1000`/`1100` 实际为 `0x1000`=**4096** / `0x1100`=**4352**；
+  网关原按十进制 1000/1100 读写，落到空白区 → `MAGIC_MISMATCH,VERSION_MISMATCH`。
+- 实测：Holding `4096..4159` = 命令镜像（PLC 状态 `word3` 回显命令序号），`4352..4415` = `0x4C4D 0x0100` + 序号递增。
+- 处理：`config/modbus-map.json` 基址改为 4096/4352（**无需再改/下载 PLC**）；`generate_modbus_map.py` 与全部文档同步；
+  Gateway 另有 `PLC_CMD_BASE`/`PLC_STATUS_BASE` 覆盖、协议错不再断开重连、`/health`、只读探针 `probe-plc.js`。
+- 验证：真机 `/health` → `statusIsOffline=false`、`lastError=null`；启动日志 `cmd@4096 status@4352`；`npm test` 43 PASS。
+- 踩坑备忘：从站 I/O 映射变量名不能与 GVL 同名（`MB_CmdIn`/`MB_StatusOut`），否则编译 `C0136/C0018`。
+- **急停锁存 / 心跳（2026-09-12）**：真机状态 `HMI_iAlarmShow=1001`、`HMI_xLampEStop=TRUE`、`HMI_eDevState=2`、
+  `AxisFb_xReady=FALSE` → PLC `xEStopLatched` 锁存，所有轴被 `xSafe` 锁住。
+  - 操作：**松开物理急停 → 网页按一次「复位」**（`HMI_xStopHold3s` 上升沿）清锁存 + 轴故障复位。
+  - Gateway fail-safe 由 `HMI_xEStop=FALSE` 改为 `HMI_xStop=TRUE + HMI_xEStop=TRUE`（停止不锁存）；
+    新增 `store.advanceHeartbeat()` 每周期推进心跳，避免停顿 >1s 被判远程超时。
+  - `npm test` → **44 PASS**。
+- **1005 误报修复（2026-09-12）**：`Force_xTimeout`/`Force_xCommOk` 原有两个写者——`PRG_Force485`（真实回文判定）
+  与 `PRG_Axis_Control`（`FB_Force` 的“原始值 2s 不变”看门狗）。力稳定时后者误置 TRUE → 偶尔报警 1005。
+  - 修：删除 `PRG_Axis_Control` 里 `Force_xCommOk := fbForce.xCommOk;` / `Force_xTimeout := fbForce.xTimeout;`，
+    使 `PRG_Force485` 成为唯一写者；`tools/patch_g064.py` 由 0.63 生成 **`LMM_g_0.64.xml`**（幂等、XML 解析 OK）。
+  - 代价：启动时 3 次读失败 → 1006（`Force_xSlaveFail`）；运行中失联的持续检测另行用 RTU 从站诊断位（待现场确认）。
 
 ## Locked decisions
-- X 直行 `HMI_rJogVelX` ≠ 左右旋 `HMI_rSpinVel`
-- 龙门跨距 = Y 行程 = `HMI_rWheelBase`（4~6）
-- 面板 ‖ 远程互斥；急停 AND（更严）；Web急停非安全等级
-- web/v2 保留验收模拟；web/live 实控
-- 力传感：RS485 Modbus-RTU；Alarm 1005/1006
-- 生产断线禁止自动 Mock；仅 `MOCK_PLC=1`
-- Gateway 绑定目标 IP `192.168.1.1:502`（与设备树一致）
+- Modbus 角色维持 **Gateway 主站 / PLC 从站**（现场 Modbus client 连 `:502` 验证）
+- Web 急停仍为**请求**；物理急停 AND 仲裁不变（非安全等级）
+- 速度透传先 Web、后 PLC 0.63；命令区与浏览器 WS/JSON 契约不变
+- `Axis_Control` 独立任务、仅 GVL 交换，未改动
 
 ## Paths
-- docs/plc/TCP_HMI.md, MODBUS_MAP.md, GVL.md, LMM.xml, gateway/, config/modbus-map.json
+- `web/live/index.html`, `gateway/`, `config/modbus-map.json`, `docs/plc/MODBUS_MAP.md`, `LMM_g_0.63.xml`, `tools/patch_g063.py`

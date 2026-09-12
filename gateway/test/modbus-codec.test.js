@@ -14,8 +14,8 @@ const {
 
 function assertValidMapping(candidate) {
   assert.equal(candidate.protocol.imageWords, 64);
-  assert.equal(candidate.command.baseAddress, 1000);
-  assert.equal(candidate.status.baseAddress, 1100);
+  assert.equal(candidate.command.baseAddress, map.command.baseAddress);
+  assert.equal(candidate.status.baseAddress, map.status.baseAddress);
 
   const names = new Set();
   for (const image of [candidate.command, candidate.status]) {

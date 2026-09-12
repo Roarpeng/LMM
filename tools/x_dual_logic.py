@@ -7,11 +7,13 @@ class MoveState:
     start: float = 0.0
     prev_move: bool = False
 
-def select_mode(jog_pos, jog_neg, spin_l, spin_r, move_rel, stop, enable):
+def select_mode(jog_pos, jog_neg, spin_l, spin_r, move_rel, stop, enable, direct=False):
     if stop or not enable:
         return 0
     if spin_l ^ spin_r:
         return 2 if spin_l else 3
+    if direct:
+        return 4
     if (jog_pos ^ jog_neg) or move_rel:
         return 1
     return 0
@@ -459,6 +461,24 @@ def slew_start_nonzero(prev, target, step_max, *, eps=0.001):
     return v
 
 
+def exec_hold(*, e_mode, req, hold_prev, stop=False, enable=True):
+    """点动期间 Execute 闭锁：Status/请求闪一下不得撤 Execute。"""
+    if (not enable) or stop or int(e_mode) == 0:
+        return False
+    if req:
+        return True
+    return bool(hold_prev)
+
+
+def jog_hold(*, raw, held_prev, off_done):
+    """点动 GVL 空窗：raw 掉了但去抖未满，继续视为按住。"""
+    if raw:
+        return True
+    if off_done:
+        return False
+    return bool(held_prev)
+
+
 def vel_latch_on_exec(*, exec_now, exec_prev, target, latched_prev, in_vel=False, eps=0.004):
     """Execute 上升沿锁死目标速度。爬坡中不改；到速后才允许死区更新。"""
     if exec_now and not exec_prev:
@@ -484,3 +504,100 @@ def sync_scale_at_speed(*, r_base, r_vel_act_m1, r_vel_act_m2, ratio=0.7):
     if prog > 1.0:
         return 1.0
     return prog
+
+# ---------------- 0.59 单沿起步 + Halt 对称减速（0.58 每步重触发废除） ----------------
+# 0.58 教训（现场 acc=0.8）：每 4ms 重触发 Execute（250Hz 沿风暴）反复踢起龙门
+#   1Hz 共振（起步快速冲 2 次 ~1s + 第三次慢 + 停死）；两侧 FB/驱动接受沿的时刻
+#   不一致 → M2 漏沿 → 爬速落后（M2 明显慢于 M1）。
+# 0.59：起步只发一个上升沿（最终目标 + 钳制用户 Acc/Dec，SM3 自带斜坡 0→目标）；
+#   稳态 trim/sync 更新走限频重触发（≥200ms 一次，差值≥0.004）；减速统一 Halt。
+
+def eff_ramp_acc(user_acc, *, cap=1.0, floor=0.05):
+    """0.59：SM3 斜坡 Acc/Dec = 用户值钳制 [floor, cap]。25/100 兜底不再等于阶跃。
+    0.58 曾把它用于 PLC 爬速步长；0.59 直接作 SM3 剖面斜率。"""
+    a = abs(float(user_acc))
+    if a < float(floor):
+        return float(floor)
+    if a > float(cap):
+        return float(cap)
+    return a
+
+
+def trim_retrigger_pulse(*, want, ton_q, pulse_prev):
+    """0.59：稳态 trim/sync 更新走限频重触发。want 持续 ≥ton(200ms) 首次到点发一拍
+    （撤 Execute 一拍，下一拍上升沿重采样）；之后 want 保持不再发，直到 want 掉过再起。
+    无视觉/同步漂移时 want 恒 FALSE → 全程单沿。"""
+    return bool(want) and bool(ton_q) and not bool(pulse_prev)
+
+
+def trim_want(*, exec_hold, ramp_lock, in_vel_m1, in_vel_m2, decel_active, stop,
+              vel_fb_m1, vel_fb_m2, latch_m1, latch_m2, eps=0.004):
+    """0.59：重触发条件——非爬坡期、两侧到速、目标与锁存差 ≥ eps。"""
+    if (not exec_hold) or ramp_lock or decel_active or stop:
+        return False
+    if not (in_vel_m1 and in_vel_m2):
+        return False
+    return (abs(abs(float(vel_fb_m1)) - abs(float(latch_m1))) >= abs(float(eps))
+            or abs(abs(float(vel_fb_m2)) - abs(float(latch_m2))) >= abs(float(eps)))
+
+
+def moverel_decel_dist(v_act, dec, *, eps=0.001):
+    """0.59：提前减速距离 v²/(2·dec)，取实际速度（越保守越早触发）。"""
+    if abs(float(v_act)) <= eps or abs(float(dec)) <= 1e-6:
+        return 0.0
+    return (abs(float(v_act)) ** 2) / (2.0 * abs(float(dec)))
+
+
+def moverel_decel_trigger(*, armed, moved, dist, decel_dist, eps=0.001):
+    """0.59：剩余 ≤ 减速距离且已起步才触发。静止时 moved=0 不得误触发短走距。"""
+    if not bool(armed) or abs(float(dist)) <= eps or abs(float(moved)) <= eps:
+        return False
+    return float(moved) >= abs(float(dist)) - float(decel_dist)
+
+
+def req_vel_ramp(*, e_mode, power_gate, power_settled, vel_appl, halt_busy=False,
+                 decel_active=False, decel_done=False, eps=0.001):
+    """0.58→0.59 不变：减速/到位锁期间禁新请求，防止停稳后又爬目标。"""
+    if int(e_mode) != 1:
+        return False
+    if decel_active or decel_done:
+        return False
+    if halt_busy:
+        return False
+    return bool(power_gate) and bool(power_settled) and abs(float(vel_appl)) > float(eps)
+
+
+def exec_hold_059(*, e_mode, req, decel_active, hold_prev, stop=False, enable=True):
+    """0.59：减速期撤 Execute（Halt 接管，禁止速度指令抢轴）；点动闭锁同 0.56。
+    0.58 在减速期持 Execute 是配合 PLC 爬速；单沿方案下必须撤。"""
+    if stop or (not enable):
+        return False
+    if decel_active:
+        return False
+    if req:
+        return True
+    if int(e_mode) in (0, 4):
+        return False
+    return bool(hold_prev)
+
+
+def halt_level_ramp(*, stopping, e_mode, moving, decel_active, stop=False):
+    """0.58→0.59 不变：减速期间禁 Halt 抢占；松手短窗仍动才发。"""
+    if stop or int(e_mode) != 0 or (not stopping):
+        return False
+    if decel_active:
+        return False
+    return bool(moving)
+
+
+
+def direct_velocities(vel_m1_direct, vel_m2_direct):
+    """0.60 外部直控：M1/M2 速度直接来自视觉，不做 trim/sync。"""
+    return float(vel_m1_direct), float(vel_m2_direct)
+
+
+def direct_halt_demand(*, e_mode, req_m1, req_m2, moving_m1, moving_m2):
+    """0.60：直控中任一侧目标为 0 且在动 -> 双轴 Halt。"""
+    if int(e_mode) != 4:
+        return False
+    return ((not req_m1) and bool(moving_m1)) or ((not req_m2) and bool(moving_m2))

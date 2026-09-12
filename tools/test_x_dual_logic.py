@@ -7,7 +7,7 @@ from tools.x_dual_logic import (
     m2_vel_request, m2_need_halt, dual_vel_request, softhold_exit_should_reset,
     dual_sync_velocities, hybrid_follow_velocities,     vision_dual_velocities,
     encoder_sync_gain, clamp_sync_corr, soft_acc, slew_velocity, sm3_track_acc,
-    slew_start_nonzero, vel_latch_on_exec, sync_scale_at_speed,
+    slew_start_nonzero, vel_latch_on_exec, jog_hold, exec_hold, sync_scale_at_speed,
     distance_from_avg, applied_base_velocity, vel_request_no_coast,
     vel_execute, gantry_drop_retry, heading_trim, x_reg_on,
     sync_expect_step, sync_residual, friction_pos_corr, vision_friction_velocities,
@@ -16,6 +16,9 @@ from tools.x_dual_logic import (
     trim_start_locked, corr_limit_for_base, floor_cmd_vs_base,
     dual_jog_vel_request, one_shot_trim_retrigger, vision_retrigger_ok,
     ramp_lock_fb_vel, vel_error_holdoff,
+    eff_ramp_acc, trim_retrigger_pulse, trim_want, moverel_decel_dist,
+    moverel_decel_trigger, req_vel_ramp, exec_hold_059, halt_level_ramp,
+    direct_velocities, direct_halt_demand,
 )
 
 class XDualLogicTests(unittest.TestCase):
@@ -25,6 +28,22 @@ class XDualLogicTests(unittest.TestCase):
     def test_jog_pos_mode1(self):
         self.assertEqual(select_mode(True, False, False, False, False, False, True), 1)
         self.assertEqual(base_vel(1, True, False, 0.4, False, 1.0, 0.5), 0.4)
+
+    def test_direct_mode_beats_jog(self):
+        self.assertEqual(select_mode(True, False, False, False, False, False, True, direct=True), 4)
+
+    def test_direct_velocities_passthrough(self):
+        self.assertEqual(direct_velocities(-0.4, -0.385), (-0.4, -0.385))
+
+    def test_direct_zero_side_halts(self):
+        self.assertTrue(direct_halt_demand(
+            e_mode=4, req_m1=True, req_m2=False, moving_m1=False, moving_m2=True))
+        self.assertFalse(direct_halt_demand(
+            e_mode=1, req_m1=True, req_m2=False, moving_m1=False, moving_m2=True))
+
+    def test_exec_hold_direct_release(self):
+        self.assertFalse(exec_hold_059(e_mode=4, req=False, decel_active=False, hold_prev=True))
+        self.assertTrue(exec_hold_059(e_mode=4, req=True, decel_active=False, hold_prev=False))
 
     def test_move_rel_base_vel_sign(self):
         self.assertEqual(base_vel(1, False, False, 0.4, True, -2.0, 0.5), -0.5)
@@ -409,6 +428,12 @@ class XDualLogicTests(unittest.TestCase):
             exec_now=True, exec_prev=True, target=0.31, latched_prev=0.3, in_vel=False), 0.3)
         self.assertAlmostEqual(vel_latch_on_exec(
             exec_now=True, exec_prev=True, target=0.32, latched_prev=0.3, in_vel=True), 0.32)
+        self.assertTrue(jog_hold(raw=True, held_prev=False, off_done=False))
+        self.assertTrue(jog_hold(raw=False, held_prev=True, off_done=False))
+        self.assertFalse(jog_hold(raw=False, held_prev=True, off_done=True))
+        self.assertTrue(exec_hold(e_mode=1, req=True, hold_prev=False))
+        self.assertTrue(exec_hold(e_mode=1, req=False, hold_prev=True))
+        self.assertFalse(exec_hold(e_mode=0, req=False, hold_prev=True))
 
     def test_sync_scale_ramps_in(self):
         self.assertEqual(sync_scale_at_speed(r_base=0.4, r_vel_act_m1=0.0, r_vel_act_m2=0.0), 0.0)
@@ -417,3 +442,120 @@ class XDualLogicTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class Ramp059Tests(unittest.TestCase):
+    # 0.59：单沿起步 + Halt 对称减速（0.58 每步重触发废除）
+    def test_eff_ramp_acc_caps_hmi_25(self):
+        self.assertEqual(eff_ramp_acc(25.0), 1.0)
+        self.assertEqual(eff_ramp_acc(100.0), 1.0)
+
+    def test_eff_ramp_acc_floor_and_passthrough(self):
+        self.assertEqual(eff_ramp_acc(0.01), 0.05)
+        self.assertEqual(eff_ramp_acc(0.8), 0.8)
+        self.assertEqual(eff_ramp_acc(0.4), 0.4)
+
+    def test_trim_want_gates(self):
+        # 全条件齐 + 差值达标才 want
+        base = dict(exec_hold=True, ramp_lock=False, in_vel_m1=True, in_vel_m2=True,
+                    decel_active=False, stop=False,
+                    vel_fb_m1=0.41, vel_fb_m2=0.4, latch_m1=0.4, latch_m2=0.4)
+        self.assertTrue(trim_want(**base))
+        self.assertFalse(trim_want(ramp_lock=True, **base))
+        self.assertFalse(trim_want(in_vel_m2=False, **base))
+        self.assertFalse(trim_want(decel_active=True, **base))
+        # 无视觉/同步漂移：差值 < 0.004 → 永不触发 → 全程单沿
+        base.update(vel_fb_m1=0.402, latch_m1=0.4)
+        self.assertFalse(trim_want(**base))
+
+    def test_trim_retrigger_pulse_rate_limited_by_ton(self):
+        # want 已持续，ton 未到点：不发
+        self.assertFalse(trim_retrigger_pulse(want=True, ton_q=False, pulse_prev=False))
+        # ton 到点首发一拍
+        self.assertTrue(trim_retrigger_pulse(want=True, ton_q=True, pulse_prev=False))
+        # 拍后 prev=want 保持：不再发（下一次要 want 掉过再起）
+        self.assertFalse(trim_retrigger_pulse(want=True, ton_q=True, pulse_prev=True))
+        # want 掉过再起：可再发（≥200ms 限频由 TON 保证）
+        self.assertTrue(trim_retrigger_pulse(want=True, ton_q=True, pulse_prev=False))
+
+    def test_moverel_decel_dist_uses_actual_speed(self):
+        self.assertAlmostEqual(moverel_decel_dist(0.4, 0.8), 0.1)
+        self.assertEqual(moverel_decel_dist(0.0, 0.8), 0.0)
+        self.assertAlmostEqual(moverel_decel_dist(0.2, 0.8), 0.025)
+
+    def test_moverel_decel_trigger_remaining_le_dist(self):
+        # 剩 0.08 = 减速距离 0.1 之内 → 触发
+        self.assertTrue(moverel_decel_trigger(armed=True, moved=0.92, dist=1.0,
+                                              decel_dist=0.1))
+        self.assertFalse(moverel_decel_trigger(armed=True, moved=0.5, dist=1.0,
+                                               decel_dist=0.1))
+
+    def test_moverel_decel_trigger_not_at_standstill(self):
+        # 静止 moved=0：短走距不得误触发
+        self.assertFalse(moverel_decel_trigger(armed=True, moved=0.0, dist=0.05,
+                                               decel_dist=0.1))
+        # 未武装不得触发
+        self.assertFalse(moverel_decel_trigger(armed=False, moved=0.5, dist=1.0,
+                                               decel_dist=0.1))
+
+    def test_req_vel_ramp_blocked_during_decel(self):
+        base = dict(e_mode=1, power_gate=True, power_settled=True, vel_appl=0.4)
+        self.assertTrue(req_vel_ramp(**base))
+        self.assertFalse(req_vel_ramp(decel_active=True, **base))
+        self.assertFalse(req_vel_ramp(decel_done=True, **base))
+
+    def test_exec_hold_059_drops_execute_when_halt_takes_over(self):
+        # 0.59 与 0.58 相反：减速期必须撤 Execute，Halt 才不被速度指令抢轴
+        self.assertFalse(exec_hold_059(e_mode=0, req=False, decel_active=True,
+                                       hold_prev=True))
+        self.assertFalse(exec_hold_059(e_mode=1, req=False, decel_active=True,
+                                       hold_prev=True))
+        self.assertTrue(exec_hold_059(e_mode=1, req=True, decel_active=False,
+                                      hold_prev=False))
+        self.assertFalse(exec_hold_059(e_mode=0, req=False, decel_active=False,
+                                       hold_prev=True))
+
+    def test_halt_level_ramp_suppressed_during_decel(self):
+        self.assertFalse(halt_level_ramp(stopping=True, e_mode=0, moving=True,
+                                         decel_active=True))
+        self.assertTrue(halt_level_ramp(stopping=True, e_mode=0, moving=True,
+                                        decel_active=False))
+
+    def test_single_edge_startup_no_retrigger_storm(self):
+        # 0.59 回归：起步全程（含爬坡）只允许 1 个 Execute 上升沿（无 trim 漂移时）。
+        # 0.58 的每步重触发在此仿真下产生 ~125 个沿（4ms 交替一拍）。
+        def exec_059(req, decel_active, hold_prev, trim_pulse, exec_prev):
+            hold = exec_hold_059(e_mode=1, req=req, decel_active=decel_active,
+                                 hold_prev=hold_prev)
+            return hold and not trim_pulse
+
+        # 仿真：0.4 m/s 点动，acc=0.8 → SM3 爬坡 0.5s（125 拍）；跑 2s
+        dt = 0.004
+        edges = 0
+        hold = False
+        exec_prev = False
+        v_act = 0.0
+        for i in range(500):
+            req = (i >= 20)  # 上使能 80ms 后
+            if req and v_act < 0.4:
+                v_act = min(v_act + 0.8 * dt, 0.4)
+            # 无视觉：trim_want 恒 FALSE → 无脉冲
+            exec_now = exec_059(req, False, hold, False, exec_prev)
+            if exec_now and not exec_prev:
+                edges += 1
+            hold = exec_now
+            exec_prev = exec_now
+        self.assertEqual(edges, 1)
+
+    def test_058_retrigger_storm_reproduced_for_comparison(self):
+        # 0.58 对照：爬坡期每拍交替撤/置 Execute → 上升沿数量 ≈ 爬坡拍数的一半。
+        # 现场症状（起步冲 2 次 ~1s + M2 慢）与沿风暴强相关，0.59 已删除该机制。
+        pulse = False
+        edges = 0
+        exec_prev = False
+        for i in range(125):  # 0.5s 爬坡
+            pulse = not pulse  # 0.58：xRampPulse 每拍翻转
+            exec_now = pulse
+            if exec_now and not exec_prev:
+                edges += 1
+            exec_prev = exec_now
+        self.assertEqual(edges, 63)

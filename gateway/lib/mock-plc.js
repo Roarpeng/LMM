@@ -41,6 +41,8 @@ function createMockPlc(initialCommands = {}) {
     posM2: 0,
     velCmdM1: 0,
     velCmdM2: 0,
+    velActM1: 0,
+    velActM2: 0,
     homedY: false,
     homedZ: false,
     homedR: false,
@@ -141,6 +143,11 @@ function createMockPlc(initialCommands = {}) {
       if (req.HMI_xJogRNeg) state.posR -= Number(req.HMI_rJogVelR || 0) * dt;
     }
 
+    // 0.63 mock: actual velocity ramps toward command (first-order, ~6 m/s^2)
+    const velRamp = 6 * Math.max(0, dt);
+    state.velActM1 += Math.max(-velRamp, Math.min(velRamp, state.velCmdM1 - state.velActM1));
+    state.velActM2 += Math.max(-velRamp, Math.min(velRamp, state.velCmdM2 - state.velActM2));
+
     const autoEdge = req.HMI_xAutoStart && !state.autoStartPrev;
     state.autoStartPrev = Boolean(req.HMI_xAutoStart);
     if (req.HMI_xAutoAbort || !safe || req.HMI_xStop) {
@@ -161,6 +168,7 @@ function createMockPlc(initialCommands = {}) {
   }
 
   function statusMessage() {
+    const safe = Boolean(req.HMI_xEStop) && !state.estopLatch;
     return {
       t: 's',
       Tcp_iCommStatus: 2,
@@ -192,6 +200,21 @@ function createMockPlc(initialCommands = {}) {
       AxisFb_rPosR: state.posR,
       AxisFb_rVelCmdM1: state.velCmdM1,
       AxisFb_rVelCmdM2: state.velCmdM2,
+      AxisFb_rVelActM1: state.velActM1,
+      AxisFb_rVelActM2: state.velActM2,
+      Direct_rVelM1Act: state.velActM1,
+      Direct_rVelM2Act: state.velActM2,
+      Direct_xActive: false,
+      Direct_xOnline: false,
+      Direct_xEnable: Boolean(req.HMI_xDirectEnable),
+      Direct_wSeqEcho: 0,
+      AxisFb_xMovingM1: Math.abs(state.velActM1) > 0.01,
+      AxisFb_xMovingM2: Math.abs(state.velActM2) > 0.01,
+      AxisFb_xPoweredM1: safe,
+      AxisFb_xPoweredM2: safe,
+      AxisFb_xSyncWarn: false,
+      AxisFb_xSyncFault: false,
+      AxisFb_rSyncErr: state.posM1 - state.posM2,
       AxisFb_xHomedY: state.homedY,
       AxisFb_xHomedZ: state.homedZ,
       AxisFb_xHomedR: state.homedR,

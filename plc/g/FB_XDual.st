@@ -1,6 +1,6 @@
 FUNCTION_BLOCK FB_XDual
 (* ==============================================================================
- * FB_XDual — X 轴双驱（g 线 0.54）：Execute 上升沿锁死目标速度与 Acc；禁止从 0 爬
+ * FB_XDual — X 轴双驱（g 线 0.59）：单沿起步 + SM3 斜坡 + Halt 对称减速
  * 铁律：X 轴只经本 FB；FB_Servo 不得持有 X 轴实例。
  *
  *   0.44 根因：Enable 和调节器一起关 → Power FB 停转，驱动收不到卸使能；
@@ -18,6 +18,22 @@ FUNCTION_BLOCK FB_XDual
  *         PLC 按用户 Acc 爬 FB 速度，SM3 Acc 抬到 ≥10 只负责跟上；松手仍 Halt。
  *   0.54：0.53 不过冲也不走。本机 Execute 保持时 Velocity 不刷新，第一拍 ~0 被锁死。
  *         上升沿一次写入目标速度 + 用户 Acc；爬坡中不改输入；到速后再跟 trim。
+ *   0.55：三次过冲=Execute 被拉了三次。PRG_Logic 先清 AxisCmd 再置位，ETHERCAT(prio0)
+ *         在 FALSE 空窗采到松手→Halt→再加速。第一次点动 Logic 超时约 3 拍。去抖+一次写入。
+ *   0.56：偶发三次过冲。0.55 去抖保了 eMode，但 Power.Status 闪一下仍清 xStartReady，
+ *         Execute 掉、锁存清 0，再启动就是又一次过冲。点动中 Execute 闭锁到松开。
+ *   0.57：现场仍每次起步沿 X 往复冲 3 次（约 3s）。根因：起步=速度阶跃（Acc=25）
+ *         打进 CSV 速度环，激起双驱耦合龙门 ~1Hz 纵向共振。0.53 阶梯爬速本可消过冲，
+ *         但本机 Execute 保持时 Velocity 不刷新，首拍 ~0 锁死（"不过冲也不走"）。
+ *   0.58：恢复 rVelSlew 阶梯爬速；爬坡期 Execute 每步重触发（OFF/ON 交替一拍，
+ *         上升沿重采样）；斜率取用户 Acc/Dec 钳 [0.05, rRampAccMax]，SM3 Acc 只跟梯；
+ *         松手/到位先阶梯降到 ~0 再 Halt；MoveRel 剩余≤slew²/2Dec 提前减速；
+ *         到位锁 xDecelDone 禁停稳后重爬目标。
+ *   0.59：0.58 每步重触发 = 250Hz 沿风暴，现场 acc=0.8 起步仍快速冲 2 次（~1s）、
+ *         第三次慢、停死；M2 明显慢于 M1（两侧接受沿时刻不一致，M2 漏沿爬速落后）。
+ *         改单沿起步：一个上升沿写最终目标 + 钳制用户 Acc/Dec（0.05~1.0），
+ *         SM3 自带斜坡 0→目标（0.8 → 0.5s）；稳态 trim/sync 更新走限频重触发
+ *         （≥200ms 一次、差值≥0.004）；减速统一 Halt（用户 Dec 对称）。
  * ============================================================================== *)
 VAR_IN_OUT
     AxisM1 : AXIS_REF_SM3;
@@ -47,6 +63,11 @@ VAR_INPUT
     rHeadingDeadband : REAL := 0.003;
     rTrimFilterTc : REAL := 0.05;
     rCycleSec : REAL := 0.004;
+    (* 0.60 外部直控（视觉直写 M1/M2 速度）：xDirectMode=TRUE 时绕过 trim/sync *)
+    xDirectMode : BOOL;
+    rVelM1Direct : REAL;
+    rVelM2Direct : REAL;
+    tDirectRetrig : TIME := T#40MS;
 END_VAR
 VAR_OUTPUT
     xMoveDone : BOOL;
@@ -88,6 +109,10 @@ VAR_OUTPUT
     xVelExecM2 : BOOL;
     xVelInVelM1 : BOOL;
     xVelInVelM2 : BOOL;
+    iVelExecRise : INT;
+    rVelActM1Out : REAL;
+    rVelActM2Out : REAL;
+    xDirectActive : BOOL;
 END_VAR
 VAR
     fbPowerM1 : MC_Power;
@@ -126,6 +151,9 @@ VAR
     rCorrPosMax : REAL := 0.08;
     rCorrVelMax : REAL := 0.06;
     xStraightEdge : BOOL;
+    xJogRaw : BOOL;
+    xJogHeld : BOOL;
+    tonJogOff : TON;
     tonStillM1 : TON;
     tonStillM2 : TON;
     tonHoldFallback : TON;
@@ -161,7 +189,12 @@ VAR
     rVelLatchM2 : REAL;
     xExecPrev : BOOL;
     rAccSoftMin : REAL := 0.05;
-    rVelStepMax : REAL;
+    rAccSoft : REAL;
+    rDecSoft : REAL;
+    rRampAccMax : REAL := 1.0;
+    xDecelActive : BOOL;
+    xDecelDone : BOOL;
+    rDecelDist : REAL;
     xM1Decel : BOOL;
     xM2Decel : BOOL;
     xBothPowered : BOOL;
@@ -183,7 +216,14 @@ VAR
     tonPowerOk : TON;
     tonVelHold : TON;
     tonRampLock : TON;
+    tonTrimRetrig : TON;
+    xTrimWant : BOOL;
+    xTrimPulse : BOOL;
+    xTrimPulsePrev : BOOL;
+    xMoveRelDecelTrig : BOOL;
     xExecM1 : BOOL;
+    xExecHold : BOOL;
+    xHaltBusy : BOOL;
     xExecBoth : BOOL;
     xDirFlipAny : BOOL;
     xVelHoldOff : BOOL;
@@ -201,6 +241,11 @@ VAR
     rSyncWarnLevel : REAL := 0.05;
     rSyncFaultLevel : REAL := 0.15;
     tonSyncFault : TON;
+    tonDirectRetrig : TON;
+    xDirectWant : BOOL;
+    xDirectPulse : BOOL;
+    xDirectPulsePrev : BOOL;
+    xHaltDemand : BOOL;
 END_VAR
 
 rVelFactor := 0.0;
@@ -211,9 +256,14 @@ xPoweredV := FALSE;
 eSlaveMode := 0;
 
 (* ------------------- 1. 模式 ------------------- *)
+(* 点动 FALSE 短于 40ms 视为空窗，不 Halt、不撤 Execute *)
+xJogRaw := (xJogPos XOR xJogNeg) OR xMoveRel;
+tonJogOff(IN := xJogHeld AND NOT xJogRaw AND xEnable AND NOT xStop
+           AND NOT (xSpinLeft XOR xSpinRight), PT := T#40MS);
 IF xStop OR NOT xEnable THEN
     eMode := 0;
     rBase := 0.0;
+    xJogHeld := FALSE;
 ELSIF xSpinLeft XOR xSpinRight THEN
     IF xSpinLeft THEN
         eMode := 2;
@@ -221,8 +271,15 @@ ELSIF xSpinLeft XOR xSpinRight THEN
         eMode := 3;
     END_IF;
     rBase := 0.0;
-ELSIF (xJogPos XOR xJogNeg) OR xMoveRel THEN
+    xJogHeld := FALSE;
+ELSIF xDirectMode THEN
+    (* 0.60 外部直控优先于点动：视觉接管期间忽略点动/走距输入 *)
+    eMode := 4;
+    rBase := 0.0;
+    xJogHeld := FALSE;
+ELSIF xJogRaw THEN
     eMode := 1;
+    xJogHeld := TRUE;
     IF xMoveRel THEN
         IF rMoveDist >= 0.0 THEN
             rBase := ABS(rMoveVel);
@@ -234,9 +291,12 @@ ELSIF (xJogPos XOR xJogNeg) OR xMoveRel THEN
     ELSE
         rBase := -ABS(rJogVel);
     END_IF;
+ELSIF xJogHeld AND NOT tonJogOff.Q THEN
+    eMode := 1;
 ELSE
     eMode := 0;
     rBase := 0.0;
+    xJogHeld := FALSE;
 END_IF;
 iState := eMode;
 xStraightEdge := (eMode = 1) AND (eModePrev <> 1);
@@ -304,7 +364,7 @@ IF xStopping AND (eMode = 0) AND xStandstillM1 AND xStandstillM2 THEN
     xStopping := FALSE;
 END_IF;
 xRegOn := xEnable AND NOT xStop AND ((eMode <> 0) OR xStopping);
-xStopFallback := xStopping AND tonHaltWin.Q AND NOT (xStandstillM1 AND xStandstillM2);
+xStopFallback := xStopping AND tonHaltWin.Q AND NOT (xStandstillM1 AND xStandstillM2) AND NOT xDecelActive;
 (* Enable 恒 TRUE，卸使能只走调节器（对齐 FB_Servo；0.44 关 Enable 导致驱动收不到） *)
 fbPowerM1(Axis := AxisM1, Enable := TRUE,
           bRegulatorOn := xRegOn, bDriveStart := xRegOn);
@@ -321,15 +381,16 @@ xReadyM2 := xEnable AND NOT xStop AND NOT xFaultM2;
 xBothPowered := xPoweredM1 AND xPoweredM2;
 xPowerGate := xEnable AND NOT xStop AND NOT xFaultM1 AND NOT xFaultM2;
 tonPowerOk(IN := xRegOn AND xBothPowered AND (eMode <> 0), PT := T#80MS);
-(* 冷启动：80ms+standstill 闭锁一次。运动中禁止再看 standstill，否则 Execute 随停随开。 *)
-IF (eMode = 0) OR NOT xRegOn OR NOT xBothPowered THEN
+(* 冷启动闭锁一次。Status 闪烁不得清 xStartReady，否则 Execute 掉了再爬。 *)
+IF (eMode = 0) OR NOT xRegOn OR xStop THEN
     xStartReady := FALSE;
-ELSIF xWasStopping THEN
+ELSIF xWasStopping OR xExecHold THEN
     xStartReady := TRUE;
 ELSIF tonPowerOk.Q AND xStandstillM1 AND xStandstillM2 THEN
     xStartReady := TRUE;
 END_IF;
-xPowerSettled := xRegOn AND xBothPowered AND (eMode <> 0) AND xStartReady;
+xPowerSettled := xRegOn AND (eMode <> 0) AND xStartReady
+                 AND (xBothPowered OR xExecHold);
 
 (* 置零：点动/短窗禁止；空闲自动置零会和 Halt 抢轴，只保留手动 Reset *)
 IF (eMode <> 0) OR xStopping OR xStop OR NOT xEnable THEN
@@ -364,9 +425,26 @@ rDecUse := ABS(rDec);
 IF rDecUse < rAccSoftMin THEN
     rDecUse := rAccSoftMin;
 END_IF;
-rVelStepMax := rAccUse * rCycleSec;
+
+(* 0.59：SM3 斜坡用钳制 Acc/Dec（0.05~rRampAccMax）。HMI 25/100 兜底不再变阶跃；
+   rDecUse 保留软下限继续供 Stop 急停。 *)
+rAccSoft := ABS(rAcc);
+IF rAccSoft < rAccSoftMin THEN
+    rAccSoft := rAccSoftMin;
+END_IF;
+IF rAccSoft > rRampAccMax THEN
+    rAccSoft := rRampAccMax;
+END_IF;
+rDecSoft := ABS(rDec);
+IF rDecSoft < rAccSoftMin THEN
+    rDecSoft := rAccSoftMin;
+END_IF;
+IF rDecSoft > rRampAccMax THEN
+    rDecSoft := rRampAccMax;
+END_IF;
 
 (* 0.36：禁止 PLC 再爬 rVelAppl。按下即目标速度，松开即 0，停靠 Halt。 *)
+(* 0.59 注：rVelAppl 是最终目标；起步斜坡由 SM3 按 rAccSoft 生成（单沿锁存）。 *)
 IF (eMode = 0) OR xStop OR NOT xEnable THEN
     rVelAppl := 0.0;
 ELSIF eMode = 1 THEN
@@ -454,6 +532,11 @@ ELSIF (eMode = 2) OR (eMode = 3) THEN
         rVelCmdM1 := -ABS(rSpinVel) * rUseRatioM1;
     END_IF;
     rVelCmdM2 := -rVelCmdM1 * (rUseRatioM2 / rUseRatioM1);
+ELSIF eMode = 4 THEN
+    (* 0.60 外部直控：两个速度直接来自视觉，不做 trim/sync/斜坡 *)
+    rTrimFiltered := 0.0;
+    rVelCmdM1 := rVelM1Direct * rUseRatioM1;
+    rVelCmdM2 := rVelM2Direct * rUseRatioM2;
 ELSE
     rTrimFiltered := 0.0;
     rVelCmdM1 := rVelAppl;
@@ -500,11 +583,18 @@ ELSE
 END_IF;
 
 (* ------------------- 7. 双轴 MoveVelocity ------------------- *)
-(* 0.54：上升沿锁死目标速度+用户 Acc。禁止从 0 爬（Execute 保持时 Velocity 不刷新）。 *)
-IF (eMode = 1) AND xPowerGate AND xPowerSettled AND (ABS(rVelAppl) > 0.001) THEN
+(* 0.54：上升沿锁目标。0.58 每步重触发被 0.59 废除：250Hz 沿风暴反复踢起龙门
+   1Hz 共振（现场 acc=0.8：起步快速冲 2 次 ~1s、第三次慢、停死）；两侧 FB/驱动
+   接受沿时刻不一致 → M2 漏沿爬速落后（M2 明显慢）。0.59：起步只发一个上升沿，
+   一次写入最终目标 + 钳制 Acc/Dec，SM3 自带斜坡 0→目标（0.8 → 0.5s）；
+   稳态 trim/sync 更新走限频重触发；减速由 Halt 接管（见第 8 节）。 *)
+xHaltBusy := fbHaltM1.Busy OR fbHaltM2.Busy OR fbStopM1.Busy OR fbStopM2.Busy;
+IF (eMode = 1) AND xPowerGate AND xPowerSettled AND (ABS(rVelAppl) > 0.001)
+        AND NOT xHaltBusy AND NOT xDecelActive AND NOT xDecelDone THEN
     xReqVelM1 := TRUE;
     xReqVelM2 := TRUE;
-ELSIF ((eMode = 2) OR (eMode = 3)) AND xPowerGate AND xPowerSettled THEN
+ELSIF ((eMode = 2) OR (eMode = 3) OR (eMode = 4)) AND xPowerGate AND xPowerSettled AND NOT xHaltBusy
+        AND NOT xDecelActive AND NOT xDecelDone THEN
     IF ABS(rVelCmdM1) > 0.001 THEN
         xReqVelM1 := TRUE;
     ELSE
@@ -523,6 +613,7 @@ END_IF;
 xM1Decel := (NOT xReqVelM1) AND xPowerGate AND xMovingM1 AND NOT xStop AND NOT xSoftHold;
 xM2Decel := (NOT xReqVelM2) AND xPowerGate AND xMovingM2 AND NOT xStop AND NOT xSoftHold;
 
+(* 方向/换向看 FB 速度（0.54 语义）；减速期由 Halt 接管，无符号穿零 *)
 IF ABS(rVelFbM1) > 0.001 THEN
     IF rVelFbM1 >= 0.0 THEN
         eDirM1 := positive;
@@ -555,32 +646,72 @@ IF tonVelHold.Q THEN
 END_IF;
 xErrVelPrev := xErrVelM1 OR xErrVelM2;
 
-xHaltTrig := xStopping AND (eMode = 0) AND NOT xStop AND NOT xStopFallback
-             AND (xMovingM1 OR xMovingM2);
-xNeedHaltM1 := xHaltTrig AND NOT xHaltPrev;
+(* 0.59 提前减速：剩余 ≤ v²/(2·Dec)，v 取双轴实际速度较大者（越保守越早触发）。
+   MoveRel 未武装/静止（moved≈0）不触发，短走距不得起步即停。 *)
+rDecelDist := 0.0;
+IF ABS(rVelActM1) >= ABS(rVelActM2) THEN
+    rDecelDist := (ABS(rVelActM1) * ABS(rVelActM1)) / (2.0 * rDecSoft);
+ELSE
+    rDecelDist := (ABS(rVelActM2) * ABS(rVelActM2)) / (2.0 * rDecSoft);
+END_IF;
+xMoveRelDecelTrig := xMoveRel AND xArmed AND (NOT xDecelDone)
+                     AND (ABS(rMoveDist) > 0.001)
+                     AND (ABS(rAvg - rStart) > 0.001)
+                     AND (ABS(rAvg - rStart) >= ABS(rMoveDist) - rDecelDist);
+
+(* 松手短窗 Halt 脉冲 + MoveRel 提前减速 Halt 脉冲；减速期禁重复发 *)
+xHaltTrig := (xStopping AND (eMode = 0) AND NOT xStop AND NOT xStopFallback
+              AND (xMovingM1 OR xMovingM2) AND NOT xDecelActive)
+             OR (xMoveRelDecelTrig AND NOT xDecelActive);
+(* 0.60 外部直控：任一侧目标为 0 且在动 → 双轴 Halt（停止/失联兜底由 eMode→0 处理） *)
+xHaltDemand := xHaltTrig OR ((eMode = 4)
+               AND (((NOT xReqVelM1) AND xMovingM1) OR ((NOT xReqVelM2) AND xMovingM2)));
+xNeedHaltM1 := xHaltDemand AND NOT xHaltPrev;
 xNeedHaltM2 := xNeedHaltM1;
-xExecBoth := NOT xDirFlipAny AND NOT xNeedHaltM1 AND NOT xVelHoldOff;
-xExecM1 := xReqVelM1 AND xExecBoth;
+(* 0.56 点动闭锁 + 0.59 减速期撤 Execute（Halt 接管，禁止速度指令抢轴） *)
+IF xStop OR NOT xEnable THEN
+    xExecHold := FALSE;
+ELSIF xDecelActive THEN
+    xExecHold := FALSE;
+ELSIF xReqVelM1 THEN
+    xExecHold := TRUE;
+ELSIF (eMode = 0) OR ((eMode = 4) AND (NOT xReqVelM1 OR NOT xReqVelM2)) THEN
+    xExecHold := FALSE;
+END_IF;
+(* 0.59 稳态 trim/sync 更新：限频重触发（≥200ms 一次）。仅非爬坡期（xRampLock 已放）、
+   两侧到速、目标与锁存差 ≥0.004。脉冲期撤 Execute 一拍，下一拍上升沿重采样；
+   无视觉/同步漂移时永不触发——起步到停车全程一个沿。 *)
+xTrimWant := xExecHold AND (NOT xRampLock) AND xVelInVelM1 AND xVelInVelM2
+             AND (NOT xDecelActive) AND (NOT xStop)
+             AND ((ABS(ABS(rVelFbM1) - rVelLatchM1) >= 0.004)
+                  OR (ABS(ABS(rVelFbM2) - rVelLatchM2) >= 0.004));
+tonTrimRetrig(IN := xTrimWant, PT := T#200MS);
+xTrimPulse := xTrimWant AND tonTrimRetrig.Q AND NOT xTrimPulsePrev;
+xTrimPulsePrev := xTrimWant;
+(* 0.60 外部直控：目标变化时限频重触发，跟随视觉（无变化不触发，不起沿风暴） *)
+xDirectWant := (eMode = 4) AND xExecHold AND (NOT xDecelActive) AND (NOT xStop)
+               AND ((ABS(ABS(rVelFbM1) - rVelLatchM1) >= 0.004)
+                    OR (ABS(ABS(rVelFbM2) - rVelLatchM2) >= 0.004));
+tonDirectRetrig(IN := xDirectWant, PT := tDirectRetrig);
+xDirectPulse := xDirectWant AND tonDirectRetrig.Q AND NOT xDirectPulsePrev;
+xDirectPulsePrev := xDirectWant;
+xExecBoth := NOT xDirFlipAny AND NOT xNeedHaltM1 AND NOT xVelHoldOff AND NOT xTrimPulse
+             AND NOT xDirectPulse;
+xExecM1 := xExecHold AND xExecBoth;
 IF xExecM1 AND NOT xExecPrev THEN
+    iVelExecRise := iVelExecRise + 1;
     rVelLatchM1 := ABS(rVelFbM1);
     rVelLatchM2 := ABS(rVelFbM2);
-    rAccLatch := rAccUse;
-    rDecLatch := rDecUse;
-ELSIF xExecM1 AND xVelInVelM1 AND xVelInVelM2 THEN
-    IF ABS(ABS(rVelFbM1) - rVelLatchM1) >= 0.004 THEN
-        rVelLatchM1 := ABS(rVelFbM1);
-    END_IF;
-    IF ABS(ABS(rVelFbM2) - rVelLatchM2) >= 0.004 THEN
-        rVelLatchM2 := ABS(rVelFbM2);
-    END_IF;
-ELSIF NOT xExecM1 THEN
+    rAccLatch := rAccSoft;
+    rDecLatch := rDecSoft;
+ELSIF NOT xExecHold THEN
     rVelLatchM1 := 0.0;
     rVelLatchM2 := 0.0;
 END_IF;
 fbVelM1(Axis := AxisM1, Execute := xExecM1,
         Velocity := rVelLatchM1, Direction := eDirM1,
         Acceleration := rAccLatch, Deceleration := rDecLatch);
-fbVelM2(Axis := AxisM2, Execute := xReqVelM2 AND xExecBoth,
+fbVelM2(Axis := AxisM2, Execute := xExecHold AND xExecBoth,
         Velocity := rVelLatchM2, Direction := eDirM2,
         Acceleration := rAccLatch, Deceleration := rDecLatch);
 
@@ -593,15 +724,15 @@ rVelInPrevM2 := rVelFbM2;
 (* ------------------- 8. 停车 ------------------- *)
 fbStopM1(Axis := AxisM1, Execute := xStop OR xStopFallback, Deceleration := rDecUse);
 fbStopM2(Axis := AxisM2, Execute := xStop OR xStopFallback, Deceleration := rDecUse);
-fbHaltM1(Axis := AxisM1, Execute := xNeedHaltM1, Deceleration := rDecUse);
-fbHaltM2(Axis := AxisM2, Execute := xNeedHaltM2, Deceleration := rDecUse);
-xHaltPrev := xHaltTrig;
+fbHaltM1(Axis := AxisM1, Execute := xNeedHaltM1, Deceleration := rDecSoft);
+fbHaltM2(Axis := AxisM2, Execute := xNeedHaltM2, Deceleration := rDecSoft);
+xHaltPrev := xHaltDemand;
 
 (* ------------------- 9. 诊断与走距 ------------------- *)
 xVelReqM1 := xReqVelM1;
 xVelReqM2 := xReqVelM2;
 xVelExecM1 := xExecM1;
-xVelExecM2 := xReqVelM2 AND xExecBoth;
+xVelExecM2 := xExecHold AND xExecBoth;
 xVelBusyM1 := fbVelM1.Busy;
 xVelBusyM2 := fbVelM2.Busy;
 xVelInVelM1 := fbVelM1.InVelocity;
@@ -610,6 +741,10 @@ xErrPowerM1 := fbPowerM1.Error;
 xErrPowerM2 := fbPowerM2.Error;
 xErrVelM1 := fbVelM1.Error;
 xErrVelM2 := fbVelM2.Error;
+(* 0.60 直控调试输出：实际速度 + 直控在役标志 *)
+rVelActM1Out := rVelActM1;
+rVelActM2Out := rVelActM2;
+xDirectActive := (eMode = 4);
 
 IF xStop OR NOT xEnable OR NOT xMoveRel THEN
     xArmed := FALSE;
@@ -620,6 +755,31 @@ ELSE
         rStart := rAvg;
     END_IF;
     xMoveDone := xArmed AND (ABS(rAvg - rStart) >= ABS(rMoveDist));
+END_IF;
+IF NOT xEnable THEN
+    iVelExecRise := 0;
+END_IF;
+
+(* 0.59 减速状态：松手有速或 MoveRel 提前触发 → Halt 脉冲接管减速；
+   双轴静止退出并置到位锁；新点动/旋转/新走距清锁。 *)
+IF xMoveRel AND NOT xMovePrev THEN
+    xDecelDone := FALSE;
+END_IF;
+IF xStop OR NOT xEnable THEN
+    xDecelActive := FALSE;
+    xDecelDone := FALSE;
+ELSIF (eMode <> 0) AND (NOT xMoveRel) THEN
+    xDecelActive := FALSE;
+    xDecelDone := FALSE;
+ELSIF xDecelActive THEN
+    IF (NOT xMovingM1) AND (NOT xMovingM2) THEN
+        xDecelActive := FALSE;
+        xDecelDone := TRUE;
+    END_IF;
+ELSIF (eMode = 0) AND (xMovingM1 OR xMovingM2) THEN
+    xDecelActive := TRUE;
+ELSIF xMoveRelDecelTrig THEN
+    xDecelActive := TRUE;
 END_IF;
 xMovePrev := xMoveRel;
 eModePrev := eMode;

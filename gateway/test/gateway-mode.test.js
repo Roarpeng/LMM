@@ -24,9 +24,9 @@ test('production mode never falls back to mock', () => {
   const defaultProduction = resolveMode({});
 
   assert.equal(explicitProduction.status, 0, explicitProduction.stderr);
-  assert.equal(explicitProduction.stdout, 'modbus-server');
+  assert.equal(explicitProduction.stdout, 'modbus-master');
   assert.equal(defaultProduction.status, 0, defaultProduction.stderr);
-  assert.equal(defaultProduction.stdout, 'modbus-server');
+  assert.equal(defaultProduction.stdout, 'modbus-master');
 });
 
 test('mock mode is enabled only by MOCK_PLC=1', () => {

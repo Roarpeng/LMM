@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LMM WebHMI · 通用调试页</title>
+  <style>
+    :root {
+      --bg:#0f1318; --panel:#1a222b; --panel2:#141a21; --line:#3a4654;
+      --text:#eef3f8; --muted:#9aabbc; --ok:#3dba7e; --warn:#e0a53a;
+      --danger:#e05454; --accent:#5eb3e8; --mono:"IBM Plex Mono",ui-monospace,monospace;
+    }
+    * { box-sizing:border-box; }
+    body { margin:0; color:var(--text); font-family:system-ui,"Noto Sans SC",sans-serif;
+      background:var(--bg); font-size:14px; line-height:1.4; }
+    header { display:flex; flex-wrap:wrap; gap:.6rem 1.2rem; align-items:center;
+      padding:.8rem 1.2rem; border-bottom:1px solid var(--line); background:#0a0e12;
+      position:sticky; top:0; z-index:10; }
+    header h1 { margin:0; font-size:1.1rem; font-weight:650; }
+    header a { color:var(--accent); font-size:.9rem; }
+    .pill { font-size:.8rem; padding:.25rem .6rem; border-radius:999px;
+      border:1px solid var(--line); background:var(--panel2); font-variant-numeric:tabular-nums; }
+    .pill.ok { border-color:var(--ok); color:var(--ok); }
+    .pill.bad { border-color:var(--danger); color:var(--danger); }
+    .wrap { display:grid; grid-template-columns:1fr 1fr; gap:1rem; padding:1rem 1.2rem 2rem;
+      max-width:1700px; margin:0 auto; }
+    @media (max-width:1100px){ .wrap { grid-template-columns:1fr; } }
+    section { background:var(--panel); border:1px solid var(--line); border-radius:10px;
+      padding:.9rem 1rem; margin-bottom:1rem; }
+    section h2 { margin:0 0 .7rem; font-size:.78rem; letter-spacing:.08em;
+      text-transform:uppercase; color:var(--muted); }
+    table { width:100%; border-collapse:collapse; font-size:.85rem; }
+    th,td { border-bottom:1px solid var(--line); padding:.4rem .5rem; text-align:left;
+      vertical-align:top; }
+    th { color:var(--muted); font-weight:500; }
+    td.name { font-family:var(--mono); color:var(--accent); white-space:nowrap; }
+    td.val { font-family:var(--mono); font-variant-numeric:tabular-nums; white-space:nowrap; }
+    td.zh { color:var(--muted); font-size:.8rem; }
+    .on { color:var(--ok); } .off { color:#55606c; }
+    input[type=number],input[type=text] { width:7rem; font:inherit; font-family:var(--mono);
+      color:var(--accent); background:var(--panel2); border:1px solid var(--line);
+      border-radius:5px; padding:.25rem .4rem; text-align:right; }
+    input[type=checkbox] { accent-color:var(--accent); width:1rem; height:1rem; }
+    .log { height:200px; overflow:auto; font-family:var(--mono); font-size:.75rem;
+      background:#0a0d10; border:1px solid var(--line); border-radius:8px;
+      padding:.5rem .6rem; color:var(--muted); }
+    .log div { white-space:pre-wrap; }
+    .tag { font-size:.72rem; color:var(--muted); border:1px solid var(--line);
+      border-radius:4px; padding:.05rem .3rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>LMM 通用调试页</h1>
+    <span class="pill" id="conn">WS: —</span>
+    <span class="pill" id="mode">PLC: —</span>
+    <a href="/index.html">← 工艺主界面</a>
+  </header>
+  <div class="wrap">
+    <div>
+      <section>
+        <h2>只读状态 · status</h2>
+        <table id="status-table"><thead><tr><th>变量</th><th>值</th><th>说明</th></tr></thead>
+          <tbody></tbody></table>
+      </section>
+    </div>
+    <div>
+      <section>
+        <h2>可写命令 · command（写入即获得租约）</h2>
+        <table id="cmd-table"><thead><tr><th>变量</th><th>写值</th><th>说明</th></tr></thead>
+          <tbody></tbody></table>
+      </section>
+      <section>
+        <h2>日志</h2>
+        <div class="log" id="log"></div>
+      </section>
+    </div>
+  </div>
+  <script>
+  (() => {
+    const $ = (id) => document.getElementById(id);
+    const logEl = $('log');
+    function log(m) {
+      const d = document.createElement('div');
+      d.textContent = new Date().toLocaleTimeString() + '  ' + m;
+      logEl.prepend(d);
+      while (logEl.children.length > 200) logEl.removeChild(logEl.lastChild);
+    }
+    log('通用调试页就绪');
+
+    let map = null, ws = null;
+    const state = {};
+    const statusCells = new Map();
+    const cmdInputs = new Map();
+
+    function fmt(field, v) {
+      if (field.type === 'BOOL') return v ? 'TRUE' : 'FALSE';
+      if (typeof v === 'number') return Math.abs(v) >= 1000 ? v.toFixed(1) : v.toFixed(3);
+      return String(v);
+    }
+
+    function allFields(section) {
+      const base = (map[section] && map[section].fields) || [];
+      const extra = (map.directx && map.directx[section] && map.directx[section].fields) || [];
+      return [...base.map((f) => ({ ...f, group: 'main' })),
+              ...extra.map((f) => ({ ...f, group: 'directx' }))];
+    }
+
+    function build() {
+      const st = $('status-table').querySelector('tbody');
+      const cm = $('cmd-table').querySelector('tbody');
+      for (const f of allFields('status')) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td class="name">${f.name}</td><td class="val">—</td><td class="zh">${f.zh || ''}</td>`;
+        st.appendChild(tr);
+        statusCells.set(f.name, tr.querySelector('td.val'));
+      }
+      for (const f of allFields('command')) {
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        let input;
+        if (f.type === 'BOOL') {
+          input = document.createElement('input');
+          input.type = 'checkbox';
+        } else {
+          input = document.createElement('input');
+          input.type = 'number';
+          input.step = f.type === 'UINT' ? '1' : '0.01';
+          input.value = '0';
+        }
+        input.addEventListener('change', () => {
+          const v = f.type === 'BOOL' ? input.checked : Number(input.value);
+          send(f.name, v);
+        });
+        td.appendChild(input);
+        cmdInputs.set(f.name, { input, f });
+        tr.innerHTML = `<td class="name">${f.name}${f.group === 'directx' ? ' <span class="tag">X直控</span>' : ''}</td>`;
+        tr.appendChild(td);
+        const zh = document.createElement('td');
+        zh.className = 'zh';
+        zh.textContent = f.zh || '';
+        tr.appendChild(zh);
+        cm.appendChild(tr);
+      }
+    }
+
+    function send(name, value) {
+      if (!ws || ws.readyState !== 1) { log('WS 未连接'); return; }
+      ws.send(JSON.stringify({ t: 'w', seq: Date.now() & 0xffff, [name]: value }));
+      log('write ' + name + ' = ' + value);
+    }
+
+    function ingest(msg) {
+      if (msg._gateway) $('mode').textContent = 'PLC: ' + msg._gateway;
+      for (const [name, cell] of statusCells) {
+        if (!(name in msg)) continue;
+        const v = msg[name];
+        state[name] = v;
+        cell.textContent = fmt({ type: typeof v === 'boolean' ? 'BOOL' : 'num' }, v);
+        cell.className = 'val' + (typeof v === 'boolean' ? (v ? ' on' : ' off') : '');
+      }
+    }
+
+    function connect() {
+      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+      ws = new WebSocket(proto + '://' + location.host);
+      ws.onopen = () => {
+        $('conn').textContent = 'WS: Connected';
+        $('conn').className = 'pill ok';
+        ws.send(JSON.stringify({ t: 'ping' }));
+      };
+      ws.onclose = () => {
+        $('conn').textContent = 'WS: Disconnected';
+        $('conn').className = 'pill bad';
+        log('WS closed — retry 2s');
+        setTimeout(connect, 2000);
+      };
+      ws.onerror = () => log('WS error');
+      ws.onmessage = (ev) => {
+        let msg;
+        try { msg = JSON.parse(ev.data); } catch { return; }
+        if (msg.t === 'pong') return;
+        if (msg.t === 'err') { log('err ' + (msg.msg || msg.code)); return; }
+        ingest(msg);
+      };
+    }
+
+    fetch('/map').then((r) => r.json()).then((m) => {
+      map = m;
+      build();
+      connect();
+    }).catch((e) => log('加载 /map 失败: ' + e.message));
+  })();
+  </script>
+</body>
+</html>

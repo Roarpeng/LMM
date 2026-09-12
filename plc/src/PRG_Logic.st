@@ -107,7 +107,8 @@ AxisCmd_xMoveRelX := FALSE;
 AxisCmd_xMoveRelY := FALSE;
 AxisCmd_xMoveAbsY := FALSE;
 AxisCmd_xHoldR := FALSE;
-AxisCmd_rTrackKp := 0.0;
+(* 视觉差速：手动点动与自动走距都下发 Kp；FB 仅在直行模式用 *)
+AxisCmd_rTrackKp := HMI_rKpTrack;
 Logic_xForceTare := FALSE;
 
 xAutoStartEdge := HMI_xAutoStart AND NOT xAutoStartPrev;

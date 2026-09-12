@@ -14,6 +14,8 @@
 ## 组装
 
 - `fbForce : FB_Force` — `Force_wInRaw(%IW102) → rForceAct`（模拟时 Logic 直写 `rForceAct`）
+  - 力通讯状态 `Force_xCommOk`/`Force_xTimeout` **由 `PRG_Force485` 的收发回文状态机唯一判定**；
+    `FB_Force` 的“原始值 2s 不变”看门狗**不再驱动报警**（力稳定时会误报 1005）。
 - `fbX : FB_XDual` — X 双驱（`FB_XLineTrack` 差速 + 双 `FB_Servo`；无 Virtual/Gear）
 - `fbFF : FB_ForceFollow` — Z 恒力 P 律，限 `[-rVelMax, rVelMax]`，撞 `Cfg_rLimZ*` 归零
 - `fbY/fbZ/fbR : FB_Servo` — 见 [FB_Servo.md](FB_Servo.md)

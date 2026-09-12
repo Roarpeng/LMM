@@ -8,7 +8,7 @@
     "wordOrder": "high-word-first"
   },
   "command": {
-    "baseAddress": 1000,
+    "baseAddress": 4096,
     "header": {
       "magic": 0,
       "version": 1,
@@ -375,7 +375,7 @@
     ]
   },
   "status": {
-    "baseAddress": 1100,
+    "baseAddress": 4352,
     "header": {
       "magic": 0,
       "version": 1,
@@ -694,7 +694,97 @@
         "offset": 26,
         "scale": 1000,
         "zh": "【只读·M2速度指令】含纠偏后。"
+      },
+      {
+        "name": "AxisFb_rVelActM1",
+        "type": "SCALED_DINT",
+        "offset": 32,
+        "scale": 1000,
+        "zh": "【只读·M1实际速度】m/s；PLC AxisFb_rVelActM1→word32（0.63 通用透传，各模式有效）"
+      },
+      {
+        "name": "AxisFb_rVelActM2",
+        "type": "SCALED_DINT",
+        "offset": 34,
+        "scale": 1000,
+        "zh": "【只读·M2实际速度】m/s；PLC AxisFb_rVelActM2→word34（0.63 通用透传，各模式有效）"
+      },
+      {
+        "name": "AxisFb_xMovingM1",
+        "type": "BOOL",
+        "offset": 36,
+        "bit": 0,
+        "zh": "【只读·M1运动中】"
+      },
+      {
+        "name": "AxisFb_xMovingM2",
+        "type": "BOOL",
+        "offset": 36,
+        "bit": 1,
+        "zh": "【只读·M2运动中】"
+      },
+      {
+        "name": "AxisFb_xPoweredM1",
+        "type": "BOOL",
+        "offset": 36,
+        "bit": 2,
+        "zh": "【只读·M1使能】"
+      },
+      {
+        "name": "AxisFb_xPoweredM2",
+        "type": "BOOL",
+        "offset": 36,
+        "bit": 3,
+        "zh": "【只读·M2使能】"
+      },
+      {
+        "name": "AxisFb_xSyncWarn",
+        "type": "BOOL",
+        "offset": 36,
+        "bit": 4,
+        "zh": "【只读·X同步预警】"
+      },
+      {
+        "name": "AxisFb_xSyncFault",
+        "type": "BOOL",
+        "offset": 36,
+        "bit": 5,
+        "zh": "【只读·X同步故障】"
+      },
+      {
+        "name": "AxisFb_rSyncErr",
+        "type": "SCALED_DINT",
+        "offset": 37,
+        "scale": 1000,
+        "zh": "【只读·X双驱同步误差】m；M1−M2 位置差（word37）"
       }
     ]
+  },
+  "directx": {
+    "command": {
+      "fields": [
+        { "name": "HMI_xDirectEnable", "type": "BOOL", "offset": 5, "bit": 10, "zh": "【X直控·Web使能】TRUE=请求视觉直控；与 Vis_xEnable 取或，视觉优先" },
+        { "name": "HMI_rVelM1Set", "type": "SCALED_INT", "offset": 54, "scale": 1000, "zh": "【X直控·M1设定速度】m/s；命令镜像 word54 (INT×1000)" },
+        { "name": "HMI_rVelM2Set", "type": "SCALED_INT", "offset": 55, "scale": 1000, "zh": "【X直控·M2设定速度】m/s；命令镜像 word55 (INT×1000)" }
+      ]
+    },
+    "vision": {
+      "fields": [
+        { "name": "Vis_xEnable", "type": "BOOL", "offset": 56, "bit": 0, "zh": "【视觉直控使能】网关中继写；视觉超时置 0" },
+        { "name": "Vis_wSeq", "type": "UINT", "offset": 57, "zh": "【视觉心跳序号】网关每次中继 +1" },
+        { "name": "Vis_rVelM1Set", "type": "SCALED_INT", "offset": 58, "scale": 1000, "zh": "【视觉直控·M1速度】m/s (INT×1000)" },
+        { "name": "Vis_rVelM2Set", "type": "SCALED_INT", "offset": 59, "scale": 1000, "zh": "【视觉直控·M2速度】m/s (INT×1000)" }
+      ]
+    },
+    "status": {
+      "fields": [
+        { "name": "Direct_xActive", "type": "BOOL", "offset": 28, "bit": 0, "zh": "【X直控·FB在役】eMode=4" },
+        { "name": "Direct_xOnline", "type": "BOOL", "offset": 28, "bit": 1, "zh": "【X直控·视觉在线】Vis_wSeq 200ms 内变化" },
+        { "name": "Direct_xEnable", "type": "BOOL", "offset": 28, "bit": 2, "zh": "【X直控·仲裁后使能】" },
+        { "name": "Direct_rVelM1Act", "type": "SCALED_INT", "offset": 29, "scale": 1000, "zh": "【X直控·M1实际速度】m/s (INT×1000)" },
+        { "name": "Direct_rVelM2Act", "type": "SCALED_INT", "offset": 30, "scale": 1000, "zh": "【X直控·M2实际速度】m/s (INT×1000)" },
+        { "name": "Direct_wSeqEcho", "type": "UINT", "offset": 31, "zh": "【X直控·视觉序号回显】" }
+      ]
+    }
   }
 }

@@ -7,13 +7,27 @@
 
 | 项 | 值 |
 |----|-----|
-| PLC 角色 | Modbus TCP **Master** |
-| Gateway | Modbus TCP **Server** `0.0.0.0:502`，`web/live` HTTP `:8080` |
-| 一键启动 | 仓库根：`.\tools\start-webhmi.ps1`（真机 `MOCK_PLC=0`） |
+| PLC 角色 | Modbus TCP **从站**（监听，不主动连外） |
+| Gateway | Modbus TCP **主站** → 默认 `192.168.1.88:502`；`web/live` HTTP `:8080` |
+| 一键启动 | 仓库根：`.\tools\start-webhmi.ps1`（真机主站；`-Mock` 本地） |
 | 调试冒烟 | `.\tools\start-webhmi.ps1 -Mock` |
-| 命令区 | Holding `1000..1063`（PLC FC03 读） |
-| 状态区 | Holding `1100..1163`（PLC FC16 写） |
+| 命令区 | Holding `4096..4159`（`0x1000`；Gateway **FC16 写**） |
+| 状态区 | Holding `4352..4415`（`0x1100`；Gateway **FC03 读**） |
 | 地址表 | `config/modbus-map.json` → [MODBUS_MAP.md](MODBUS_MAP.md) |
+| 通用调试页 | `http://127.0.0.1:8080/debug.html`（`GET /map` 驱动，写白名单 + X 直控手测） |
+
+> X 轴视觉直控（M1/M2 速度透传，`directx` 段 + 视觉块 `4152..4155`）见 [VISION_DIRECT.md](VISION_DIRECT.md)。
+
+## X 双电机实际速度（0.63）
+
+| word | 字段 | 说明 |
+|------|------|------|
+| 32/33 | `AxisFb_rVelActM1` | M1 实际速度 m/s（×1000） |
+| 34/35 | `AxisFb_rVelActM2` | M2 实际速度 m/s（×1000） |
+| 36 | `AxisFb_xMovingM1/M2` `xPoweredM1/M2` `xSyncWarn/Fault` | 位状态 |
+| 37/38 | `AxisFb_rSyncErr` | M1−M2 同步误差 |
+
+> WebHMI v2（`web/live/index.html`）：顶部状态栏 + 自动/手动/X 双驱/调试/日志；X 双驱页大字显示实际速度/指令/ΔVel/趋势；调试页有 X 直控滑条、白名单命令台、寄存器表与 `/health`。
 
 ## 轴
 

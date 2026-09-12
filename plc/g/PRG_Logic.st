@@ -29,6 +29,29 @@ VAR
     xJogZNegM : BOOL;
     xJogRPosM : BOOL;
     xJogRNegM : BOOL;
+    xCmdJogXPos : BOOL;
+    xCmdJogXNeg : BOOL;
+    xCmdSpinL : BOOL;
+    xCmdSpinR : BOOL;
+    xCmdJogYPos : BOOL;
+    xCmdJogYNeg : BOOL;
+    xCmdJogZPos : BOOL;
+    xCmdJogZNeg : BOOL;
+    xCmdJogRPos : BOOL;
+    xCmdJogRNeg : BOOL;
+    xCmdForceFollow : BOOL;
+    xCmdMoveRelX : BOOL;
+    xCmdMoveRelY : BOOL;
+    xCmdMoveAbsY : BOOL;
+    xCmdHoldR : BOOL;
+    (* 0.60 X 视觉直控仲裁 / 看门狗 *)
+    tonDirectWd : TON;
+    xVisSeen : BOOL;
+    xVisReq : BOOL;
+    xDirectSafe : BOOL;
+    Vis_wSeqPrev : WORD;
+    rVelM1Sel : REAL;
+    rVelM2Sel : REAL;
 END_VAR
 
 (* ===== 急停锁存 / 长按复位 ===== *)
@@ -59,6 +82,36 @@ HMI_eOpMode := eOpMode;
 xSafe := HMI_xEStop AND NOT xEStopLatched;
 AxisCmd_xPower := xSafe;
 AxisCmd_xStopAll := HMI_xStop OR NOT xSafe OR xFaultAggregate OR HMI_xAutoAbort;
+
+(* ===== 0.60 X 视觉直控：Web(HMI_*) ∨ 视觉(Vis_*) 双源，视觉优先，失联即停 ===== *)
+(* 视觉心跳：Vis_wSeq 变化则复位看门狗；200ms 无变化 -> 离线 *)
+IF Vis_wSeq <> Vis_wSeqPrev THEN
+    Vis_wSeqPrev := Vis_wSeq;
+    xVisSeen := TRUE;
+    tonDirectWd(IN := FALSE);
+    tonDirectWd(IN := TRUE, PT := T#200MS);
+END_IF;
+tonDirectWd();
+Direct_xOnline := xVisSeen AND NOT tonDirectWd.Q;
+Direct_wSeqEcho := Vis_wSeq;
+
+xVisReq := Vis_xEnable AND Direct_xOnline;
+xDirectSafe := xSafe AND (eOpMode = 0) AND NOT HMI_xStop AND NOT xFaultAggregate;
+IF xVisReq THEN
+    rVelM1Sel := Vis_rVelM1Set;
+    rVelM2Sel := Vis_rVelM2Set;
+ELSIF HMI_xDirectEnable THEN
+    rVelM1Sel := HMI_rVelM1Set;
+    rVelM2Sel := HMI_rVelM2Set;
+ELSE
+    rVelM1Sel := 0.0;
+    rVelM2Sel := 0.0;
+END_IF;
+
+Direct_xEnable := (xVisReq OR HMI_xDirectEnable) AND xDirectSafe;
+AxisCmd_xDirectVel := Direct_xEnable;
+AxisCmd_rVelM1Set := rVelM1Sel;
+AxisCmd_rVelM2Set := rVelM2Sel;
 
 (* 力/纠偏参数下发 *)
 rForceKp := HMI_rKpForce;
@@ -96,17 +149,18 @@ xIlk_BlockYNeg := I_xLimYNeg OR (AxisFb_rPosY <= Cfg_rLimYNeg);
 xIlk_BlockZPlus := I_xLimZPos OR (AxisFb_rPosZ >= Cfg_rLimZPos);
 xIlk_BlockZNeg := I_xLimZNeg OR (AxisFb_rPosZ <= Cfg_rLimZNeg);
 
-(* 每拍清命令 *)
-AxisCmd_xJogXPos := FALSE; AxisCmd_xJogXNeg := FALSE;
-AxisCmd_xSpinLeft := FALSE; AxisCmd_xSpinRight := FALSE;
-AxisCmd_xJogYPos := FALSE; AxisCmd_xJogYNeg := FALSE;
-AxisCmd_xJogZPos := FALSE; AxisCmd_xJogZNeg := FALSE;
-AxisCmd_xJogRPos := FALSE; AxisCmd_xJogRNeg := FALSE;
-AxisCmd_xForceFollow := FALSE;
-AxisCmd_xMoveRelX := FALSE;
-AxisCmd_xMoveRelY := FALSE;
-AxisCmd_xMoveAbsY := FALSE;
-AxisCmd_xHoldR := FALSE;
+(* 运动位先写入局部，扫描结束一次性交给 AxisCmd。
+   禁止先清 GVL 再置位：ETHERCAT 优先级更高，会采到 FALSE 空窗，点动 Acc 被重爬三次。 *)
+xCmdJogXPos := FALSE; xCmdJogXNeg := FALSE;
+xCmdSpinL := FALSE; xCmdSpinR := FALSE;
+xCmdJogYPos := FALSE; xCmdJogYNeg := FALSE;
+xCmdJogZPos := FALSE; xCmdJogZNeg := FALSE;
+xCmdJogRPos := FALSE; xCmdJogRNeg := FALSE;
+xCmdForceFollow := FALSE;
+xCmdMoveRelX := FALSE;
+xCmdMoveRelY := FALSE;
+xCmdMoveAbsY := FALSE;
+xCmdHoldR := FALSE;
 (* 视觉差速：手动点动与自动走距都下发 Kp；FB 仅在直行模式用 *)
 AxisCmd_rTrackKp := HMI_rKpTrack;
 Logic_xForceTare := FALSE;
@@ -133,24 +187,25 @@ xJogRNegM := HMI_xJogRNeg OR (xPanelSrc AND JogClockMis);
 
 (* ===== 手动 ===== *)
 IF xSafe AND (eOpMode = 0) AND NOT HMI_xStop AND NOT xFaultAggregate THEN
-    IF HMI_xSpinLeft XOR HMI_xSpinRight THEN
-        AxisCmd_xSpinLeft := HMI_xSpinLeft;
-        AxisCmd_xSpinRight := HMI_xSpinRight;
-    ELSIF xJogXPosM XOR xJogXNegM THEN
-        AxisCmd_xJogXPos := xJogXPosM;
-        AxisCmd_xJogXNeg := xJogXNegM;
+    (* 直控在役时屏蔽 X 手动（旋转/点动），速度由视觉/Web 直控通道给 *)
+    IF (HMI_xSpinLeft XOR HMI_xSpinRight) AND NOT Direct_xEnable THEN
+        xCmdSpinL := HMI_xSpinLeft;
+        xCmdSpinR := HMI_xSpinRight;
+    ELSIF (xJogXPosM XOR xJogXNegM) AND NOT Direct_xEnable THEN
+        xCmdJogXPos := xJogXPosM;
+        xCmdJogXNeg := xJogXNegM;
     END_IF;
-    AxisCmd_xJogYPos := xJogYPosM AND NOT xIlk_BlockYPlus;
-    AxisCmd_xJogYNeg := xJogYNegM AND NOT xIlk_BlockYNeg;
+    xCmdJogYPos := xJogYPosM AND NOT xIlk_BlockYPlus;
+    xCmdJogYNeg := xJogYNegM AND NOT xIlk_BlockYNeg;
     IF HMI_xForceGuide THEN
-        AxisCmd_xForceFollow := TRUE;
+        xCmdForceFollow := TRUE;
     ELSE
-        AxisCmd_xJogZPos := xJogZPosM AND NOT xIlk_BlockZPlus;
-        AxisCmd_xJogZNeg := xJogZNegM AND NOT xIlk_BlockZNeg;
+        xCmdJogZPos := xJogZPosM AND NOT xIlk_BlockZPlus;
+        xCmdJogZNeg := xJogZNegM AND NOT xIlk_BlockZNeg;
     END_IF;
     IF xM5Ready THEN
-        AxisCmd_xJogRPos := xJogRPosM;
-        AxisCmd_xJogRNeg := xJogRNegM;
+        xCmdJogRPos := xJogRPosM;
+        xCmdJogRNeg := xJogRNegM;
     END_IF;
 END_IF;
 
@@ -167,47 +222,47 @@ IF xSafe AND (eOpMode = 1) AND NOT HMI_xStop AND NOT xFaultAggregate THEN
 
     CASE iAutoStep OF
         1:
-            AxisCmd_xHoldR := TRUE;
+            xCmdHoldR := TRUE;
             AxisCmd_rRHoldPos := rRHold;
             AxisCmd_rTrackKp := HMI_rKpTrack;
             AxisCmd_rMoveDistX := HMI_rAutoDistX;
             AxisCmd_rMoveVelX := HMI_rAutoVelX;
-            AxisCmd_xMoveRelX := TRUE;
+            xCmdMoveRelX := TRUE;
             IF AxisFb_xMoveDoneX THEN
-                AxisCmd_xMoveRelX := FALSE;
+                xCmdMoveRelX := FALSE;
                 iAutoStep := 2;
             END_IF;
         2:
-            AxisCmd_xHoldR := TRUE;
+            xCmdHoldR := TRUE;
             AxisCmd_rRHoldPos := rRHold;
             AxisCmd_rMoveAbsPosY := 0.0;
             AxisCmd_rMoveVelY := HMI_rAutoVelY;
-            AxisCmd_xMoveAbsY := TRUE;
+            xCmdMoveAbsY := TRUE;
             IF AxisFb_xStandstillY AND (ABS(AxisFb_rPosY) < 0.005) THEN
-                AxisCmd_xMoveAbsY := FALSE;
+                xCmdMoveAbsY := FALSE;
                 xAutoTareSent := FALSE;
                 iAutoStep := 3;
             END_IF;
         3:
-            AxisCmd_xHoldR := TRUE;
+            xCmdHoldR := TRUE;
             AxisCmd_rRHoldPos := rRHold;
             IF NOT xAutoTareSent THEN
                 Logic_xForceTare := TRUE;
                 xAutoTareSent := TRUE;
             END_IF;
-            AxisCmd_xForceFollow := TRUE;
+            xCmdForceFollow := TRUE;
             IF rForceAct >= HMI_rForceSet THEN
                 iAutoStep := 4;
             END_IF;
         4:
-            AxisCmd_xHoldR := TRUE;
+            xCmdHoldR := TRUE;
             AxisCmd_rRHoldPos := rRHold;
-            AxisCmd_xForceFollow := TRUE;
+            xCmdForceFollow := TRUE;
             AxisCmd_rMoveDistY := AxisCmd_rWheelBase;
             AxisCmd_rMoveVelY := HMI_rAutoVelY;
-            AxisCmd_xMoveRelY := TRUE;
+            xCmdMoveRelY := TRUE;
             IF AxisFb_xMoveDoneY THEN
-                AxisCmd_xMoveRelY := FALSE;
+                xCmdMoveRelY := FALSE;
                 iAutoStep := 5;
             END_IF;
         5:
@@ -253,9 +308,21 @@ xHomeTrigYPrev := xHomeTrigY;
 xHomeTrigZPrev := xHomeTrigZ;
 xHomeTrigRPrev := xHomeTrigR;
 
-IF AxisCmd_xHomeY THEN AxisCmd_xJogYPos := FALSE; AxisCmd_xJogYNeg := FALSE; END_IF;
-IF AxisCmd_xHomeZ THEN AxisCmd_xJogZPos := FALSE; AxisCmd_xJogZNeg := FALSE; AxisCmd_xForceFollow := FALSE; END_IF;
-IF AxisCmd_xHomeR THEN AxisCmd_xJogRPos := FALSE; AxisCmd_xJogRNeg := FALSE; END_IF;
+IF AxisCmd_xHomeY THEN xCmdJogYPos := FALSE; xCmdJogYNeg := FALSE; END_IF;
+IF AxisCmd_xHomeZ THEN xCmdJogZPos := FALSE; xCmdJogZNeg := FALSE; xCmdForceFollow := FALSE; END_IF;
+IF AxisCmd_xHomeR THEN xCmdJogRPos := FALSE; xCmdJogRNeg := FALSE; END_IF;
+
+(* 本扫描只写一次 GVL，ETHERCAT 不会采到中途 FALSE *)
+AxisCmd_xJogXPos := xCmdJogXPos; AxisCmd_xJogXNeg := xCmdJogXNeg;
+AxisCmd_xSpinLeft := xCmdSpinL; AxisCmd_xSpinRight := xCmdSpinR;
+AxisCmd_xJogYPos := xCmdJogYPos; AxisCmd_xJogYNeg := xCmdJogYNeg;
+AxisCmd_xJogZPos := xCmdJogZPos; AxisCmd_xJogZNeg := xCmdJogZNeg;
+AxisCmd_xJogRPos := xCmdJogRPos; AxisCmd_xJogRNeg := xCmdJogRNeg;
+AxisCmd_xForceFollow := xCmdForceFollow;
+AxisCmd_xMoveRelX := xCmdMoveRelX;
+AxisCmd_xMoveRelY := xCmdMoveRelY;
+AxisCmd_xMoveAbsY := xCmdMoveAbsY;
+AxisCmd_xHoldR := xCmdHoldR;
 
 HMI_xHomedY := AxisFb_xHomedY;
 HMI_xHomedZ := AxisFb_xHomedZ;

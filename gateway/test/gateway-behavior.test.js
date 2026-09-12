@@ -49,12 +49,7 @@ async function readCommand(store) {
 
 function submitStatus(store, values = {}) {
   const words = Array.from(encodeStatusImage(values, 1, 1, 1));
-  return new Promise((resolve, reject) => {
-    store.vector.setRegisterArray(map.status.baseAddress, words, 1, (error) => {
-      if (error) reject(error);
-      else resolve();
-    });
-  });
+  store.ingestStatusWords(words);
 }
 
 async function connectBrowser(httpServer) {
@@ -94,14 +89,12 @@ async function startProductionGateway(overrides = {}) {
   const gateway = startGateway({
     MOCK_PLC: '0',
     HTTP_PORT: '0',
-    MODBUS_HOST: '127.0.0.1',
-    MODBUS_PORT: String(nextModbusPort()),
+    PLC_HOST: '127.0.0.1',
+    PLC_PORT: String(nextModbusPort()),
+    PLC_POLL_MS: '200',
     ...overrides,
   });
-  await Promise.all([
-    new Promise((resolve) => gateway.httpServer.once('listening', resolve)),
-    new Promise((resolve) => gateway.modbusServer.once('initialized', resolve)),
-  ]);
+  await new Promise((resolve) => gateway.httpServer.once('listening', resolve));
   return gateway;
 }
 
@@ -237,7 +230,7 @@ test('invalid browser values return t:err and leave gateway running', { timeout:
   }
 });
 
-test('production starts offline and times out one second after last valid FC16', { timeout: 4000 }, async () => {
+test('production starts offline and times out one second after last valid status image', { timeout: 4000 }, async () => {
   const gateway = await startProductionGateway({
     STATUS_TIMEOUT_MS: '1000',
     STATUS_CHECK_MS: '20',
@@ -249,7 +242,7 @@ test('production starts offline and times out one second after last valid FC16',
     assert.equal(initial.Tcp_xTimeout, true);
     assert.equal(initial.HMI_xDevRun, false);
 
-    await submitStatus(gateway.store, {
+    submitStatus(gateway.store, {
       Tcp_xConnected: false,
       Tcp_xTimeout: true,
       HMI_xDevStop: false,
@@ -286,7 +279,7 @@ test('mock command defaults remain independent from production fail-safe default
   assert.equal(mock.getCommandValues().HMI_xForceSimEnable, true);
 });
 
-test('close terminates clients and waits for WS, Modbus, and HTTP exactly once', {
+test('close terminates clients and waits for WS, Modbus master, and HTTP exactly once', {
   timeout: 3000,
 }, async () => {
   const gateway = await startProductionGateway();
@@ -306,6 +299,35 @@ test('close terminates clients and waits for WS, Modbus, and HTTP exactly once',
 
   assert.equal(callbackCount, 1);
   assert.equal(gateway.httpServer.listening, false);
-  assert.equal(gateway.modbusServer._server.listening, false);
+  assert.ok(gateway.modbusMaster);
+  assert.equal(gateway.modbusMaster.connected, false);
   assert.equal(browser.ws.readyState, WebSocket.CLOSED);
+});
+
+test('GET /health reports mode and diagnostics without crashing', { timeout: 3000 }, async () => {
+  const gateway = await startMockGateway();
+  try {
+    const res = await fetch('http://127.0.0.1:' + gateway.httpServer.address().port + '/health');
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.ok, true);
+    assert.equal(body.mode, 'mock');
+    assert.equal(body.mock, true);
+    assert.ok(body.clients >= 0);
+  } finally {
+    await closeGateway(gateway);
+  }
+});
+
+test('mock status carries the 0.63 X actual-velocity passthrough fields', { timeout: 3000 }, async () => {
+  const gateway = await startMockGateway();
+  const browser = await connectBrowser(gateway.httpServer);
+  try {
+    await waitUntil(() => browser.messages.some(
+      (message) => message.t === 's' && 'AxisFb_rVelActM1' in message,
+    ));
+  } finally {
+    browser.ws.terminate();
+    await closeGateway(gateway);
+  }
 });

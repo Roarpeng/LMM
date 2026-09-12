@@ -16,8 +16,8 @@ END_VAR
 fbForce(wRaw := Force_wInRaw, rScale := Force_rScale, xEnable := Force_xEnable,
     xTare := HMI_xForceTare OR Logic_xForceTare, xUntare := HMI_xForceUntare);
 Force_iRaw := fbForce.iRaw;
-Force_xCommOk := fbForce.xCommOk;
-Force_xTimeout := fbForce.xTimeout;
+(* 力通讯状态由 PRG_Force485 的收发回文状态机唯一判定；
+   不再用 FB_Force 的“原始值 2s 不变”看门狗覆盖，避免力稳定时误报 1005。 *)
 IF NOT HMI_xForceSimEnable THEN
     rForceAct := fbForce.rForceN;
 END_IF;
@@ -32,7 +32,10 @@ fbX(
     rJogVel := AxisCmd_rJogVelX, rSpinVel := AxisCmd_rSpinVel,
     rHeadingErr := AxisCmd_rHeadingErr, rKpTrack := AxisCmd_rTrackKp,
     rAcc := AxisCmd_rAccX, rDec := AxisCmd_rDecX,
-    rTrimMax := Cfg_rPhaseMax);
+    rTrimMax := Cfg_rPhaseMax,
+    (* 0.60 视觉直控：绕过内部差速，直接给 M1/M2 速度 *)
+    xDirectMode := AxisCmd_xDirectVel,
+    rVelM1Direct := AxisCmd_rVelM1Set, rVelM2Direct := AxisCmd_rVelM2Set);
 AxisFb_xMoveDoneX := fbX.xMoveDone;
 AxisFb_rPosX := fbX.rPosV;
 AxisFb_rSyncErr := fbX.rSyncErr;
@@ -58,6 +61,15 @@ AxisFb_xReadyM1 := fbX.xReadyM1;
 AxisFb_xReadyM2 := fbX.xReadyM2;
 AxisFb_xFaultM1 := fbX.xFaultM1;
 AxisFb_xFaultM2 := fbX.xFaultM2;
+
+(* 0.60 视觉直控反馈（回给 PRG_TcpHmi 编码到状态镜像 + 视觉侧回读） *)
+Direct_xActive := fbX.xDirectActive;
+Direct_rVelM1Act := fbX.rVelActM1Out;
+Direct_rVelM2Act := fbX.rVelActM2Out;
+
+(* 0.63 通用双电机实际速度透传（供 PRG_TcpHmi 编码到状态 word32..38） *)
+AxisFb_rVelActM1 := fbX.rVelActM1Out;
+AxisFb_rVelActM2 := fbX.rVelActM2Out;
 
 (* ===== Y：回零 > 绝对(归位) > 相对(横移) > 点动；硬限位 [Cfg_rLimYNeg, Cfg_rLimYPos] ===== *)
 fbY(Axis := Axis_2, xEnable := AxisCmd_xPower, xStop := AxisCmd_xStopAll, xResetFault := AxisCmd_xResetFault,

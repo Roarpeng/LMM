@@ -32,7 +32,9 @@ def validate(data: dict) -> None:
     names: set[str] = set()
     for image_name in ("command", "status"):
         image = data[image_name]
-        expected_base = 1000 if image_name == "command" else 1100
+        # Modbus 基址以现场 InoProShop 从站映射为准：该字段为十六进制，
+        # 现场填 1000/1100 实际落到 0x1000=4096 / 0x1100=4352。
+        expected_base = 4096 if image_name == "command" else 4352
         if image.get("baseAddress") != expected_base:
             raise ValueError(f"{image_name}: baseAddress must be {expected_base}")
 
