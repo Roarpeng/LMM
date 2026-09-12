@@ -1,7 +1,7 @@
 # 视觉工控机直控 —— WebHMI 接口开放文档（v1 草案）
 
 > 视觉工控机与操作员**共用同一套 WebHMI**：同一 Gateway WebSocket/JSON 契约、同一页面、同一写租约。
-> 覆盖：**5 个电机（M1、M2、Y、Z、R）写速度 / 读速度 / 读位置；Y/Z/R 写位置；X 整机写位置；力当前值（读）/ 力设定目标（写）**。
+> 覆盖：**5 个电机（M1、M2、Y、Z、R）写速度 / 读速度 / 读位置；Y/Z/R 写位置；X 整机写位置；力当前值（读）/ 力设定目标（写）；视觉角度（写，PLC 自动差速纠偏走直线）**。
 > 职责边界：**电机使能、报警、限位、急停由 PLC 全权负责**。
 > 对应设计：docs/superpowers/specs/2026-09-12-vision-axis-control-design.md（尚未实现）。
 
@@ -31,6 +31,7 @@
 | 力当前值（读） | HMI_rForceShow | 已有 |
 | 力设定目标（写） | HMI_rForceSet | 已有（offset 28） |
 | 力设定回显（读） | HMI_rForceSetEcho | 新增（可选） |
+| 视觉角度（写，PLC 自动纠偏） | HMI_rHeadingErr + HMI_rKpTrack | 已有（弧度；直行模式生效） |
 | 直控总开关 | HMI_xDirectEnable | 已有 |
 | 直控心跳 | HMI_wDirectSeq | 新增（300ms 看门狗） |
 
@@ -88,6 +89,40 @@
 
 语义：vel=按速度持续运动；posAbs=绝对定位；posRel=相对移动；idle=该轴减速停。未出现的轴按 idle。
 
+### 3.5 视觉角度（航向纠偏）—— PLC 自动调 M1/M2 走直线
+
+视觉**不直接给 M1/M2 速度**，而是给一个**航向/偏角误差**；PLC 内部 FB_XDual 把它变成两电机差速修正。
+
+| 字段 | 类型 | 单位 | 说明 |
+|------|------|------|------|
+| HMI_rHeadingErr | number | **弧度 rad** | 航向/偏角误差；车头偏左为正、偏右为负 |
+| HMI_rKpTrack | number | — | 纠偏增益（误差 × Kp → M1/M2 差速）；建议 0.2 ~ 1.0 |
+
+PLC 内部（**仅直行模式 eMode=1 生效**）：
+
+    deadband = 0.003 rad                        # 小于此误差忽略
+    trim_raw = (|θ| - deadband) * KpTrack       # θ = HMI_rHeadingErr
+    trim     = LIMIT(-0.01, +0.01)              # 差速限幅 Cfg_rPhaseMax = 0.01 m/s
+    trim     = 一阶滤波 Tc = 0.05 s
+    M1指令 = v + trim ;   M2指令 = v - trim      # v = 共同直行速度
+
+- 另有位置同步修正叠加（AxisFb_rSyncErr → 内部 rKpSync，限幅 rCorrPosMax = 0.08 m）。
+- 纠偏后指令读回：AxisFb_rVelCmdM1 / rVelCmdM2；同步差读回：AxisFb_rSyncErr；位置：AxisFb_rPosM1 / rPosM2。
+- **丢目标时把 HMI_rHeadingErr 写 0**（死区内自然回落）。
+
+用法（模式 A：视觉给角度，PLC 纠偏）：
+
+1. 直行速度：HMI_xJogXPos = true + HMI_rJogVelX = v（手动直行）；自动走距则 HMI_xAutoStart。
+2. 每 20–50ms 发 HMI_rHeadingErr = θ（rad）与 HMI_rKpTrack = k。
+3. PLC 输出 M1/M2 = v ± trim。
+
+**与「直给 M1/M2 速度」互斥**：若同时发 HMI_xDirectEnable + HMI_rVelM1Set/M2Set（模式 B，视觉自己闭环），
+FB_XDual 进入 xDirectMode **绕过 trim/sync**，HMI_rHeadingErr 被忽略。两种模式二选一。
+
+标定建议：先在低速 0.1~0.2 m/s 下把 Kp 从 0.2 起调，观察 AxisFb_rSyncErr 是否收敛；trim 上限 0.01 m/s，Kp 过大只会顶限幅。
+
+> 历史方案：视觉作 Modbus 从站（192.168.1.90:502）暴露 heading_err，由网关读取（见 VISION_MODBUS_TCP.md）。新接口统一走本 WS，视觉直接写 HMI_rHeadingErr 即可。
+
 ## 4. 读：状态（t:"s"）
 
 ### 4.1 5 电机 位置 / 速度
@@ -127,6 +162,8 @@
 2. 每 **20–50ms** 发一条 {"t":"w"}：HMI_xDirectEnable:true、HMI_wDirectSeq 递增、目标轴字段，以及 HMI_xEStop:true、HMI_xStop:false。
 3. 结束：发 HMI_xDirectEnable:false；必要时 HMI_xStop:true。
 
+> 直线行走两种互斥方式：**A 给角度（PLC 纠偏，见 3.5）** 或 **B 直给 M1/M2（视觉自己闭环）**，不要同时用。
+
 ## 6. 单位与符号
 
 | 量 | 单位 | 说明 |
@@ -149,7 +186,7 @@
 3. PLC 可能随时因急停/停止/故障覆盖；以 t:"s" 状态为准。
 4. 速度/位置会被 PLC 限幅与软限位钳位。
 5. 视觉不能 enable/disable 伺服、不能清报警；HMI_xDirectEnable 只是请求直控。
-6. X 不提供 M1/M2 单独位置；需要纠偏请用 HMI_rVelM1Set/HMI_rVelM2Set 差速或同步补偿参数。
+6. X 不提供 M1/M2 单独位置。走直线二选一：**给角度 HMI_rHeadingErr（PLC 纠偏，见 3.5）** 或 **直给 HMI_rVelM1Set/M2Set（视觉闭环）**。
 7. 操作员与视觉共用写接口，由网关写租约互斥；被他人持有时应等待。
 8. 力设定 HMI_rForceSet 仅在力控制/力保持生效时有意义；写入不改变使能/报警。
 
@@ -191,6 +228,19 @@
 
     # 备注：若想让 X 停在某位置，视觉可用「写 M1/M2 速度 + 读 AxisFb_rPosM1/M2」自行闭环，
     # 或使用 HMI_rDirectPosX 让上层做速度斜坡。
+    # 4) 模式 A：视觉给角度，PLC 自动纠偏走直线
+    #    （与上面的 HMI_xDirectEnable 模式互斥，切换前先发 HMI_xDirectEnable=False）
+    send(HMI_xDirectEnable=False)
+    for theta in vision_angles:            # theta = 航向误差，弧度，偏左为正
+        seq += 1
+        send(HMI_xJogXPos=True,            # 直行（eMode=1）
+             HMI_rJogVelX=0.30,            # 共同直行速度 m/s
+             HMI_rHeadingErr=theta,        # 视觉角度 rad
+             HMI_rKpTrack=0.4)             # 纠偏增益
+        time.sleep(0.03)
+        st = json.loads(ws.recv())
+        # 读 AxisFb_rVelCmdM1 / rVelCmdM2（纠偏后指令）、AxisFb_rSyncErr（同步差）
+    send(HMI_xJogXPos=False, HMI_rHeadingErr=0.0)
 
 注：真实使用建议后台线程收 t:"s"，主循环发 t:"w"，保证 20–50ms 周期。
 
