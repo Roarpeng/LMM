@@ -1,9 +1,13 @@
-# 视觉工控机直控 —— WebHMI 接口开放文档（v1 草案）
+# 视觉工控机直控 —— WebHMI 接口开放文档（v1）
 
 > 视觉工控机与操作员**共用同一套 WebHMI**：同一 Gateway WebSocket/JSON 契约、同一页面、同一写租约。
 > 覆盖：**5 个电机（M1、M2、Y、Z、R）写速度 / 读速度 / 读位置；Y/Z/R 写位置；X 整机写位置；力当前值（读）/ 力设定目标（写）；视觉角度（写，PLC 自动差速纠偏走直线）**。
 > 职责边界：**电机使能、报警、限位、急停由 PLC 全权负责**。
-> 对应设计：docs/superpowers/specs/2026-09-12-vision-axis-control-design.md（尚未实现）。
+> 对应设计：docs/superpowers/specs/2026-09-12-vision-axis-control-design.md。
+> PLC 侧已实现：**LMM_g_0.68.xml**（镜像 96W + 每轴直控；视觉角度复用已有 `HMI_rHeadingErr`/`HMI_rKpTrack`，无需额外改动）。
+>
+> **TL;DR**：连 `ws://<gateway>:8080` → 每 20–50ms 发 `{"t":"w", HMI_xEStop:true, HMI_xStop:false, ...}` → 收 `{"t":"s", ...}` 看状态。
+> 走直线两种**互斥**方式：**A 给角度** = `HMI_rHeadingErr` + `HMI_rKpTrack`（PLC 自动调 M1/M2，见 3.5）；**B 直给** = `HMI_xDirectEnable` + `HMI_rVelM1Set/M2Set`（视觉自己闭环）。
 
 ## 0. 关键约定：M1/M2 是速度环，不单独写位置
 
@@ -246,7 +250,7 @@ FB_XDual 进入 xDirectMode **绕过 trim/sync**，HMI_rHeadingErr 被忽略。�
 
 ## 10. 页面
 
-WebHMI v3 将新增「直控」页：5 电机速度、Y/Z/R 位置、X 整机位置、力设定与实时回读。视觉可直接打开同一页面操作，也可按第 3–5 节脚本化。
+WebHMI v3 已新增「直控」页：5 电机速度、Y/Z/R 位置、X 整机位置、力设定与实时回读。视觉可直接打开同一页面操作，也可按第 3–5 节脚本化。
 
 ## 11. 被拒 / 边界
 
@@ -259,6 +263,6 @@ WebHMI v3 将新增「直控」页：5 电机速度、Y/Z/R 位置、X 整机位
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
-| v1 草案 | 2026-09-12 | 与现有 WebHMI 同一 WS 契约；M1/M2 速度环（不单独写位置） |
+| v1 | 2026-09-12 | 与现有 WebHMI 同一 WS 契约；M1/M2 速度环（不单独写位置）；含视觉角度（航向纠偏） |
 
 > 变更只追加字段，不删除既有字段。
