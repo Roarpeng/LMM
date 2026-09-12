@@ -101,3 +101,20 @@
 - Gateway 现**每轮询周期推进心跳**（`store.advanceHeartbeat()`）维持 PLC `tonHb` 看门狗；
   否则网页停顿 >1s 会被判远程超时、`Tcp_*` 动作清零（表现：点一下动一下即停）。
 - 真机读 4352 状态帧：`HMI_iAlarmShow=1001`、`HMI_xLampEStop=TRUE`、`HMI_eDevState=2`、`AxisFb_xReady=FALSE`
+
+## 现场定稿（`LMM_g_0.67.xml`，2026-09-12，WebHMI 实控验证 OK）
+
+PLC 从站使用的是 **AM600 内置 Modbus TCP 从站**：设备树 `MODBUS_TCP` → **Type 40502 `ModbusTcpSlave`**
+（`Common.ModbusTcpSlave`，Port 502，UnitID 255），两个 64 WORD 通道：
+
+| 通道 | 方向 | 寄存器（十六进制） | 十进制 | 映射 PLC | 变量 |
+|------|------|-------------------|--------|----------|------|
+| Channel 01 | input（主站→PLC） | `16#1000..103F` | 4096..4159 | `%IW103..166` | `MB_CmdIn` |
+| Channel 02 | output（PLC→主站） | `16#1100..113F` | 4352..4415 | `%QW44..107` | `MB_StatusOut` |
+
+- `config/modbus-map.json` `baseAddress` 已对齐 **4096 / 4352**；Gateway 启动打印 `[gateway] cmd@4096 status@4352 (len 64)`。
+- 该版本 POU 逻辑 = **0.66**（`FB_XDual` 就绪 `xEnable AND NOT xFault`，修 1007）+ **0.64**（`PRG_Axis_Control` 不再写力通讯状态，修 1005）+ **0.63**（X 双电机实际速度 word32..38）。
+- 实测：`Holding 4096 = 0x4C4D`（命令）、`Holding 4352 = 0x4C4D` + 序号递增（状态）；WebHMI 自动/手动均可控制。
+
+> 历史差异：0.62 的设备树是 `Type 40510 ModbusTcpSlaveDevice`（只有 In/OutSize=500、**没有通道映射**），
+> 所以那时 `%IW103`/`%QW44` 没发布到 Modbus（Gateway 读空白）；0.67 换成 40502 并建好两条通道后才通。

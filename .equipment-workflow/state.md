@@ -9,7 +9,7 @@
 - Stage: S6/S7 — WebHMI v2 与 PLC 0.63 增量已落地（Web 为验收视图，MD 为源）
 - Spec: `docs/superpowers/specs/2026-09-12-x-speed-webhmi-v2-design.md`
 - Plan: `docs/superpowers/plans/2026-09-12-x-speed-webhmi-v2.md`
-- 在役基线：`LMM_g_0.62.xml`（InoProShop 重存；Modbus 从站已配；外部 client 连 `192.168.1.88:502` 成功）
+- 在役基线：`LMM_g_0.67.xml`（PLC 导出；Modbus TCP 从站 Type 40502 通道 `16#1000/16#1100` ↔ `%IW103/%QW44`；POU 逻辑=0.66+0.64+0.63；**WebHMI 实控验证 OK**）
 - 通讯方向：Gateway（Modbus TCP 主站）→ PLC（从站）`192.168.1.88:502`；命令 Holding `4096..4159`（0x1000）、状态 `4352..4415`（0x1100）
 - 速度透传（两层）：
   - Web 先行：状态 word29/30 `Direct_rVelM1Act/M2Act`（实际速度，各模式有效）已在 WebHMI v2「X 双驱」显示，**无需重烧**
@@ -52,6 +52,9 @@
   - **正确修（0.66）**：`xReadyM1/M2 := xEnable AND NOT xFaultM1/M2`（不含 `xStop`、也不要求 `xPowered`）；
     `tools/patch_g066.py` 由 0.65 生成 **`LMM_g_0.66.xml`**。
   - `xPowerGate` 仍含 `NOT xStop`，运动互锁不变；仅「就绪」/1007 判据修正。
+- **现场定稿 0.67（2026-09-12）**：`LMM_g_0.67.xml` 由 PLC 导出，POU 与 0.66 完全一致；
+  设备树 TCP 从站为 `Type 40502 ModbusTcpSlave`（Port 502, UnitID 255），Channel 01 input `16#1000..103F`→`%IW103`(MB_CmdIn)、
+  Channel 02 output `16#1100..113F`→`%QW44`(MB_StatusOut)。**WebHMI 自动/手动实控验证通过**，报警 1007/1005 不再出现。
 
 ## Locked decisions
 - Modbus 角色维持 **Gateway 主站 / PLC 从站**（现场 Modbus client 连 `:502` 验证）
