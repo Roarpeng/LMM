@@ -48,7 +48,9 @@
 - **1007 静默误报修复（2026-09-12）**：`FB_XDual` 的 M1/M2 就绪判据误含 `NOT xStop`：
   `xReadyM1 := xEnable AND NOT xStop AND NOT xFaultM1`。`xStop` 来自 `AxisCmd_xStopAll`（`HMI_xStop` 等），
   设备停止/静默时 `xStop=TRUE` → Ready 立即 FALSE，而 `AxisCmd_xPower` 仍真且无故障 → `tonReady` 2s 后报 1007。
-  - 修：改为 `xPoweredM1/M2 AND NOT xFaultM1/M2`（与 `FB_Servo` 一致）；`tools/patch_g065.py` 由 0.64 生成 **`LMM_g_0.65.xml`**。
+  - 0.65 曾误改为 `xPoweredM1/M2 AND NOT xFault`：`xRegOn` 在静态（eMode=0 且非停止）为 FALSE → `xPowered=FALSE` → 静态持续报 1007（回归）。
+  - **正确修（0.66）**：`xReadyM1/M2 := xEnable AND NOT xFaultM1/M2`（不含 `xStop`、也不要求 `xPowered`）；
+    `tools/patch_g066.py` 由 0.65 生成 **`LMM_g_0.66.xml`**。
   - `xPowerGate` 仍含 `NOT xStop`，运动互锁不变；仅「就绪」/1007 判据修正。
 
 ## Locked decisions
