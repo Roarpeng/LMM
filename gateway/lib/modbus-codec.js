@@ -96,7 +96,11 @@ function validateImage(words, image) {
   if ((words[image.header.version] >>> 8) !== protocol.versionMajor) {
     errors.push('VERSION_MISMATCH');
   }
-  if (words[image.header.sequence] !== words[image.header.tailSequence]) {
+  const seq = words[image.header.sequence];
+  const tail = words[image.header.tailSequence];
+  // 兼容：从站输出通道只发布前 64 字时（0.68 设备树 Leg 未同步扩到 96），尾部序号字读回 0。
+  // 此时退回 magic/version/sequence 判定，避免把正常状态误判为离线。
+  if (tail !== 0 && seq !== tail) {
     errors.push('SEQUENCE_MISMATCH');
   }
   return errors;

@@ -62,6 +62,10 @@
   - 实现：契约 `config/modbus-map.json`（96W，命令 60..75 / 状态 39..45）；PLC **`LMM_g_0.68.xml`**（`tools/patch_g068.py` 幂等，sha `54cebbe4…`；新建 `plc/g/PRG_TcpHmi.st`，GVL +58 变量）；Gateway 分块 95+1 + mock；WebHMI 新增「直控」页。
   - 验收：`ET.parse(0.68)` OK、`inject_g --check` OK、`generate_modbus_map.py` 与 `MODBUS_MAP.md` 同步、`npm test` 44 PASS、`smoke-webhmi` PASS、无 `ARRAY[0..63]`/`MB_CmdIn[63]` 残留。
   - 现场待办：InoProShop 导入 0.68 → 编译 0 error → 下载（设备树两条通道已补齐 64..95 的 Value）。
+- **0.68 上线事故与修复（2026-09-12）**：0.68 把镜像扩到 96W，但 Modbus TCP 从站参数 `MODBUSCHANNELSET` 的 `ReadRegLeg/WriteRegLeg` 仍是 **64**（0.67 遗留，agent 漏改）→ 状态输出区只发布 64 字，`MB_StatusOut[95]` 读回 0 → 网关 `seq==tail` 校验失败 → 判离线，webHMI 连不上。
+  - 立即修复（无需重烧）：`modbus-codec.validateImage` 在尾序号字为 0（未映射）时跳过 `SEQUENCE_MISMATCH`；**更新网关并重启**即恢复。
+  - 根治：`tools/patch_g069.py` 由 0.68 生成 **`LMM_g_0.69.xml`**（两条通道 Leg 64→96，sha `6201f685…`，幂等），导入后状态尾部恢复发布。
+  - 验证：真机 `/health` → `connected:true, statusIsOffline:false, lastValidStatusAgeMs:28, errorCount:0`；`npm test` 44 PASS。
   - 设计：`docs/superpowers/specs/2026-09-12-vision-axis-control-design.md`（含 Gate C 写者矩阵）；接口：`docs/plc/VISION_AXIS_API.md`。
 - **现场定稿 0.67（2026-09-12）**：`LMM_g_0.67.xml` 由 PLC 导出，POU 与 0.66 完全一致；
   设备树 TCP 从站为 `Type 40502 ModbusTcpSlave`（Port 502, UnitID 255），Channel 01 input `16#1000..103F`→`%IW103`(MB_CmdIn)、
