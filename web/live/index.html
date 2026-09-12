@@ -87,9 +87,9 @@ textarea{width:100%}pre.health{max-height:280px;overflow:auto;background:#080d13
     <div class="pills">
       <span class="pill" id="conn"><span class="led"></span>WS —</span>
       <span class="pill" id="plc-target">PLC —</span>
-      <span class="pill" id="lat">RTT —</span>
+      <span class="pill" id="lat">RTT</span>
       <span class="pill" id="lease">控制权 —</span>
-      <span class="pill" id="hb">心跳 —</span>
+      <span class="pill" id="hb">心跳</span>
       <span class="pill" id="ack">送达 —</span>
     </div>
     <nav class="tabs" id="tabs">
@@ -490,6 +490,7 @@ textarea{width:100%}pre.health{max-height:280px;overflow:auto;background:#080d13
   const fmt = (v, d) => { if (typeof v === 'boolean') return v ? 'T' : 'F'; const n = Number(v); return Number.isFinite(n) ? n.toFixed(d == null ? 3 : d) : '—'; };
   const setText = (id, v) => { const el = $(id); if (!el) return; const s = String(v); if (el.textContent !== s) el.textContent = s; };
   const setPill = (id, on, cls) => { const el = $(id); if (!el) return; el.classList.toggle(cls || 'ok', !!on); };
+  function setLed(id, state) { const el = $(id); if (!el) return; el.classList.remove('ok', 'warn', 'bad'); if (state) el.classList.add(state); }
   const setCls = (id, on, cls) => { const el = $(id); if (!el) return; el.classList.toggle(cls, !!on); };
   function scaleUpd(key, v) { const s = SC[key] || (SC[key] = { lo: v, hi: v }); if (v < s.lo) s.lo = v; if (v > s.hi) s.hi = v; if (s.hi - s.lo < 1e-4) s.hi = s.lo + 1e-4; }
   function scaleN(key, v) { const s = SC[key]; if (!s) return 0.5; return Math.max(0, Math.min(1, (v - s.lo) / (s.hi - s.lo))); }
@@ -542,7 +543,7 @@ textarea{width:100%}pre.health{max-height:280px;overflow:auto;background:#080d13
   }
   function applyPong(msg) {
     const rtt = typeof msg.rtt === 'number' ? msg.rtt : (lastPingAt ? Date.now() - lastPingAt : null);
-    setText('lat', 'RTT ' + (rtt == null ? '—' : rtt + 'ms'));
+    setLed('lat', rtt == null ? '' : (rtt < 400 ? 'ok' : 'warn'));
   }
   function bindParam(rangeId, numId, key, digits, onUser) {
     const r = $(rangeId), n = $(numId);
@@ -614,7 +615,8 @@ textarea{width:100%}pre.health{max-height:280px;overflow:auto;background:#080d13
     setPill('plc-target', gwHealth && gwHealth.master && gwHealth.master.connected && !gwHealth.statusIsOffline, 'ok');
     setText('lease', '控制权 ' + (leaseOwner == null ? (controlClaimed ? '本页' : '空闲') : (leaseOwner === clientId ? '本页' : '其他 #' + leaseOwner)));
     setPill('lease', leaseOwner === clientId || (leaseOwner == null && controlClaimed), 'ok');
-    setText('hb', '心跳 ' + (S.__rxWall ? (Date.now() - S.__rxWall) + 'ms' : '—'));
+    const hbAge = S.__rxWall ? Date.now() - S.__rxWall : null;
+    setLed('hb', hbAge == null ? '' : (hbAge < 1000 ? 'ok' : 'warn'));
 
     const stop = S.HMI_xDevStop, run = S.HMI_xDevRun, err = S.HMI_xDevError;
     setText('lamp-stop', 'Stop=' + (stop ? 'T' : 'F')); setPill('lamp-stop', stop, 'ok');
