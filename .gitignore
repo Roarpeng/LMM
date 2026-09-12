@@ -1,5 +1,10 @@
 # IDE / local tooling
 Cursor/
+.cursor/
+.codex/
+.vscode/
+.omo/
+.graphflow/
 .graphflow-cache/
 graphflow-out/
 
@@ -10,6 +15,10 @@ LMM.xml.bak.tcp
 
 # Gateway
 gateway/node_modules/
+
+# Generated traces / scratch
+gateway/trace-x.csv
+tools/_*
 
 # OS
 .DS_Store
