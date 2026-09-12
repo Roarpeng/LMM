@@ -1,8 +1,7 @@
 # plc/ — PLC 源码（权威）
 
-> **2026-09-12 起（仓库清理）**：src 线（`LMM.xml` + `LMM.xml.bak.inject` + `plc/src/*.st` + `tools/inject_st.py`）
-> 已从仓库移除；**在役为 g 线**：源码 `plc/g/*.st`，补丁脚本 `tools/patch_g06*.py`，产物 `LMM_g_0.67.xml`（当前在役）。
-> 下面 src 线工作流仅作历史参考。
+`LMM.xml`（2MB PLCopen TC6，InoProShop 工程）**不再直接手改**。
+权威源码在本目录，改完注入 XML 再导入 InoProShop。
 
 ## 工作流
 
