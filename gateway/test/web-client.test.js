@@ -5,10 +5,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 
-const html = fs.readFileSync(
-  path.join(__dirname, '..', '..', 'web', 'live', 'index.html'),
-  'utf8',
-);
+const liveDir = path.join(__dirname, '..', '..', 'web', 'live');
+const html = ['index.html', 'styles.css', 'app.js']
+  .map((file) => fs.readFileSync(path.join(liveDir, file), 'utf8'))
+  .join('\n');
 
 function section(start, end) {
   const startIndex = html.indexOf(start);

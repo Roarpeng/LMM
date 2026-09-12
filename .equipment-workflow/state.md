@@ -52,6 +52,9 @@
   - **正确修（0.66）**：`xReadyM1/M2 := xEnable AND NOT xFaultM1/M2`（不含 `xStop`、也不要求 `xPowered`）；
     `tools/patch_g066.py` 由 0.65 生成 **`LMM_g_0.66.xml`**。
   - `xPowerGate` 仍含 `NOT xStop`，运动互锁不变；仅「就绪」/1007 判据修正。
+- **WebHMI v3（2026-09-12）**：前端重构为 `web/live/{index.html, styles.css, app.js}`（无构建）；信息架构 = 总览/自动/手动/X双驱/力传感/趋势/报警/调试/系统，左导航 + 设备视图 + 急停覆盖层；通讯层与 WS 契约不变。
+  - Spec：`docs/superpowers/specs/2026-09-12-webhmi-v3-ui-design.md`。
+  - `gateway/test/web-client.test.js` 改为读取三文件拼接校验；`npm test` 44 PASS、运行时自检 + Mock 冒烟 PASS。
 - **现场定稿 0.67（2026-09-12）**：`LMM_g_0.67.xml` 由 PLC 导出，POU 与 0.66 完全一致；
   设备树 TCP 从站为 `Type 40502 ModbusTcpSlave`（Port 502, UnitID 255），Channel 01 input `16#1000..103F`→`%IW103`(MB_CmdIn)、
   Channel 02 output `16#1100..113F`→`%QW44`(MB_StatusOut)。**WebHMI 自动/手动实控验证通过**，报警 1007/1005 不再出现。
