@@ -62,7 +62,7 @@ test('rejects holding-register addresses outside the two mapped images', async (
   );
 });
 
-test('FC03 reads a valid 64-word command image from the command base address', async () => {
+test('FC03 reads a valid 96-word command image from the command base address', async () => {
   const { vector } = createModbusStore();
 
   const decoded = decodeCommandImage(await readCommandImage(vector));
@@ -102,11 +102,11 @@ test('partial or shifted FC16 transactions never publish or accumulate', async (
 
   await assert.rejects(
     writeRegisterArray(vector, map.status.baseAddress, words.slice(0, 32)),
-    /complete.*64/i,
+    /complete.*96/i,
   );
   await assert.rejects(
     writeRegisterArray(vector, map.status.baseAddress + 32, words.slice(32)),
-    /complete.*64/i,
+    /complete.*96/i,
   );
 
   assert.equal(published.length, 0);

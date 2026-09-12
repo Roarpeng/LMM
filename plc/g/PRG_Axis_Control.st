@@ -74,10 +74,14 @@ AxisFb_rVelActM2 := fbX.rVelActM2Out;
 (* ===== Y：回零 > 绝对(归位) > 相对(横移) > 点动；硬限位 [Cfg_rLimYNeg, Cfg_rLimYPos] ===== *)
 fbY(Axis := Axis_2, xEnable := AxisCmd_xPower, xStop := AxisCmd_xStopAll, xResetFault := AxisCmd_xResetFault,
     xHome := AxisCmd_xHomeY,
-    xMoveAbs := AxisCmd_xMoveAbsY, rTargetPos := AxisCmd_rMoveAbsPosY,
-    xMoveRel := AxisCmd_xMoveRelY, rDist := AxisCmd_rMoveDistY,
+    xMoveAbs := AxisCmd_xMoveAbsY OR AxisCmd_xDirectAbsY,
+    rTargetPos := SEL(AxisCmd_xMoveAbsY, AxisCmd_rDirectAbsY, AxisCmd_rMoveAbsPosY),
+    xMoveRel := AxisCmd_xMoveRelY OR AxisCmd_xDirectRelY,
+    rDist := SEL(AxisCmd_xMoveRelY, AxisCmd_rDirectRelY, AxisCmd_rMoveDistY),
+    xUseVelCmd := AxisCmd_xDirectVelY, rVelCmd := AxisCmd_rDirectVelY,
     xJogPos := AxisCmd_xJogYPos, xJogNeg := AxisCmd_xJogYNeg, rJogVel := AxisCmd_rJogVelY,
-    rVel := AxisCmd_rMoveVelY, rAcc := AxisCmd_rAccY, rDec := AxisCmd_rDecY,
+    rVel := SEL(AxisCmd_xDirectAbsY OR AxisCmd_xDirectRelY, AxisCmd_rMoveVelY, AxisCmd_rDirectVelY),
+    rAcc := AxisCmd_rAccY, rDec := AxisCmd_rDecY,
     xLimEn := TRUE, rLimPos := Cfg_rLimYPos, rLimNeg := Cfg_rLimYNeg);
 AxisFb_xMoveDoneY := fbY.xMoveRelDone;
 
@@ -88,17 +92,25 @@ fbFF(rForceSet := AxisCmd_rForceSet, rForceAct := rForceAct, rKp := AxisCmd_rFor
     xEnable := AxisCmd_xForceFollow, xInvert := FALSE);
 fbZ(Axis := Axis_3, xEnable := AxisCmd_xPower, xStop := AxisCmd_xStopAll, xResetFault := AxisCmd_xResetFault,
     xHome := AxisCmd_xHomeZ,
-    xUseVelCmd := AxisCmd_xForceFollow, rVelCmd := fbFF.rZVelCmd,
+    xMoveAbs := AxisCmd_xDirectAbsZ, rTargetPos := AxisCmd_rDirectAbsZ,
+    xMoveRel := AxisCmd_xDirectRelZ, rDist := AxisCmd_rDirectRelZ,
+    xUseVelCmd := AxisCmd_xForceFollow OR AxisCmd_xDirectVelZ,
+    rVelCmd := SEL(AxisCmd_xForceFollow, AxisCmd_rDirectVelZ, fbFF.rZVelCmd),
     xJogPos := AxisCmd_xJogZPos, xJogNeg := AxisCmd_xJogZNeg, rJogVel := AxisCmd_rJogVelZ,
+    rVel := AxisCmd_rDirectVelZ,
     rAcc := AxisCmd_rAccZ, rDec := AxisCmd_rDecZ,
     xLimEn := TRUE, rLimPos := Cfg_rLimZPos, rLimNeg := Cfg_rLimZNeg);
 
 (* ===== R：回零 > 保持角(绝对) > 点动；M5 门控；硬限位 [Cfg_rLimRNeg, Cfg_rLimRPos] ===== *)
 fbR(Axis := Axis_4, xEnable := AxisCmd_xPower AND xM5Ready, xStop := AxisCmd_xStopAll, xResetFault := AxisCmd_xResetFault,
     xHome := AxisCmd_xHomeR,
-    xMoveAbs := AxisCmd_xHoldR, rTargetPos := AxisCmd_rRHoldPos,
+    xMoveAbs := AxisCmd_xHoldR OR AxisCmd_xDirectAbsR,
+    rTargetPos := SEL(AxisCmd_xHoldR, AxisCmd_rDirectAbsR, AxisCmd_rRHoldPos),
+    xMoveRel := AxisCmd_xDirectRelR, rDist := AxisCmd_rDirectRelR,
+    xUseVelCmd := AxisCmd_xDirectVelR, rVelCmd := AxisCmd_rDirectVelR,
     xJogPos := AxisCmd_xJogRPos, xJogNeg := AxisCmd_xJogRNeg, rJogVel := AxisCmd_rJogVelR,
-    rVel := AxisCmd_rJogVelR, rAcc := AxisCmd_rAccR, rDec := AxisCmd_rDecR,
+    rVel := SEL(AxisCmd_xDirectAbsR OR AxisCmd_xDirectRelR, AxisCmd_rJogVelR, AxisCmd_rDirectVelR),
+    rAcc := AxisCmd_rAccR, rDec := AxisCmd_rDecR,
     xLimEn := TRUE, rLimPos := Cfg_rLimRPos, rLimNeg := Cfg_rLimRNeg);
 
 (* ===== Y/Z/R 反馈回写 ===== *)
@@ -109,5 +121,9 @@ AxisFb_xPoweredY := fbY.xPowered; AxisFb_xPoweredZ := fbZ.xPowered; AxisFb_xPowe
 AxisFb_xReadyY := fbY.xReady; AxisFb_xReadyZ := fbZ.xReady; AxisFb_xReadyR := fbR.xReady;
 AxisFb_xHomedY := fbY.xHomed; AxisFb_xHomedZ := fbZ.xHomed; AxisFb_xHomedR := fbR.xHomed;
 AxisFb_xFaultY := fbY.xFault; AxisFb_xFaultZ := fbZ.xFault; AxisFb_xFaultR := fbR.xFault;
+(* 0.68 全轴直控：Y/Z/R 实际速度回读（状态镜像 word39..41） *)
+AxisFb_rVelActY := fbY.rVelAct;
+AxisFb_rVelActZ := fbZ.rVelAct;
+AxisFb_rVelActR := fbR.rVelAct;
 AxisFb_xReady := AxisFb_xReadyM1 AND AxisFb_xReadyM2 AND fbY.xReady AND fbZ.xReady
     AND (NOT xM5Ready OR fbR.xReady);

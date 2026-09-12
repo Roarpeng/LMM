@@ -2,8 +2,8 @@
 /**
  * trace-x.js — X 轴双驱现场抓波工具（只读 FC03，不写命令镜像）
  *
- * PLC 状态镜像（MB_StatusOut 64 WORD）每周期无条件刷新：
- *   w0=19533(magic) w1=256 w2=序列号(每周期+1) w63=同序列
+ * PLC 状态镜像（MB_StatusOut 96 WORD）每周期无条件刷新：
+ *   w0=19533(magic) w1=256 w2=序列号(每周期+1) w95=同序列
  *   w14..15  rPosM1    (×1000, m)
  *   w16..17  rPosM2    (×1000, m)
  *   w24..25  rVelCmdM1 (×1000, m/s)
@@ -21,8 +21,9 @@
  */
 const ModbusRTU = require('modbus-serial');
 const fs = require('fs');
+const map = require('../../config/modbus-map.json');
 
-const IMAGE_WORDS = 64;
+const IMAGE_WORDS = map.protocol.imageWords;
 const MAGIC = 19533;
 const MAGIC_SWAP = 0x4d4c; // 19788，字节交换后的 magic
 

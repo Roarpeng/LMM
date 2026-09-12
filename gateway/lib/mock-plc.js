@@ -169,6 +169,11 @@ function createMockPlc(initialCommands = {}) {
 
   function statusMessage() {
     const safe = Boolean(req.HMI_xEStop) && !state.estopLatch;
+    const directMode = (axis) => Number(req[`HMI_iDirectMode${axis}`]) || 0;
+    const directActive = (axis) => directMode(axis) !== 0;
+    const directVel = (axis) => (directMode(axis) === 1
+      ? Number(req[`HMI_rDirectVel${axis}`]) || 0
+      : 0);
     return {
       t: 's',
       Tcp_iCommStatus: 2,
@@ -185,6 +190,7 @@ function createMockPlc(initialCommands = {}) {
       HMI_xAutoBusy: state.autoBusy,
       HMI_xAutoDone: state.autoDone,
       HMI_rForceShow: state.forceShow,
+      HMI_rForceSetEcho: Number(req.HMI_rForceSet) || 0,
       HMI_xHomedY: state.homedY,
       HMI_xHomedZ: state.homedZ,
       HMI_xHomedR: state.homedR,
@@ -202,12 +208,22 @@ function createMockPlc(initialCommands = {}) {
       AxisFb_rVelCmdM2: state.velCmdM2,
       AxisFb_rVelActM1: state.velActM1,
       AxisFb_rVelActM2: state.velActM2,
+      AxisFb_rVelActY: directVel('Y'),
+      AxisFb_rVelActZ: directVel('Z'),
+      AxisFb_rVelActR: directVel('R'),
       Direct_rVelM1Act: state.velActM1,
       Direct_rVelM2Act: state.velActM2,
       Direct_xActive: false,
       Direct_xOnline: false,
       Direct_xEnable: Boolean(req.HMI_xDirectEnable),
       Direct_wSeqEcho: 0,
+      Direct2_xActiveX: directActive('X'),
+      Direct2_xActiveY: directActive('Y'),
+      Direct2_xActiveZ: directActive('Z'),
+      Direct2_xActiveR: directActive('R'),
+      Direct2_xOnline: Number(req.HMI_wDirectSeq) > 0,
+      Direct2_xSafe: safe,
+      Direct2_wSeqEcho: Number(req.HMI_wDirectSeq) || 0,
       AxisFb_xMovingM1: Math.abs(state.velActM1) > 0.01,
       AxisFb_xMovingM2: Math.abs(state.velActM2) > 0.01,
       AxisFb_xPoweredM1: safe,

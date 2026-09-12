@@ -43,6 +43,7 @@ VAR_OUTPUT
     xMoveRelDone : BOOL;    (* 相对定位完成 *)
     xMoveAbsDone : BOOL;    (* 绝对定位完成 *)
     rActPos : LREAL;        (* 实际位置 *)
+    rVelAct : REAL;         (* 实际速度；g 线 0.68 直控/回读专用 *)
     (* --- 诊断输出（g 线 0.5 新增；上层可不接线，在线直接看） --- *)
     xVelReq : BOOL;         (* 诊断：仲裁后速度请求已成立 *)
     xVelBusy : BOOL;        (* 诊断：MC_MoveVelocity.Busy *)
@@ -94,6 +95,7 @@ END_VAR
 fbReadStatus(Axis := Axis, Enable := TRUE);
 fbReadPos(Axis := Axis, Enable := TRUE);
 rActPos := fbReadPos.Position;
+rVelAct := LREAL_TO_REAL(Axis.fActVelocity);
 xStandstill := fbReadStatus.StandStill;
 xFault := fbReadStatus.ErrorStop;
 xMoving := fbReadStatus.DiscreteMotion OR fbReadStatus.ContinuousMotion OR fbReadStatus.Homing;

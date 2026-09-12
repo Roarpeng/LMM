@@ -4,7 +4,7 @@
     "magic": 19533,
     "versionMajor": 1,
     "versionMinor": 0,
-    "imageWords": 64,
+    "imageWords": 96,
     "wordOrder": "high-word-first"
   },
   "command": {
@@ -14,7 +14,7 @@
       "version": 1,
       "sequence": 2,
       "heartbeat": 3,
-      "tailSequence": 63
+      "tailSequence": 95
     },
     "fields": [
       {
@@ -371,6 +371,85 @@
         "offset": 52,
         "scale": 1000.0,
         "zh": "【R减速度】RETAIN。 2 WORD, signed, scale ×1000, high word first。"
+      },
+      {
+        "name": "HMI_iDirectModeX",
+        "type": "UINT",
+        "offset": 60,
+        "zh": "【直控·X模式】0 idle / 1 vel（X 速度环，无 pos 模式）"
+      },
+      {
+        "name": "HMI_rDirectPosX",
+        "type": "SCALED_DINT",
+        "offset": 61,
+        "scale": 1000,
+        "zh": "【直控·X整机目标位置】m（可选，上层速度斜坡实现）"
+      },
+      {
+        "name": "HMI_iDirectModeY",
+        "type": "UINT",
+        "offset": 63,
+        "zh": "【直控·Y模式】0 idle / 1 vel / 2 posAbs / 3 posRel"
+      },
+      {
+        "name": "HMI_rDirectVelY",
+        "type": "SCALED_INT",
+        "offset": 64,
+        "scale": 1000,
+        "zh": "【直控·Y速度】m/s"
+      },
+      {
+        "name": "HMI_rDirectPosY",
+        "type": "SCALED_DINT",
+        "offset": 65,
+        "scale": 1000,
+        "zh": "【直控·Y目标位置】m"
+      },
+      {
+        "name": "HMI_iDirectModeZ",
+        "type": "UINT",
+        "offset": 67,
+        "zh": "【直控·Z模式】0 idle / 1 vel / 2 posAbs / 3 posRel"
+      },
+      {
+        "name": "HMI_rDirectVelZ",
+        "type": "SCALED_INT",
+        "offset": 68,
+        "scale": 1000,
+        "zh": "【直控·Z速度】m/s"
+      },
+      {
+        "name": "HMI_rDirectPosZ",
+        "type": "SCALED_DINT",
+        "offset": 69,
+        "scale": 1000,
+        "zh": "【直控·Z目标位置】m"
+      },
+      {
+        "name": "HMI_iDirectModeR",
+        "type": "UINT",
+        "offset": 71,
+        "zh": "【直控·R模式】0 idle / 1 vel / 2 posAbs / 3 posRel"
+      },
+      {
+        "name": "HMI_rDirectVelR",
+        "type": "SCALED_INT",
+        "offset": 72,
+        "scale": 1000,
+        "zh": "【直控·R速度】工程单位/s"
+      },
+      {
+        "name": "HMI_rDirectPosR",
+        "type": "SCALED_DINT",
+        "offset": 73,
+        "scale": 1000,
+        "zh": "【直控·R目标位置】工程单位"
+      },
+      {
+        "name": "HMI_wDirectSeq",
+        "type": "UINT",
+        "offset": 75,
+        "zh": "【直控·心跳序号】客户端每周期 +1；PLC 300ms 看门狗"
       }
     ]
   },
@@ -382,7 +461,7 @@
       "sequence": 2,
       "ack": 3,
       "heartbeat": 4,
-      "tailSequence": 63
+      "tailSequence": 95
     },
     "fields": [
       {
@@ -757,33 +836,185 @@
         "offset": 37,
         "scale": 1000,
         "zh": "【只读·X双驱同步误差】m；M1−M2 位置差（word37）"
+      },
+      {
+        "name": "AxisFb_rVelActY",
+        "type": "SCALED_INT",
+        "offset": 39,
+        "scale": 1000,
+        "zh": "【只读·Y实际速度】m/s"
+      },
+      {
+        "name": "AxisFb_rVelActZ",
+        "type": "SCALED_INT",
+        "offset": 40,
+        "scale": 1000,
+        "zh": "【只读·Z实际速度】m/s"
+      },
+      {
+        "name": "AxisFb_rVelActR",
+        "type": "SCALED_INT",
+        "offset": 41,
+        "scale": 1000,
+        "zh": "【只读·R实际速度】工程单位/s"
+      },
+      {
+        "name": "Direct2_xActiveX",
+        "type": "BOOL",
+        "offset": 42,
+        "bit": 0,
+        "zh": "【只读·直控·X在役】"
+      },
+      {
+        "name": "Direct2_xActiveY",
+        "type": "BOOL",
+        "offset": 42,
+        "bit": 1,
+        "zh": "【只读·直控·Y在役】"
+      },
+      {
+        "name": "Direct2_xActiveZ",
+        "type": "BOOL",
+        "offset": 42,
+        "bit": 2,
+        "zh": "【只读·直控·Z在役】"
+      },
+      {
+        "name": "Direct2_xActiveR",
+        "type": "BOOL",
+        "offset": 42,
+        "bit": 3,
+        "zh": "【只读·直控·R在役】"
+      },
+      {
+        "name": "Direct2_xOnline",
+        "type": "BOOL",
+        "offset": 42,
+        "bit": 4,
+        "zh": "【只读·直控·心跳在线】"
+      },
+      {
+        "name": "Direct2_xSafe",
+        "type": "BOOL",
+        "offset": 42,
+        "bit": 5,
+        "zh": "【只读·直控·安全允许】"
+      },
+      {
+        "name": "Direct2_wSeqEcho",
+        "type": "UINT",
+        "offset": 43,
+        "zh": "【只读·直控·心跳回显】"
+      },
+      {
+        "name": "HMI_rForceSetEcho",
+        "type": "SCALED_DINT",
+        "offset": 44,
+        "scale": 100,
+        "zh": "【只读·力设定回显】N"
       }
     ]
   },
   "directx": {
     "command": {
       "fields": [
-        { "name": "HMI_xDirectEnable", "type": "BOOL", "offset": 5, "bit": 10, "zh": "【X直控·Web使能】TRUE=请求视觉直控；与 Vis_xEnable 取或，视觉优先" },
-        { "name": "HMI_rVelM1Set", "type": "SCALED_INT", "offset": 54, "scale": 1000, "zh": "【X直控·M1设定速度】m/s；命令镜像 word54 (INT×1000)" },
-        { "name": "HMI_rVelM2Set", "type": "SCALED_INT", "offset": 55, "scale": 1000, "zh": "【X直控·M2设定速度】m/s；命令镜像 word55 (INT×1000)" }
+        {
+          "name": "HMI_xDirectEnable",
+          "type": "BOOL",
+          "offset": 5,
+          "bit": 10,
+          "zh": "【X直控·Web使能】TRUE=请求视觉直控；与 Vis_xEnable 取或，视觉优先"
+        },
+        {
+          "name": "HMI_rVelM1Set",
+          "type": "SCALED_INT",
+          "offset": 54,
+          "scale": 1000,
+          "zh": "【X直控·M1设定速度】m/s；命令镜像 word54 (INT×1000)"
+        },
+        {
+          "name": "HMI_rVelM2Set",
+          "type": "SCALED_INT",
+          "offset": 55,
+          "scale": 1000,
+          "zh": "【X直控·M2设定速度】m/s；命令镜像 word55 (INT×1000)"
+        }
       ]
     },
     "vision": {
       "fields": [
-        { "name": "Vis_xEnable", "type": "BOOL", "offset": 56, "bit": 0, "zh": "【视觉直控使能】网关中继写；视觉超时置 0" },
-        { "name": "Vis_wSeq", "type": "UINT", "offset": 57, "zh": "【视觉心跳序号】网关每次中继 +1" },
-        { "name": "Vis_rVelM1Set", "type": "SCALED_INT", "offset": 58, "scale": 1000, "zh": "【视觉直控·M1速度】m/s (INT×1000)" },
-        { "name": "Vis_rVelM2Set", "type": "SCALED_INT", "offset": 59, "scale": 1000, "zh": "【视觉直控·M2速度】m/s (INT×1000)" }
+        {
+          "name": "Vis_xEnable",
+          "type": "BOOL",
+          "offset": 56,
+          "bit": 0,
+          "zh": "【视觉直控使能】网关中继写；视觉超时置 0"
+        },
+        {
+          "name": "Vis_wSeq",
+          "type": "UINT",
+          "offset": 57,
+          "zh": "【视觉心跳序号】网关每次中继 +1"
+        },
+        {
+          "name": "Vis_rVelM1Set",
+          "type": "SCALED_INT",
+          "offset": 58,
+          "scale": 1000,
+          "zh": "【视觉直控·M1速度】m/s (INT×1000)"
+        },
+        {
+          "name": "Vis_rVelM2Set",
+          "type": "SCALED_INT",
+          "offset": 59,
+          "scale": 1000,
+          "zh": "【视觉直控·M2速度】m/s (INT×1000)"
+        }
       ]
     },
     "status": {
       "fields": [
-        { "name": "Direct_xActive", "type": "BOOL", "offset": 28, "bit": 0, "zh": "【X直控·FB在役】eMode=4" },
-        { "name": "Direct_xOnline", "type": "BOOL", "offset": 28, "bit": 1, "zh": "【X直控·视觉在线】Vis_wSeq 200ms 内变化" },
-        { "name": "Direct_xEnable", "type": "BOOL", "offset": 28, "bit": 2, "zh": "【X直控·仲裁后使能】" },
-        { "name": "Direct_rVelM1Act", "type": "SCALED_INT", "offset": 29, "scale": 1000, "zh": "【X直控·M1实际速度】m/s (INT×1000)" },
-        { "name": "Direct_rVelM2Act", "type": "SCALED_INT", "offset": 30, "scale": 1000, "zh": "【X直控·M2实际速度】m/s (INT×1000)" },
-        { "name": "Direct_wSeqEcho", "type": "UINT", "offset": 31, "zh": "【X直控·视觉序号回显】" }
+        {
+          "name": "Direct_xActive",
+          "type": "BOOL",
+          "offset": 28,
+          "bit": 0,
+          "zh": "【X直控·FB在役】eMode=4"
+        },
+        {
+          "name": "Direct_xOnline",
+          "type": "BOOL",
+          "offset": 28,
+          "bit": 1,
+          "zh": "【X直控·视觉在线】Vis_wSeq 200ms 内变化"
+        },
+        {
+          "name": "Direct_xEnable",
+          "type": "BOOL",
+          "offset": 28,
+          "bit": 2,
+          "zh": "【X直控·仲裁后使能】"
+        },
+        {
+          "name": "Direct_rVelM1Act",
+          "type": "SCALED_INT",
+          "offset": 29,
+          "scale": 1000,
+          "zh": "【X直控·M1实际速度】m/s (INT×1000)"
+        },
+        {
+          "name": "Direct_rVelM2Act",
+          "type": "SCALED_INT",
+          "offset": 30,
+          "scale": 1000,
+          "zh": "【X直控·M2实际速度】m/s (INT×1000)"
+        },
+        {
+          "name": "Direct_wSeqEcho",
+          "type": "UINT",
+          "offset": 31,
+          "zh": "【X直控·视觉序号回显】"
+        }
       ]
     }
   }

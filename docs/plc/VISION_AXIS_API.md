@@ -117,8 +117,9 @@
 | HMI_xLampEStop / HMI_xDevRun / HMI_xDevError | 急停灯 / 运行 / 故障 |
 | AxisFb_xReady | 全轴就绪 |
 | AxisFb_xFaultM1 / M2 / Y / Z / R | 各轴故障位 |
-| Direct2_flags | bit0 X 在役 / bit1 Y / bit2 Z / bit3 R / bit4 在线 / bit5 安全（新增） |
-| Direct2_seqEcho | 直控心跳回显（新增） |
+| Direct2_xActiveX / Direct2_xActiveY / Direct2_xActiveZ / Direct2_xActiveR | 各轴直控在役（新增） |
+| Direct2_xOnline / Direct2_xSafe | 直控心跳在线 / 安全允许（新增） |
+| Direct2_wSeqEcho | 直控心跳回显（新增） |
 
 ## 5. 控制流程
 

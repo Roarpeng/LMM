@@ -28,6 +28,10 @@
     HMI_rAccX: 'X加速度', HMI_rDecX: 'X减速度', HMI_rAccY: 'Y加速度', HMI_rDecY: 'Y减速度',
     HMI_rAccZ: 'Z加速度', HMI_rDecZ: 'Z减速度', HMI_rAccR: 'R加速度', HMI_rDecR: 'R减速度',
     HMI_xDirectEnable: '直控使能', HMI_rVelM1Set: '直控M1给定', HMI_rVelM2Set: '直控M2给定',
+    HMI_wDirectSeq: '直控心跳序号', HMI_iDirectModeX: '直控X模式', HMI_rDirectPosX: '直控X整机目标',
+    HMI_iDirectModeY: '直控Y模式', HMI_rDirectVelY: '直控Y速度', HMI_rDirectPosY: '直控Y目标',
+    HMI_iDirectModeZ: '直控Z模式', HMI_rDirectVelZ: '直控Z速度', HMI_rDirectPosZ: '直控Z目标',
+    HMI_iDirectModeR: '直控R模式', HMI_rDirectVelR: '直控R速度', HMI_rDirectPosR: '直控R目标',
   };
   const STATUS_LABELS = {
     Tcp_iCommStatus: '通讯诊断', HMI_eDevState: '设备态', HMI_eOpMode: '运行方式', HMI_iAlarmShow: '报警号',
@@ -46,6 +50,10 @@
     AxisFb_xMovingM1: 'M1运动中', AxisFb_xMovingM2: 'M2运动中', AxisFb_xPoweredM1: 'M1使能', AxisFb_xPoweredM2: 'M2使能',
     AxisFb_xSyncWarn: 'X同步预警', AxisFb_xSyncFault: 'X同步故障', AxisFb_rSyncErr: 'X同步误差',
     Direct_xActive: '直控在役', Direct_xOnline: '视觉在线', Direct_xEnable: '直控使能', Direct_rVelM1Act: '直控M1实际速度', Direct_rVelM2Act: '直控M2实际速度', Direct_wSeqEcho: '视觉序号回显',
+    AxisFb_rVelActY: 'Y实际速度', AxisFb_rVelActZ: 'Z实际速度', AxisFb_rVelActR: 'R实际速度',
+    Direct2_xActiveX: '直控X在役', Direct2_xActiveY: '直控Y在役', Direct2_xActiveZ: '直控Z在役', Direct2_xActiveR: '直控R在役',
+    Direct2_xOnline: '直控心跳在线', Direct2_xSafe: '直控安全允许', Direct2_wSeqEcho: '直控心跳回显', HMI_rForceSetEcho: '力设定回显',
+    Vis_xEnable: '视觉使能', Vis_wSeq: '视觉序号', Vis_rVelM1Set: '视觉M1给定', Vis_rVelM2Set: '视觉M2给定',
   };
   const W = {
     HMI_xEStop: true, HMI_xStop: false, HMI_xStopHold3s: false, HMI_xStart: false, HMI_xEnable: false, HMI_xAutoMode: false,
@@ -59,12 +67,14 @@
     HMI_rWheelBase: 5.0, HMI_rForceSet: 100, HMI_rForceSim: 0, HMI_rHeadingErr: 0.0, HMI_rKpTrack: 0.0, HMI_rKpForce: 1.0,
     HMI_rAccX: 100, HMI_rDecX: 100, HMI_rAccY: 100, HMI_rDecY: 100, HMI_rAccZ: 100, HMI_rDecZ: 100, HMI_rAccR: 100, HMI_rDecR: 100,
     HMI_xDirectEnable: false, HMI_rVelM1Set: 0, HMI_rVelM2Set: 0,
+    HMI_wDirectSeq: 0, HMI_iDirectModeX: 0, HMI_rDirectPosX: 0, HMI_iDirectModeY: 0, HMI_rDirectVelY: 0, HMI_rDirectPosY: 0,
+    HMI_iDirectModeZ: 0, HMI_rDirectVelZ: 0, HMI_rDirectPosZ: 0, HMI_iDirectModeR: 0, HMI_rDirectVelR: 0, HMI_rDirectPosR: 0,
   };
   const S = {};
   const ACT = { 'x+': 'HMI_xJogXPos', 'x-': 'HMI_xJogXNeg', spinL: 'HMI_xSpinLeft', spinR: 'HMI_xSpinRight',
     'y+': 'HMI_xJogYPos', 'y-': 'HMI_xJogYNeg', 'z+': 'HMI_xJogZPos', 'z-': 'HMI_xJogZNeg', 'r+': 'HMI_xJogRPos', 'r-': 'HMI_xJogRNeg' };
   const KEYMAP = { KeyW: 'x+', KeyS: 'x-', KeyA: 'y-', KeyD: 'y+', KeyQ: 'z+', KeyE: 'z-', KeyZ: 'r+', KeyC: 'r-', KeyX: 'spinL', KeyV: 'spinR' };
-  let ws = null, seq = 0, dirty = false, lastSend = 0;
+  let ws = null, seq = 0, dirty = false, lastSend = 0, activePage = 'overview';
   let controlClaimed = false;
   let clientId = null, leaseOwner = null, lastAckAt = 0, lastWriteLog = 0, lastPingAt = 0, rtt = null;
   let gwHealth = null, healthAt = 0, MAP = null, rafPending = false, lastTrend = 0, lastAutoSnap = 0, lastHistAt = 0;
@@ -118,7 +128,7 @@
     ws.onclose = () => {
       controlClaimed = false; dirty = false; leaseOwner = null; setConn(false); log('WS closed - retry 2s', 'warn');
       Object.keys(ACT).forEach((k) => { W[ACT[k]] = false; });
-      W.HMI_xStart = false; W.HMI_xEnable = false; W.HMI_xAutoStart = false; W.HMI_xStop = false; W.HMI_xEStop = true; W.HMI_xForceGuide = false;
+      W.HMI_xStart = false; W.HMI_xEnable = false; W.HMI_xAutoStart = false; W.HMI_xStop = false; W.HMI_xEStop = true; W.HMI_xForceGuide = false; W.HMI_xDirectEnable = false;
       setTimeout(connect, 2000);
     };
     ws.onerror = () => log('WS error', 'err');
@@ -149,6 +159,7 @@
   function setCheckbox(id, key) { const el = $(id); if (!el) return; el.addEventListener('change', () => { const o = {}; o[key] = el.checked; patch(o); }); }
   function on(id, ev, fn) { const el = $(id); if (el) el.addEventListener(ev, fn); }
   function switchPage(name) {
+    activePage = name;
     document.querySelectorAll('#nav button').forEach((b) => b.classList.toggle('active', b.dataset.page === name));
     document.querySelectorAll('.page').forEach((p) => p.classList.toggle('active', p.id === 'page-' + name));
   }
@@ -293,7 +304,7 @@
     setText('sys-ack', lastAckAt ? new Date(lastAckAt).toLocaleTimeString() : '—');
     setText('sys-version', 'v3');
 
-    renderTrends(); refreshRegCells();
+    renderDirect(); renderTrends(); refreshRegCells();
     if ($('health-age') && healthAt) setText('health-age', (Date.now() - healthAt) + 'ms');
   }
   function renderMachine(avg, y, z, r, dpos) {
@@ -327,6 +338,25 @@
       if (!estop) overlayHidden = false;
       if (estop) { setText('ov-alarm-desc', '请释放物理急停按钮，然后执行复位。（报警 ' + code + '）'); }
     }
+  }
+  function renderDirect() {
+    const online = !!S.Direct2_xOnline, safe = !!S.Direct2_xSafe;
+    setChip('direct-chip', !S.connected ? 'off' : (!safe ? 'alarm' : (online ? 'run' : 'warn')),
+      !S.connected ? 'OFFLINE' : (!safe ? 'UNSAFE' : (online ? 'ONLINE' : 'IDLE')));
+    setText('d2-online', online ? 'TRUE' : 'FALSE');
+    setText('d2-safe', safe ? 'TRUE' : 'FALSE');
+    setText('d2-active', 'X=' + (S.Direct2_xActiveX ? 'T' : 'F') + ' Y=' + (S.Direct2_xActiveY ? 'T' : 'F') + ' Z=' + (S.Direct2_xActiveZ ? 'T' : 'F') + ' R=' + (S.Direct2_xActiveR ? 'T' : 'F'));
+    setText('d2-seq', fmt(W.HMI_wDirectSeq, 0) + ' → ' + (S.Direct2_wSeqEcho == null ? '—' : fmt(S.Direct2_wSeqEcho, 0)));
+    setText('d-ready', S.AxisFb_xReady ? 'TRUE' : 'FALSE');
+    setText('d-alarm', fmt(S.HMI_iAlarmShow, 0));
+    setText('d-m1-act', fmt(S.AxisFb_rVelActM1, 3)); setText('d-m2-act', fmt(S.AxisFb_rVelActM2, 3));
+    setText('d-m1-pos', fmt(S.AxisFb_rPosM1, 4)); setText('d-m2-pos', fmt(S.AxisFb_rPosM2, 4));
+    setText('d-sync', fmt(S.AxisFb_rSyncErr, 4));
+    setText('d-y-pos', fmt(S.AxisFb_rPosY, 4)); setText('d-y-act', fmt(S.AxisFb_rVelActY, 3));
+    setText('d-z-pos', fmt(S.AxisFb_rPosZ, 4)); setText('d-z-act', fmt(S.AxisFb_rVelActZ, 3));
+    setText('d-r-pos', fmt(S.AxisFb_rPosR, 4)); setText('d-r-act', fmt(S.AxisFb_rVelActR, 3));
+    setText('d-force-show', fmt(S.HMI_rForceShow, 1) + ' N');
+    setText('d-force-echo', S.HMI_rForceSetEcho == null ? '—' : fmt(S.HMI_rForceSetEcho, 1) + ' N');
   }
   function renderAlarmList() {
     const el = $('alarm-list'); if (!el) return;
@@ -389,6 +419,16 @@
   bindParam('p-fsim', 'n-fsim', 'HMI_rForceSim', 0);
   bindParam('p-dvm1', 'n-dvm1', 'HMI_rVelM1Set', 3); bindParam('p-dvm2', 'n-dvm2', 'HMI_rVelM2Set', 3);
   setCheckbox('force-sim', 'HMI_xForceSimEnable'); setCheckbox('force-guide', 'HMI_xForceGuide'); setCheckbox('x-direct', 'HMI_xDirectEnable');
+  // 「直控」页：每轴速度 / 位置 / 模式 + 力设定
+  setCheckbox('direct-enable', 'HMI_xDirectEnable');
+  bindParam('p-dm1', 'n-dm1', 'HMI_rVelM1Set', 3); bindParam('p-dm2', 'n-dm2', 'HMI_rVelM2Set', 3);
+  bindParam('p-dpx', 'n-dpx', 'HMI_rDirectPosX', 3);
+  bindParam('p-dvy', 'n-dvy', 'HMI_rDirectVelY', 3); bindParam('p-dpy', 'n-dpy', 'HMI_rDirectPosY', 3);
+  bindParam('p-dvz', 'n-dvz', 'HMI_rDirectVelZ', 3); bindParam('p-dpz', 'n-dpz', 'HMI_rDirectPosZ', 3);
+  bindParam('p-dvr', 'n-dvr', 'HMI_rDirectVelR', 3); bindParam('p-dpr', 'n-dpr', 'HMI_rDirectPosR', 3);
+  bindParam('p-dfs', 'n-dfs', 'HMI_rForceSet', 0);
+  [['dmx', 'HMI_iDirectModeX'], ['dmy', 'HMI_iDirectModeY'], ['dmz', 'HMI_iDirectModeZ'], ['dmr', 'HMI_iDirectModeR']]
+    .forEach(([id, key]) => on(id, 'change', () => patch({ [key]: Number($(id).value) })));
 
   on('btn-estop', 'pointerdown', (e) => { e.preventDefault(); patch({ HMI_xEStop: false }); });
   const estopUp = (e) => { e.preventDefault(); patch({ HMI_xEStop: true }); };
@@ -425,7 +465,13 @@
   setInterval(() => { const c = $('clock'); if (c) c.textContent = new Date().toLocaleTimeString(); }, 1000);
   setInterval(() => { if (ws && ws.readyState === 1) { ws.send(JSON.stringify({ t: 'ping' })); if (dirty) flush(false); } }, 200);
   setInterval(() => { if (ws && ws.readyState === 1) { lastPingAt = Date.now(); ws.send(JSON.stringify({ t: 'ping' })); } }, 1000);
+  // 直控页开启时 HMI_wDirectSeq 每 ~100ms 自增并随命令镜像下发（未取得控制权时 flush 不发送）
+  setInterval(() => {
+    if (activePage !== 'direct' || !ws || ws.readyState !== 1) return;
+    W.HMI_wDirectSeq = (Number(W.HMI_wDirectSeq) + 1) & 0xffff;
+    dirty = true; flush(false);
+  }, 100);
 
-  setConn(false); render(); log('WebHMI v3 就绪 - 总览/自动/手动/X双驱/力传感/趋势/报警/调试/系统');
+  setConn(false); render(); log('WebHMI v3 就绪 - 总览/自动/手动/X双驱/直控/力传感/趋势/报警/调试/系统');
   pollHealth(); setInterval(pollHealth, 2000); connect();
 })();

@@ -13,7 +13,7 @@ const {
 } = require('../lib/modbus-codec');
 
 function assertValidMapping(candidate) {
-  assert.equal(candidate.protocol.imageWords, 64);
+  assert.equal(candidate.protocol.imageWords, 96);
   assert.equal(candidate.command.baseAddress, map.command.baseAddress);
   assert.equal(candidate.status.baseAddress, map.status.baseAddress);
 
@@ -37,7 +37,7 @@ function assertValidMapping(candidate) {
         const width = field.type === 'SCALED_DINT' ? 2 : 1;
         for (let index = 0; index < width; index += 1) {
           const offset = field.offset + index;
-          assert.ok(offset < 63, `${field.name} overlaps trailer`);
+          assert.ok(offset < candidate.protocol.imageWords - 1, `${field.name} overlaps trailer`);
           assert.ok(!wholeWords.has(offset) && !bitWords.has(offset), `overlap at ${offset}`);
           wholeWords.add(offset);
         }
@@ -77,11 +77,11 @@ test('command image round-trips signed scaled values', () => {
   );
   const decoded = decodeCommandImage(words, 6);
 
-  assert.equal(words.length, 64);
+  assert.equal(words.length, 96);
   assert.equal(words[0], 0x4c4d);
   assert.equal(words[1], 0x0100);
   assert.equal(words[2], 7);
-  assert.equal(words[63], 7);
+  assert.equal(words[95], 7);
   assert.equal(words[3], 65535);
   assert.equal(words[4] & (1 << 6), 1 << 6);
   assert.equal(decoded.valid, true);
@@ -123,11 +123,11 @@ test('status image round-trips bool fields and signed scaled DINTs', () => {
   );
   const decoded = decodeStatusImage(words);
 
-  assert.equal(words.length, 64);
+  assert.equal(words.length, 96);
   assert.equal(words[2], 12);
   assert.equal(words[3], 7);
   assert.equal(words[4], 0);
-  assert.equal(words[63], 12);
+  assert.equal(words[95], 12);
   assert.equal(decoded.valid, true);
   assert.equal(decoded.values.HMI_xAutoBusy, true);
   assert.equal(decoded.values.AxisFb_xReady, true);
@@ -147,7 +147,7 @@ test('decoder rejects an incompatible protocol version', () => {
 
 test('decoder rejects a mismatched trailing sequence', () => {
   const words = encodeStatusImage({}, 9, 4, 3);
-  words[63] = 10;
+  words[95] = 10;
 
   const decoded = decodeStatusImage(words);
 

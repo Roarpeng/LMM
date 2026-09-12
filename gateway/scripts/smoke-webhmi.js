@@ -18,7 +18,12 @@ function delay(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
   const html = await index.text();
   const health = await (await fetch(base + '/health')).json();
   const map = await (await fetch(base + '/map')).json();
-  const required = ['AxisFb_rVelActM1', 'AxisFb_rVelActM2', 'AxisFb_rSyncErr', 'AxisFb_xSyncFault'];
+  const required = [
+    'AxisFb_rVelActM1', 'AxisFb_rVelActM2', 'AxisFb_rSyncErr', 'AxisFb_xSyncFault',
+    'AxisFb_rVelActY', 'AxisFb_rVelActZ', 'AxisFb_rVelActR',
+    'Direct2_xActiveX', 'Direct2_xActiveY', 'Direct2_xActiveZ', 'Direct2_xActiveR',
+    'Direct2_xOnline', 'Direct2_xSafe', 'Direct2_wSeqEcho', 'HMI_rForceSetEcho',
+  ];
   const mapOk = required.every((n) => map.status.fields.some((f) => f.name === n));
   console.log('[smoke] index', index.status, html.length + 'B',
     'tabs=' + html.includes('data-tab="xdual"'), 'regtable=' + html.includes('id="regtable"'));
@@ -35,7 +40,10 @@ function delay(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
     if (m.t === 'err') got.err = m.code;
     if (m.t === 's') {
       got.status = true;
-      if ('AxisFb_rVelActM1' in m && 'AxisFb_rVelActM2' in m && 'AxisFb_rSyncErr' in m) got.actFields = true;
+      if ('AxisFb_rVelActM1' in m && 'AxisFb_rVelActM2' in m && 'AxisFb_rSyncErr' in m
+          && 'AxisFb_rVelActY' in m && 'AxisFb_rVelActZ' in m && 'AxisFb_rVelActR' in m
+          && 'Direct2_xActiveX' in m && 'Direct2_xOnline' in m
+          && 'Direct2_wSeqEcho' in m && 'HMI_rForceSetEcho' in m) got.actFields = true;
     }
   });
   await new Promise((resolve) => ws.once('open', resolve));

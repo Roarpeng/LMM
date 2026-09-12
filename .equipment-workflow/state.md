@@ -55,9 +55,13 @@
 - **WebHMI v3（2026-09-12）**：前端重构为 `web/live/{index.html, styles.css, app.js}`（无构建）；信息架构 = 总览/自动/手动/X双驱/力传感/趋势/报警/调试/系统，左导航 + 设备视图 + 急停覆盖层；通讯层与 WS 契约不变。
   - Spec：`docs/superpowers/specs/2026-09-12-webhmi-v3-ui-design.md`。
   - `gateway/test/web-client.test.js` 改为读取三文件拼接校验；`npm test` 44 PASS、运行时自检 + Mock 冒烟 PASS。
-- **视觉直控全轴（2026-09-12，change-request；仅设计/文档，未实现）**：视觉工控机**也运行 WebHMI**，与操作员共用同一 WS/JSON 接口与页面 → **不新增 /vision/* 协议**；把「每轴直控」纳入现有命令/状态映射。
-  镜像 **64W → 96W**（尾部序号 63→95，单次 FC16/FC03 内）；新增每轴 方式/速度/位置 与 Y/Z/R 实际速度反馈；
-  使能/报警/限位/急停仍 **PLC 独占**；`PRG_TcpHmi` 解码、`PRG_Logic` 直控路由 + `HMI_wDirectSeq` 300ms 看门狗；`PRG_Axis_Control` 不变。
+- **视觉直控全轴（2026-09-12，change-request；实现完成，待烧录 0.68）**：视觉工控机**也运行 WebHMI**，与操作员共用同一 WS/JSON 接口与页面 → **不新增 /vision/* 协议**；把「每轴直控」纳入现有命令/状态映射。
+  镜像 **64W → 96W**（尾部序号 63→95，单次 FC16/FC03 内）；新增每轴 方式/速度/位置 与 Y/Z/R 实际速度/直控状态反馈；
+  **M1/M2 不单独写位置**（速度环 + 机械耦合；X 位置为整机目标 `HMI_rDirectPosX` 或视觉自闭环）；
+  使能/报警/限位/急停仍 **PLC 独占**；`PRG_TcpHmi` 解码、`PRG_Logic` 直控路由 + `HMI_wDirectSeq` 300ms 看门狗；`PRG_Axis_Control` 基本不变。
+  - 实现：契约 `config/modbus-map.json`（96W，命令 60..75 / 状态 39..45）；PLC **`LMM_g_0.68.xml`**（`tools/patch_g068.py` 幂等，sha `54cebbe4…`；新建 `plc/g/PRG_TcpHmi.st`，GVL +58 变量）；Gateway 分块 95+1 + mock；WebHMI 新增「直控」页。
+  - 验收：`ET.parse(0.68)` OK、`inject_g --check` OK、`generate_modbus_map.py` 与 `MODBUS_MAP.md` 同步、`npm test` 44 PASS、`smoke-webhmi` PASS、无 `ARRAY[0..63]`/`MB_CmdIn[63]` 残留。
+  - 现场待办：InoProShop 导入 0.68 → 编译 0 error → 下载（设备树两条通道已补齐 64..95 的 Value）。
   - 设计：`docs/superpowers/specs/2026-09-12-vision-axis-control-design.md`（含 Gate C 写者矩阵）；接口：`docs/plc/VISION_AXIS_API.md`。
 - **现场定稿 0.67（2026-09-12）**：`LMM_g_0.67.xml` 由 PLC 导出，POU 与 0.66 完全一致；
   设备树 TCP 从站为 `Type 40502 ModbusTcpSlave`（Port 502, UnitID 255），Channel 01 input `16#1000..103F`→`%IW103`(MB_CmdIn)、

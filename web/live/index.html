@@ -26,6 +26,7 @@
     <button type="button" data-page="auto"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg><span>自动</span></button>
     <button type="button" data-page="manual"><svg viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v6H6a2 2 0 0 0-2 2v7h16v-7a2 2 0 0 0-2-2h-3V5a3 3 0 0 0-3-3zm-1 3a1 1 0 1 1 2 0v6h-2z"/></svg><span>手动</span></button>
     <button type="button" data-page="xdual"><svg viewBox="0 0 24 24"><path d="M4 7h13v2H4zm0 8h13v2H4zm15-9 1.5 4L19 14z"/></svg><span>X 双驱</span></button>
+    <button type="button" data-page="direct"><svg viewBox="0 0 24 24"><path d="M12 2v3M12 19v3M2 12h3M19 12h3M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm0-3 2 3h-4z"/></svg><span>直控</span></button>
     <button type="button" data-page="force"><svg viewBox="0 0 24 24"><path d="M6 3h12v4l-3 3v11l-3-4-3 4V10L6 7z"/></svg><span>力传感</span></button>
     <button type="button" data-page="trend"><svg viewBox="0 0 24 24"><path d="M3 20h18v1H3zM4 16l4-6 3 3 4-7 5 5v5H4z"/></svg><span>趋势</span></button>
     <button type="button" data-page="alarm"><svg viewBox="0 0 24 24"><path d="M12 2 1 21h22zm0 6 6 10H6zm-1 3v4h2v-4zm0 5v2h2v-2z"/></svg><span>报警</span></button>
@@ -224,6 +225,82 @@
             <div class="item"><span class="name">直控 M2 实际</span><span class="val" id="d-act-m2">—</span></div>
           </div>
           <div class="hint">直控为调试用：手动模式、与点动/自动互斥；网关断线自动清零。</div>
+        </div>
+      </div>
+    <!-- 直控 -->
+    <section class="page" id="page-direct">
+      <div class="page-head"><h1>每轴直控</h1><span class="chip" id="direct-chip"><span class="dot"></span><b>—</b></span></div>
+      <div class="grid">
+        <div class="card span">
+          <h2>直控状态（实时回读）</h2>
+          <div class="list">
+            <div class="item"><span class="name">心跳在线 Direct2_xOnline</span><span class="val" id="d2-online">—</span></div>
+            <div class="item"><span class="name">安全允许 Direct2_xSafe</span><span class="val" id="d2-safe">—</span></div>
+            <div class="item"><span class="name">在役 X/Y/Z/R Direct2_xActiveX / Y / Z / R</span><span class="val mono" id="d2-active">—</span></div>
+            <div class="item"><span class="name">心跳序号 HMI_wDirectSeq → Direct2_wSeqEcho</span><span class="val mono" id="d2-seq">—</span></div>
+            <div class="item"><span class="name">全轴就绪 AxisFb_xReady</span><span class="val" id="d-ready">—</span></div>
+            <div class="item"><span class="name">报警号 HMI_iAlarmShow</span><span class="val" id="d-alarm">—</span></div>
+          </div>
+          <div class="hint">视觉工控机与操作员共用本页写入；M1/M2 走速度环（无独立位置），X 位置为整机目标 HMI_rDirectPosX。使能/报警/限位/急停由 PLC 全权负责。</div>
+        </div>
+
+        <div class="card">
+          <h2>X 双驱 · M1/M2（速度）</h2>
+          <div class="row"><label><input type="checkbox" id="direct-enable" /> 直控使能 HMI_xDirectEnable</label></div>
+          <div class="slider"><span class="lab">M1 速度</span><input type="range" id="p-dm1" min="-1.5" max="1.5" step="0.005" value="0" /><input type="number" id="n-dm1" step="0.005" value="0" /></div>
+          <div class="slider"><span class="lab">M2 速度</span><input type="range" id="p-dm2" min="-1.5" max="1.5" step="0.005" value="0" /><input type="number" id="n-dm2" step="0.005" value="0" /></div>
+          <div class="slider"><span class="lab">X 模式</span><select id="dmx"><option value="0">0 idle</option><option value="1">1 vel</option><option value="2">2 posAbs</option><option value="3">3 posRel</option></select></div>
+          <div class="slider"><span class="lab">X 目标位置</span><input type="range" id="p-dpx" min="-10" max="10" step="0.001" value="0" /><input type="number" id="n-dpx" step="0.001" value="0" /></div>
+          <div class="list">
+            <div class="item"><span class="name">M1 实际速度 AxisFb_rVelActM1</span><span class="val" id="d-m1-act">—</span></div>
+            <div class="item"><span class="name">M2 实际速度 AxisFb_rVelActM2</span><span class="val" id="d-m2-act">—</span></div>
+            <div class="item"><span class="name">M1 位置 AxisFb_rPosM1</span><span class="val" id="d-m1-pos">—</span></div>
+            <div class="item"><span class="name">M2 位置 AxisFb_rPosM2</span><span class="val" id="d-m2-pos">—</span></div>
+            <div class="item"><span class="name">同步误差 AxisFb_rSyncErr</span><span class="val" id="d-sync">—</span></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Y 轴</h2>
+          <div class="slider"><span class="lab">Y 模式</span><select id="dmy"><option value="0">0 idle</option><option value="1">1 vel</option><option value="2">2 posAbs</option><option value="3">3 posRel</option></select></div>
+          <div class="slider"><span class="lab">Y 速度</span><input type="range" id="p-dvy" min="-1.5" max="1.5" step="0.005" value="0" /><input type="number" id="n-dvy" step="0.005" value="0" /></div>
+          <div class="slider"><span class="lab">Y 目标位置</span><input type="range" id="p-dpy" min="-10" max="10" step="0.001" value="0" /><input type="number" id="n-dpy" step="0.001" value="0" /></div>
+          <div class="list">
+            <div class="item"><span class="name">位置 AxisFb_rPosY</span><span class="val" id="d-y-pos">—</span></div>
+            <div class="item"><span class="name">实际速度 AxisFb_rVelActY</span><span class="val" id="d-y-act">—</span></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Z 轴</h2>
+          <div class="slider"><span class="lab">Z 模式</span><select id="dmz"><option value="0">0 idle</option><option value="1">1 vel</option><option value="2">2 posAbs</option><option value="3">3 posRel</option></select></div>
+          <div class="slider"><span class="lab">Z 速度</span><input type="range" id="p-dvz" min="-1.5" max="1.5" step="0.005" value="0" /><input type="number" id="n-dvz" step="0.005" value="0" /></div>
+          <div class="slider"><span class="lab">Z 目标位置</span><input type="range" id="p-dpz" min="-10" max="10" step="0.001" value="0" /><input type="number" id="n-dpz" step="0.001" value="0" /></div>
+          <div class="list">
+            <div class="item"><span class="name">位置 AxisFb_rPosZ</span><span class="val" id="d-z-pos">—</span></div>
+            <div class="item"><span class="name">实际速度 AxisFb_rVelActZ</span><span class="val" id="d-z-act">—</span></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>R 轴</h2>
+          <div class="slider"><span class="lab">R 模式</span><select id="dmr"><option value="0">0 idle</option><option value="1">1 vel</option><option value="2">2 posAbs</option><option value="3">3 posRel</option></select></div>
+          <div class="slider"><span class="lab">R 速度</span><input type="range" id="p-dvr" min="-3" max="3" step="0.01" value="0" /><input type="number" id="n-dvr" step="0.01" value="0" /></div>
+          <div class="slider"><span class="lab">R 目标位置</span><input type="range" id="p-dpr" min="-360" max="360" step="0.01" value="0" /><input type="number" id="n-dpr" step="0.01" value="0" /></div>
+          <div class="list">
+            <div class="item"><span class="name">位置 AxisFb_rPosR</span><span class="val" id="d-r-pos">—</span></div>
+            <div class="item"><span class="name">实际速度 AxisFb_rVelActR</span><span class="val" id="d-r-act">—</span></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>力设定 / 回读</h2>
+          <div class="slider"><span class="lab">力设定</span><input type="range" id="p-dfs" min="0" max="500" step="1" value="100" /><input type="number" id="n-dfs" step="1" value="100" /></div>
+          <div class="list">
+            <div class="item"><span class="name">当前力 HMI_rForceShow</span><span class="val" id="d-force-show">—</span></div>
+            <div class="item"><span class="name">设定回显 HMI_rForceSetEcho</span><span class="val" id="d-force-echo">—</span></div>
+          </div>
+          <div class="hint">力设定 HMI_rForceSet 与力传感页共用同一命令镜像；当前力由 PLC 回读 HMI_rForceShow。</div>
         </div>
       </div>
     </section>

@@ -70,11 +70,16 @@ function createModbusMaster(options) {
       // 每周期推进心跳，维持 PLC 远程在线看门狗（否则停顿 >1s 会被判远程超时）
       if (typeof store.advanceHeartbeat === 'function') store.advanceHeartbeat();
       const commandWords = Array.from(store.getCommandWords());
-      // 0.60: 写命令镜像 word0..59（含网关中继的视觉块 56..59）；尾序号 word63 单独写
-      await client.writeRegisters(map.command.baseAddress, commandWords.slice(0, 60));
+      // 写命令镜像 word0..imageWords-2（含直控块 60..75 与视觉块 56..59）；
+      // 尾部快照序号单独写在 word imageWords-1，保证同一轮询请求内完成。
+      const tailIndex = map.command.header.tailSequence;
       await client.writeRegisters(
-        map.command.baseAddress + map.command.header.tailSequence,
-        [commandWords[map.command.header.tailSequence]],
+        map.command.baseAddress,
+        commandWords.slice(0, map.protocol.imageWords - 1),
+      );
+      await client.writeRegisters(
+        map.command.baseAddress + tailIndex,
+        [commandWords[tailIndex]],
       );
       const result = await client.readHoldingRegisters(
         map.status.baseAddress,

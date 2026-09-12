@@ -70,8 +70,9 @@
 | 39 | AxisFb_rVelActY | SCALED_INT ×1000 | Y 实际速度 m/s |
 | 40 | AxisFb_rVelActZ | SCALED_INT ×1000 | Z 实际速度 |
 | 41 | AxisFb_rVelActR | SCALED_INT ×1000 | R 实际速度 |
-| 42 | Direct2_flags | WORD | bit0 X在役 / bit1 Y / bit2 Z / bit3 R / bit4 在线 / bit5 安全 |
-| 43 | Direct2_seqEcho | UINT | 心跳回显 |
+| 42 | Direct2_xActiveX/Y/Z/R | BOOL bit0..3 | 各轴直控在役 |
+| 42 | Direct2_xOnline / Direct2_xSafe | BOOL bit4/5 | 心跳在线 / 安全允许 |
+| 43 | Direct2_wSeqEcho | UINT | 心跳回显 |
 | 44-45 | HMI_rForceSetEcho | SCALED_DINT ×100 | 力设定回显（可选） |
 | 95 | tailSequence | WORD | 尾部序号（原 63） |
 

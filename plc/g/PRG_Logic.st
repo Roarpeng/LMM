@@ -52,6 +52,30 @@ VAR
     Vis_wSeqPrev : WORD;
     rVelM1Sel : REAL;
     rVelM2Sel : REAL;
+    (* 0.68 全轴直控：心跳 + 模式仲裁中间量 *)
+    tonDirect2 : TON;
+    xDirectSeen : BOOL;
+    wDirectSeqPrev : WORD;
+    xDirect2Enable : BOOL;
+    xHmiDirectVelX : BOOL;
+    xDirectVelY : BOOL;
+    xDirectVelZ : BOOL;
+    xDirectVelR : BOOL;
+    xDirectAbsY : BOOL;
+    xDirectAbsZ : BOOL;
+    xDirectAbsR : BOOL;
+    xDirectRelY : BOOL;
+    xDirectRelZ : BOOL;
+    xDirectRelR : BOOL;
+    rDirectFeedY : REAL;
+    rDirectFeedZ : REAL;
+    rDirectFeedR : REAL;
+    rDirectVelYSel : REAL;
+    rDirectVelZSel : REAL;
+    rDirectVelRSel : REAL;
+    rDirectPosYSel : REAL;
+    rDirectPosZSel : REAL;
+    rDirectPosRSel : REAL;
 END_VAR
 
 (* ===== 急停锁存 / 长按复位 ===== *)
@@ -83,7 +107,22 @@ xSafe := HMI_xEStop AND NOT xEStopLatched;
 AxisCmd_xPower := xSafe;
 AxisCmd_xStopAll := HMI_xStop OR NOT xSafe OR xFaultAggregate OR HMI_xAutoAbort;
 
-(* ===== 0.60 X 视觉直控：Web(HMI_*) ∨ 视觉(Vis_*) 双源，视觉优先，失联即停 ===== *)
+(* ===== 0.68 全轴直控：心跳看门狗 + 安全门（视觉与操作员共用） ===== *)
+(* HMI_wDirectSeq 300ms 不变 -> 心跳丢失，退出直控并停 *)
+IF HMI_wDirectSeq <> wDirectSeqPrev THEN
+    wDirectSeqPrev := HMI_wDirectSeq;
+    xDirectSeen := TRUE;
+    tonDirect2(IN := FALSE);
+    tonDirect2(IN := TRUE, PT := Cfg_tDirectTimeout);
+END_IF;
+tonDirect2();
+Direct2_xOnline := xDirectSeen AND NOT tonDirect2.Q;
+Direct2_wSeqEcho := HMI_wDirectSeq;
+(* 直控安全门：手动模式 + 安全 + 未停止 + 无轴故障 *)
+Direct2_xSafe := xSafe AND (eOpMode = 0) AND NOT HMI_xStop AND NOT xFaultAggregate;
+xDirect2Enable := HMI_xDirectEnable AND Direct2_xOnline AND Direct2_xSafe;
+
+(* ===== 0.60/0.68 X 视觉/Web 直控：视觉(Vis_*)优先，Web 走 HMI_* 全轴通道 ===== *)
 (* 视觉心跳：Vis_wSeq 变化则复位看门狗；200ms 无变化 -> 离线 *)
 IF Vis_wSeq <> Vis_wSeqPrev THEN
     Vis_wSeqPrev := Vis_wSeq;
@@ -96,22 +135,84 @@ Direct_xOnline := xVisSeen AND NOT tonDirectWd.Q;
 Direct_wSeqEcho := Vis_wSeq;
 
 xVisReq := Vis_xEnable AND Direct_xOnline;
-xDirectSafe := xSafe AND (eOpMode = 0) AND NOT HMI_xStop AND NOT xFaultAggregate;
+xDirectSafe := Direct2_xSafe;
+xHmiDirectVelX := HMI_xDirectEnable AND (HMI_iDirectModeX = UINT#1) AND Direct2_xOnline;
 IF xVisReq THEN
     rVelM1Sel := Vis_rVelM1Set;
     rVelM2Sel := Vis_rVelM2Set;
-ELSIF HMI_xDirectEnable THEN
-    rVelM1Sel := HMI_rVelM1Set;
-    rVelM2Sel := HMI_rVelM2Set;
+ELSIF xHmiDirectVelX THEN
+    rVelM1Sel := LIMIT(-Cfg_rDirectVelMaxX, HMI_rVelM1Set, Cfg_rDirectVelMaxX);
+    rVelM2Sel := LIMIT(-Cfg_rDirectVelMaxX, HMI_rVelM2Set, Cfg_rDirectVelMaxX);
 ELSE
     rVelM1Sel := 0.0;
     rVelM2Sel := 0.0;
 END_IF;
 
-Direct_xEnable := (xVisReq OR HMI_xDirectEnable) AND xDirectSafe;
+Direct_xEnable := (xVisReq OR xHmiDirectVelX) AND xDirectSafe;
 AxisCmd_xDirectVel := Direct_xEnable;
 AxisCmd_rVelM1Set := rVelM1Sel;
 AxisCmd_rVelM2Set := rVelM2Sel;
+Direct2_xActiveX := Direct_xEnable;
+
+(* ===== 0.68 Y/Z/R 直控：0=idle(减速停) 1=速度 2=绝对 3=相对 ===== *)
+(* 先清本地指令，模式仲裁后扫描末尾一次性写 AxisCmd_*，避免同扫描 TRUE->FALSE 空窗 *)
+xDirectVelY := FALSE; xDirectVelZ := FALSE; xDirectVelR := FALSE;
+xDirectAbsY := FALSE; xDirectAbsZ := FALSE; xDirectAbsR := FALSE;
+xDirectRelY := FALSE; xDirectRelZ := FALSE; xDirectRelR := FALSE;
+rDirectVelYSel := 0.0; rDirectVelZSel := 0.0; rDirectVelRSel := 0.0;
+rDirectPosYSel := 0.0; rDirectPosZSel := 0.0; rDirectPosRSel := 0.0;
+(* 限幅后的进给速度；模式 2/3 用同一进给速度，避免位置模式下速度=0 *)
+rDirectFeedY := LIMIT(0.0, ABS(HMI_rDirectVelY), Cfg_rDirectVelMaxY);
+IF rDirectFeedY < 1.0E-4 THEN rDirectFeedY := Cfg_rDirectVelMaxY; END_IF;
+rDirectFeedZ := LIMIT(0.0, ABS(HMI_rDirectVelZ), Cfg_rDirectVelMaxZ);
+IF rDirectFeedZ < 1.0E-4 THEN rDirectFeedZ := Cfg_rDirectVelMaxZ; END_IF;
+rDirectFeedR := LIMIT(0.0, ABS(HMI_rDirectVelR), Cfg_rDirectVelMaxR);
+IF rDirectFeedR < 1.0E-4 THEN rDirectFeedR := Cfg_rDirectVelMaxR; END_IF;
+
+IF xDirect2Enable THEN
+    CASE HMI_iDirectModeY OF
+        1:
+            xDirectVelY := TRUE;
+            rDirectVelYSel := LIMIT(-Cfg_rDirectVelMaxY, HMI_rDirectVelY, Cfg_rDirectVelMaxY);
+        2:
+            xDirectAbsY := TRUE;
+            rDirectPosYSel := LIMIT(Cfg_rLimYNeg, HMI_rDirectPosY, Cfg_rLimYPos);
+            rDirectVelYSel := rDirectFeedY;
+        3:
+            xDirectRelY := TRUE;
+            rDirectPosYSel := HMI_rDirectPosY;
+            rDirectVelYSel := rDirectFeedY;
+    END_CASE;
+    CASE HMI_iDirectModeZ OF
+        1:
+            xDirectVelZ := TRUE;
+            rDirectVelZSel := LIMIT(-Cfg_rDirectVelMaxZ, HMI_rDirectVelZ, Cfg_rDirectVelMaxZ);
+        2:
+            xDirectAbsZ := TRUE;
+            rDirectPosZSel := LIMIT(Cfg_rLimZNeg, HMI_rDirectPosZ, Cfg_rLimZPos);
+            rDirectVelZSel := rDirectFeedZ;
+        3:
+            xDirectRelZ := TRUE;
+            rDirectPosZSel := HMI_rDirectPosZ;
+            rDirectVelZSel := rDirectFeedZ;
+    END_CASE;
+    CASE HMI_iDirectModeR OF
+        1:
+            xDirectVelR := TRUE;
+            rDirectVelRSel := LIMIT(-Cfg_rDirectVelMaxR, HMI_rDirectVelR, Cfg_rDirectVelMaxR);
+        2:
+            xDirectAbsR := TRUE;
+            rDirectPosRSel := LIMIT(Cfg_rLimRNeg, HMI_rDirectPosR, Cfg_rLimRPos);
+            rDirectVelRSel := rDirectFeedR;
+        3:
+            xDirectRelR := TRUE;
+            rDirectPosRSel := HMI_rDirectPosR;
+            rDirectVelRSel := rDirectFeedR;
+    END_CASE;
+END_IF;
+Direct2_xActiveY := xDirect2Enable AND (HMI_iDirectModeY <> UINT#0);
+Direct2_xActiveZ := xDirect2Enable AND (HMI_iDirectModeZ <> UINT#0);
+Direct2_xActiveR := xDirect2Enable AND (HMI_iDirectModeR <> UINT#0);
 
 (* 力/纠偏参数下发 *)
 rForceKp := HMI_rKpForce;
@@ -126,6 +227,7 @@ IF HMI_xForceSimEnable THEN
     rForceAct := HMI_rForceSim;
 END_IF;
 HMI_rForceShow := rForceAct;
+HMI_rForceSetEcho := HMI_rForceSet;
 
 AxisCmd_rJogVelX := HMI_rJogVelX;
 AxisCmd_rSpinVel := HMI_rSpinVel;
@@ -195,15 +297,15 @@ IF xSafe AND (eOpMode = 0) AND NOT HMI_xStop AND NOT xFaultAggregate THEN
         xCmdJogXPos := xJogXPosM;
         xCmdJogXNeg := xJogXNegM;
     END_IF;
-    xCmdJogYPos := xJogYPosM AND NOT xIlk_BlockYPlus;
-    xCmdJogYNeg := xJogYNegM AND NOT xIlk_BlockYNeg;
-    IF HMI_xForceGuide THEN
+    xCmdJogYPos := xJogYPosM AND NOT xIlk_BlockYPlus AND NOT xDirect2Enable;
+    xCmdJogYNeg := xJogYNegM AND NOT xIlk_BlockYNeg AND NOT xDirect2Enable;
+    IF HMI_xForceGuide AND NOT xDirect2Enable THEN
         xCmdForceFollow := TRUE;
     ELSE
-        xCmdJogZPos := xJogZPosM AND NOT xIlk_BlockZPlus;
-        xCmdJogZNeg := xJogZNegM AND NOT xIlk_BlockZNeg;
+        xCmdJogZPos := xJogZPosM AND NOT xIlk_BlockZPlus AND NOT xDirect2Enable;
+        xCmdJogZNeg := xJogZNegM AND NOT xIlk_BlockZNeg AND NOT xDirect2Enable;
     END_IF;
-    IF xM5Ready THEN
+    IF xM5Ready AND NOT xDirect2Enable THEN
         xCmdJogRPos := xJogRPosM;
         xCmdJogRNeg := xJogRNegM;
     END_IF;
@@ -323,6 +425,13 @@ AxisCmd_xMoveRelX := xCmdMoveRelX;
 AxisCmd_xMoveRelY := xCmdMoveRelY;
 AxisCmd_xMoveAbsY := xCmdMoveAbsY;
 AxisCmd_xHoldR := xCmdHoldR;
+(* 0.68 全轴直控：模式仲裁结果一次性写 AxisCmd_*，避免同扫描 TRUE->FALSE 空窗 *)
+AxisCmd_xDirectVelY := xDirectVelY; AxisCmd_xDirectVelZ := xDirectVelZ; AxisCmd_xDirectVelR := xDirectVelR;
+AxisCmd_xDirectAbsY := xDirectAbsY; AxisCmd_xDirectAbsZ := xDirectAbsZ; AxisCmd_xDirectAbsR := xDirectAbsR;
+AxisCmd_xDirectRelY := xDirectRelY; AxisCmd_xDirectRelZ := xDirectRelZ; AxisCmd_xDirectRelR := xDirectRelR;
+AxisCmd_rDirectVelY := rDirectVelYSel; AxisCmd_rDirectVelZ := rDirectVelZSel; AxisCmd_rDirectVelR := rDirectVelRSel;
+AxisCmd_rDirectAbsY := rDirectPosYSel; AxisCmd_rDirectAbsZ := rDirectPosZSel; AxisCmd_rDirectAbsR := rDirectPosRSel;
+AxisCmd_rDirectRelY := rDirectPosYSel; AxisCmd_rDirectRelZ := rDirectPosZSel; AxisCmd_rDirectRelR := rDirectPosRSel;
 
 HMI_xHomedY := AxisFb_xHomedY;
 HMI_xHomedZ := AxisFb_xHomedZ;

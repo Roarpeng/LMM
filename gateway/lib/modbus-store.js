@@ -139,7 +139,7 @@ function createModbusStore(options = {}) {
           || values.length !== imageWords
         ) {
           throw illegalAddress(
-            `${address}; FC16 requires one complete 64-word image at ${map.status.baseAddress}`,
+            `${address}; FC16 requires one complete ${imageWords}-word image at ${map.status.baseAddress}`,
           );
         }
         if (values.some((value) => !Number.isInteger(value) || value < 0 || value > 0xffff)) {
@@ -207,13 +207,13 @@ function createModbusStore(options = {}) {
       && !(values instanceof Uint16Array)
     ) {
       throw illegalAddress(
-        `status; FC03 requires one complete 64-word image at ${map.status.baseAddress}`,
+        `status; FC03 requires one complete ${imageWords}-word image at ${map.status.baseAddress}`,
       );
     }
     const list = Array.from(values);
     if (list.length !== imageWords) {
       throw illegalAddress(
-        `${map.status.baseAddress}; FC03 requires one complete 64-word image at ${map.status.baseAddress}`,
+        `${map.status.baseAddress}; FC03 requires one complete ${imageWords}-word image at ${map.status.baseAddress}`,
       );
     }
     if (list.some((value) => !Number.isInteger(value) || value < 0 || value > 0xffff)) {

@@ -11,7 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "config" / "modbus-map.json"
 OUTPUT = ROOT / "docs" / "plc" / "MODBUS_MAP.md"
-SUPPORTED_TYPES = {"BOOL", "UINT", "SCALED_DINT"}
+SUPPORTED_TYPES = {"BOOL", "UINT", "SCALED_DINT", "SCALED_INT"}
 
 
 def field_cells(field: dict) -> list[tuple[int, int | None]]:
@@ -26,8 +26,10 @@ def field_cells(field: dict) -> list[tuple[int, int | None]]:
 
 def validate(data: dict) -> None:
     words = data["protocol"]["imageWords"]
-    if words != 64:
-        raise ValueError("protocol imageWords must be 64")
+    # 单一 FC16/FC03 请求上限 125 寄存器；尾部序号固定占最后一个 word。
+    if not isinstance(words, int) or not 2 <= words <= 125:
+        raise ValueError("protocol imageWords must be within a single-request range 2..125")
+    payload_words = words - 1
 
     names: set[str] = set()
     for image_name in ("command", "status"):
@@ -40,7 +42,7 @@ def validate(data: dict) -> None:
 
         header = image["header"]
         expected_header = (
-            {"magic": 0, "version": 1, "sequence": 2, "heartbeat": 3, "tailSequence": 63}
+            {"magic": 0, "version": 1, "sequence": 2, "heartbeat": 3, "tailSequence": payload_words}
             if image_name == "command"
             else {
                 "magic": 0,
@@ -48,7 +50,7 @@ def validate(data: dict) -> None:
                 "sequence": 2,
                 "ack": 3,
                 "heartbeat": 4,
-                "tailSequence": 63,
+                "tailSequence": payload_words,
             }
         )
         if header != expected_header:
@@ -66,12 +68,12 @@ def validate(data: dict) -> None:
             names.add(name)
             if field_type not in SUPPORTED_TYPES:
                 raise ValueError(f"{name}: unsupported type {field_type}")
-            if field_type == "SCALED_DINT" and field.get("scale") not in (100, 1000):
+            if field_type in ("SCALED_DINT", "SCALED_INT") and field.get("scale") not in (100, 1000):
                 raise ValueError(f"{name}: scale must be 100 or 1000")
 
             for cell in field_cells(field):
                 offset, bit = cell
-                if not 0 <= offset < 63:
+                if not 0 <= offset < payload_words:
                     raise ValueError(f"{name}: offset {offset} is outside payload")
                 whole_word = (offset, None)
                 bit_cells = [key for key in occupied if key[0] == offset]
