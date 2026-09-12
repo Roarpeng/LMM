@@ -12,9 +12,10 @@
 | 4 | [PRG_Logic.md](PRG_Logic.md) | 安全去耦 / 手动 / 自动多道循环 / 回零编排 |
 | 5 | [HMI.md](HMI.md) | 触摸屏 / WebHMI 变量中文用法总表 |
 | 6 | [TCP_HMI.md](TCP_HMI.md) | WebHMI ↔ Gateway ↔ Modbus TCP 通讯契约 |
-| 6b | [MODBUS_MAP.md](MODBUS_MAP.md) | Holding 1000/1100 地址表（生成，勿手改） |
+| 6b | [MODBUS_MAP.md](MODBUS_MAP.md) | Holding 4096/4352（0x1000/0x1100）地址表（生成，勿手改） |
 | 6c | [VISION_MODBUS_TCP.md](VISION_MODBUS_TCP.md) | 视觉纠偏 Modbus TCP（IP / 寄存器 / 字节） |
 | 6d | [VISION_DIRECT.md](VISION_DIRECT.md) | X 轴视觉直控（0.60）+ 双电机速度通用透传（0.63） |
+| 6e | [VISION_AXIS_API.md](VISION_AXIS_API.md) | **视觉直控全轴开放接口**（给视觉开发者；v1 草案） |
 | 7 | [PLC_PRG.md](PLC_PRG.md) | 主入口与任务一览 |
 | 8 | [IMPORT_LMM_XML.md](IMPORT_LMM_XML.md) | 导入 InoProShop / 联调检查单 |
 | 9 | [WEB_PLC_ALIGN.md](WEB_PLC_ALIGN.md) | Web live ↔ PLC 对齐速查 |
