@@ -2,7 +2,8 @@ PROGRAM PRG_TcpHmi
 (* PRG_TcpHmi — Modbus TCP 过程映像编解码 + 控制源仲裁。
    PLC=从站；Gateway=主站：FC16 写 Holding1000 命令 / FC03 读 Holding1100 状态。
    eCtrlSrc 为 GVL 变量：0=面板/触摸屏 1=远程(Web)。
-   0.68：镜像 96 字；命令 word60..75 全轴直控；状态 word39..45 回传。 *)
+   0.68：镜像 96 字；命令 word60..75 全轴直控；状态 word39..45 回传。
+   0.70：命令 word5 bit11 力峰值复位；状态 word46/47 力峰值 ×100、word48 力原始计数。 *)
 VAR
     xInit : BOOL;
     xPanelOp : BOOL;
@@ -91,6 +92,7 @@ IF xValid THEN
         Tcp_xForceTare := (MB_CmdIn[5] AND 128) <> 0;
         Tcp_xForceUntare := (MB_CmdIn[5] AND 256) <> 0;
         Tcp_xForceGuide := (MB_CmdIn[5] AND 512) <> 0;
+        Tcp_xForcePeakReset := (MB_CmdIn[5] AND 2048) <> 0;
         (* 0.60 X 直控：Web 通道 word5 bit10 + word54/55；视觉块 word56..59 每周期直读 *)
         HMI_xDirectEnable := (MB_CmdIn[5] AND 1024) <> 0;
         HMI_rVelM1Set := INT_TO_REAL(WORD_TO_INT(MB_CmdIn[54])) / 1000.0;
@@ -202,6 +204,7 @@ IF tonHb.Q OR Tcp_iCommStatus = 0 THEN
     Tcp_xStart := FALSE; Tcp_xEnable := FALSE;
     Tcp_xAutoStart := FALSE;
     Tcp_xForceTare := FALSE; Tcp_xForceUntare := FALSE; Tcp_xForceGuide := FALSE;
+    Tcp_xForcePeakReset := FALSE;
     Tcp_xStop := TRUE;
     Tcp_xAutoAbort := TRUE;
     Tcp_xEStop := TRUE;
@@ -332,6 +335,14 @@ diTmp := REAL_TO_DINT(HMI_rForceSetEcho * 100.0);
 dwTmp := DINT_TO_DWORD(diTmp);
 MB_StatusOut[44] := DWORD_TO_WORD(SHR(dwTmp, 16));
 MB_StatusOut[45] := DWORD_TO_WORD(dwTmp AND 16#FFFF);
+(* 力峰值（SCALED_DINT ×100，高字在前）与原始计数：word46/47、word48 *)
+Tcp_rForcePeak := Force_rPeak;
+Tcp_wForceRaw := Force_wRaw;
+diTmp := REAL_TO_DINT(Force_rPeak * 100.0);
+dwTmp := DINT_TO_DWORD(diTmp);
+MB_StatusOut[46] := DWORD_TO_WORD(SHR(dwTmp, 16));
+MB_StatusOut[47] := DWORD_TO_WORD(dwTmp AND 16#FFFF);
+MB_StatusOut[48] := Force_wRaw;
 MB_StatusOut[95] := Tcp_wStatusSeq;
 
 (* ===== 控制源仲裁 ===== *)
@@ -351,6 +362,9 @@ ELSIF xTcpOp THEN
 ELSIF xPanelOp THEN
     eCtrlSrc := 0;
 END_IF;
+
+(* 力峰值复位是显示动作，不进控制源仲裁：只要远程在线即可，避免短暂抢走 eCtrlSrc *)
+HMI_xForcePeakReset := Tcp_xOnline AND Tcp_xForcePeakReset;
 
 IF eCtrlSrc = 1 THEN
     HMI_xAutoMode := Tcp_xAutoMode;

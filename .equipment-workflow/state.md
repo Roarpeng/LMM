@@ -67,9 +67,23 @@
   - 根治：`tools/patch_g069.py` 由 0.68 生成 **`LMM_g_0.69.xml`**（两条通道 Leg 64→96，sha `6201f685…`，幂等），导入后状态尾部恢复发布。
   - 验证：真机 `/health` → `connected:true, statusIsOffline:false, lastValidStatusAgeMs:28, errorCount:0`；`npm test` 44 PASS。
   - 设计：`docs/superpowers/specs/2026-09-12-vision-axis-control-design.md`（含 Gate C 写者矩阵）；接口：`docs/plc/VISION_AXIS_API.md`。
+- **WebHMI v3 六页完善 + 力峰值接口（2026-09-12，完成）**：直控/调试/趋势/报警/力传感/系统 达到最终可用版本。
+  - 验收：`node --check app.js` OK、`tools/dom-stub-check.js` OK（336 id / 无异常）、`npm test` 44 PASS、`smoke-webhmi` PASS、section 10:10 平衡；新 PLC 0.70 `sha b5a26d97…`。
+  - 新 PLC 接口：`HMI_xForcePeakReset`（命令 word5 bit11，脉冲）、`Force_rPeak`（状态 46，SCALED_DINT×100，N）、`Force_wRaw`（状态 48，UINT 原始计数）；PLC 出 **0.70**。
+  - 网关：`/health` 增 `version/startedAt`；mock 上报力峰值/原始值；冒烟 `required/actFields` 同步（PASS）。
+  - Web：直控加视觉角度纠偏；力传感加峰值/原始值/复位；报警历史 localStorage 持久化 + 未确认计数；趋势加坐标/图例/暂停/窗口；调试加寄存器过滤/命令历史/WS 报文/日志过滤/RTT 曲线；系统用 /health 全量 + 一键自检 + 诊断导出。
 - **现场定稿 0.67（2026-09-12）**：`LMM_g_0.67.xml` 由 PLC 导出，POU 与 0.66 完全一致；
   设备树 TCP 从站为 `Type 40502 ModbusTcpSlave`（Port 502, UnitID 255），Channel 01 input `16#1000..103F`→`%IW103`(MB_CmdIn)、
   Channel 02 output `16#1100..113F`→`%QW44`(MB_StatusOut)。**WebHMI 自动/手动实控验证通过**，报警 1007/1005 不再出现。
+
+## Field findings（brownfield-debug，2026-09-12 晚）
+
+- **X− 点动顿挫/停死（现场报障）**：WebHMI jog 模式，X− 一顿 2~3 次后停死不动；X+ 顺畅可直行。
+  - 代码核查：`FB_XDual`（0.67 与 0.69 逐行仅差注释）方向对称——命令字 word4 bit6/bit7、模式选择、速度合成、Execute/Direction、Halt 全对称；设备树 5 轴 `SWLimitEnable=FALSE`（无软限位）。0.59 单沿起步（消 250Hz 沿风暴）已在 0.67/0.69。
+  - **已发现代码级缺陷（方向无关）**：`xTrimPulse` 限频重触发写作 `xTrimPulsePrev := xTrimWant`（应回写 `xTrimPulse`），导致 want 持续为真时脉冲恒 0 → 起步沿之后 `rVelLatch` 不再刷新，稳态视觉 trim/sync 修正不生效。可能放大「M2 拖后」。
+  - 真机：`192.168.1.88:502` 可达，运行 96W 镜像（0.69/0.70）；静置 `AxisFb_xReady=1`、`rSyncErr≈0`、无 M1/M2 故障、pos≈0.491m。
+  - 取证工具：`gateway/scripts/trace-x-live.js`（只读；同采命令镜像 4096 与状态镜像 4352，输出 `gateway/x-trace-live.csv`）。
+  - 待办：抓 X+/X− 对照波形，判定 **A 命令丢失 / B 轴故障锁存 / C 驱动机械不对称**；再出补丁版本（不改设备树）。
 
 ## Locked decisions
 - Modbus 角色维持 **Gateway 主站 / PLC 从站**（现场 Modbus client 连 `:502` 验证）

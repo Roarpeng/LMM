@@ -259,6 +259,8 @@ function startGateway(env = process.env) {
       mock: Boolean(mockPlc),
       master: modbusMaster ? modbusMaster.getDiagnostics() : null,
       visionLastAgeMs: visionLastAt ? now - visionLastAt : null,
+      version: require('./package.json').version,
+      startedAt,
       uptimeMs: now - startedAt,
     };
   }

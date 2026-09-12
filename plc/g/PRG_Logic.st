@@ -228,6 +228,10 @@ IF HMI_xForceSimEnable THEN
 END_IF;
 HMI_rForceShow := rForceAct;
 HMI_rForceSetEcho := HMI_rForceSet;
+(* 力峰值（绝对值）+ 原始计数：复位脉冲先清零，再对新值取峰值 *)
+IF HMI_xForcePeakReset THEN Force_rPeak := 0.0; END_IF;
+Force_rPeak := MAX(Force_rPeak, ABS(HMI_rForceShow));
+Force_wRaw := Force_wInRaw;
 
 AxisCmd_rJogVelX := HMI_rJogVelX;
 AxisCmd_rSpinVel := HMI_rSpinVel;

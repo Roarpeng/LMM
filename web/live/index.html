@@ -12,6 +12,7 @@
     <div class="brand">LMM<small>XYZR · 双驱 · 力传感</small></div>
     <span class="chip off" id="dev-status"><span class="dot"></span><b id="dev-status-text">—</b></span>
     <span class="chip off" id="plc-chip"><span class="dot"></span>PLC</span>
+    <span class="chip" id="alarm-badge-chip"><span class="dot"></span>未确认 <b class="badge" id="alarm-badge"></b></span>
     <label><input type="radio" name="opmode" value="0" /> 手动</label>
     <label><input type="radio" name="opmode" value="1" /> 自动</label>
     <span class="spacer"></span>
@@ -29,7 +30,7 @@
     <button type="button" data-page="direct"><svg viewBox="0 0 24 24"><path d="M12 2v3M12 19v3M2 12h3M19 12h3M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm0-3 2 3h-4z"/></svg><span>直控</span></button>
     <button type="button" data-page="force"><svg viewBox="0 0 24 24"><path d="M6 3h12v4l-3 3v11l-3-4-3 4V10L6 7z"/></svg><span>力传感</span></button>
     <button type="button" data-page="trend"><svg viewBox="0 0 24 24"><path d="M3 20h18v1H3zM4 16l4-6 3 3 4-7 5 5v5H4z"/></svg><span>趋势</span></button>
-    <button type="button" data-page="alarm"><svg viewBox="0 0 24 24"><path d="M12 2 1 21h22zm0 6 6 10H6zm-1 3v4h2v-4zm0 5v2h2v-2z"/></svg><span>报警</span></button>
+    <button type="button" data-page="alarm"><svg viewBox="0 0 24 24"><path d="M12 2 1 21h22zm0 6 6 10H6zm-1 3v4h2v-4zm0 5v2h2v-2z"/></svg><span>报警</span><span class="badge" id="nav-alarm-badge"></span></button>
     <button type="button" data-page="debug"><svg viewBox="0 0 24 24"><path d="M20 8h-2.8A6 6 0 0 0 18 6h2V4h-2.3a6 6 0 0 0-11.4 0H4v2h2a6 6 0 0 0 .8 2H4v2h2v1a6 6 0 0 0 12 0v-1h2zm-8-4a4 4 0 0 1 3.9 3H8.1A4 4 0 0 1 12 4zm4 8a4 4 0 0 1-8 0v-1h8zm0-3H8V8h8z"/></svg><span>调试</span></button>
     <button type="button" data-page="system"><svg viewBox="0 0 24 24"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm9 4c0-.4 0-.8-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L16 2h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6c0 .4-.1.8-.1 1.2s0 .8.1 1.2l-2 1.6 2 3.4 2.4-1c.6.5 1.3.9 2 1.2L12 22h4l.5-2.6c.7-.3 1.4-.7 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z"/></svg><span>系统</span></button>
   </nav>
@@ -227,9 +228,11 @@
           <div class="hint">直控为调试用：手动模式、与点动/自动互斥；网关断线自动清零。</div>
         </div>
       </div>
+    </section>
+
     <!-- 直控 -->
     <section class="page" id="page-direct">
-      <div class="page-head"><h1>每轴直控</h1><span class="chip" id="direct-chip"><span class="dot"></span><b>—</b></span></div>
+      <div class="page-head"><h1>每轴直控</h1><span class="chip" id="direct-chip"><span class="dot"></span><b>—</b></span><span class="chip" id="dir-precheck"><span class="dot"></span><b>—</b></span></div>
       <div class="grid">
         <div class="card span">
           <h2>直控状态（实时回读）</h2>
@@ -240,6 +243,7 @@
             <div class="item"><span class="name">心跳序号 HMI_wDirectSeq → Direct2_wSeqEcho</span><span class="val mono" id="d2-seq">—</span></div>
             <div class="item"><span class="name">全轴就绪 AxisFb_xReady</span><span class="val" id="d-ready">—</span></div>
             <div class="item"><span class="name">报警号 HMI_iAlarmShow</span><span class="val" id="d-alarm">—</span></div>
+            <div class="item"><span class="name">使能前置 手动/无报警/无急停</span><span class="val mono" id="dir-guard">—</span></div>
           </div>
           <div class="hint">视觉工控机与操作员共用本页写入；M1/M2 走速度环（无独立位置），X 位置为整机目标 HMI_rDirectPosX。使能/报警/限位/急停由 PLC 全权负责。</div>
         </div>
@@ -256,8 +260,25 @@
             <div class="item"><span class="name">M2 实际速度 AxisFb_rVelActM2</span><span class="val" id="d-m2-act">—</span></div>
             <div class="item"><span class="name">M1 位置 AxisFb_rPosM1</span><span class="val" id="d-m1-pos">—</span></div>
             <div class="item"><span class="name">M2 位置 AxisFb_rPosM2</span><span class="val" id="d-m2-pos">—</span></div>
+            <div class="item"><span class="name">M1 指令速度 AxisFb_rVelCmdM1</span><span class="val" id="d-cmd-m1">—</span></div>
+            <div class="item"><span class="name">M2 指令速度 AxisFb_rVelCmdM2</span><span class="val" id="d-cmd-m2">—</span></div>
             <div class="item"><span class="name">同步误差 AxisFb_rSyncErr</span><span class="val" id="d-sync">—</span></div>
           </div>
+        </div>
+
+        <div class="card">
+          <h2>视觉角度（航向纠偏）</h2>
+          <div class="row"><span class="chip" id="d-vis-mode"><span class="dot"></span><b>B 直给</b></span>
+            <button type="button" class="btn sm" id="btn-vis-a">A 角度纠偏</button>
+            <button type="button" class="btn sm" id="btn-vis-b">B 直给</button>
+          </div>
+          <div class="slider"><span class="lab">航向误差 rad</span><input type="range" id="p-herr2" min="-0.5" max="0.5" step="0.01" value="0" /><input type="number" id="n-herr2" step="0.01" value="0" /></div>
+          <div class="slider"><span class="lab">纠偏 Kp</span><input type="range" id="p-kpt2" min="0" max="3" step="0.01" value="0" /><input type="number" id="n-kpt2" step="0.01" value="0" /></div>
+          <div class="list">
+            <div class="item"><span class="name">航向误差 HMI_rHeadingErr</span><span class="val mono" id="d-heading-err">—</span></div>
+            <div class="item"><span class="name">纠偏 Kp HMI_rKpTrack</span><span class="val mono" id="d-heading-kp">—</span></div>
+          </div>
+          <div class="hint" id="d-heading-hint">（A）角度纠偏与（B）直给互斥。</div>
         </div>
 
         <div class="card">
@@ -266,7 +287,9 @@
           <div class="slider"><span class="lab">Y 速度</span><input type="range" id="p-dvy" min="-1.5" max="1.5" step="0.005" value="0" /><input type="number" id="n-dvy" step="0.005" value="0" /></div>
           <div class="slider"><span class="lab">Y 目标位置</span><input type="range" id="p-dpy" min="-10" max="10" step="0.001" value="0" /><input type="number" id="n-dpy" step="0.001" value="0" /></div>
           <div class="list">
-            <div class="item"><span class="name">位置 AxisFb_rPosY</span><span class="val" id="d-y-pos">—</span></div>
+            <div class="item"><span class="name">目标 HMI_rDirectPosY</span><span class="val mono" id="dy-tgt">—</span></div>
+            <div class="item"><span class="name">当前 AxisFb_rPosY</span><span class="val mono" id="dy-cur">—</span></div>
+            <div class="item"><span class="name">位置差 目标-当前</span><span class="val mono" id="dy-diff">—</span></div>
             <div class="item"><span class="name">实际速度 AxisFb_rVelActY</span><span class="val" id="d-y-act">—</span></div>
           </div>
         </div>
@@ -277,7 +300,9 @@
           <div class="slider"><span class="lab">Z 速度</span><input type="range" id="p-dvz" min="-1.5" max="1.5" step="0.005" value="0" /><input type="number" id="n-dvz" step="0.005" value="0" /></div>
           <div class="slider"><span class="lab">Z 目标位置</span><input type="range" id="p-dpz" min="-10" max="10" step="0.001" value="0" /><input type="number" id="n-dpz" step="0.001" value="0" /></div>
           <div class="list">
-            <div class="item"><span class="name">位置 AxisFb_rPosZ</span><span class="val" id="d-z-pos">—</span></div>
+            <div class="item"><span class="name">目标 HMI_rDirectPosZ</span><span class="val mono" id="dz-tgt">—</span></div>
+            <div class="item"><span class="name">当前 AxisFb_rPosZ</span><span class="val mono" id="dz-cur">—</span></div>
+            <div class="item"><span class="name">位置差 目标-当前</span><span class="val mono" id="dz-diff">—</span></div>
             <div class="item"><span class="name">实际速度 AxisFb_rVelActZ</span><span class="val" id="d-z-act">—</span></div>
           </div>
         </div>
@@ -288,7 +313,9 @@
           <div class="slider"><span class="lab">R 速度</span><input type="range" id="p-dvr" min="-3" max="3" step="0.01" value="0" /><input type="number" id="n-dvr" step="0.01" value="0" /></div>
           <div class="slider"><span class="lab">R 目标位置</span><input type="range" id="p-dpr" min="-360" max="360" step="0.01" value="0" /><input type="number" id="n-dpr" step="0.01" value="0" /></div>
           <div class="list">
-            <div class="item"><span class="name">位置 AxisFb_rPosR</span><span class="val" id="d-r-pos">—</span></div>
+            <div class="item"><span class="name">目标 HMI_rDirectPosR</span><span class="val mono" id="dr-tgt">—</span></div>
+            <div class="item"><span class="name">当前 AxisFb_rPosR</span><span class="val mono" id="dr-cur">—</span></div>
+            <div class="item"><span class="name">位置差 目标-当前</span><span class="val mono" id="dr-diff">—</span></div>
             <div class="item"><span class="name">实际速度 AxisFb_rVelActR</span><span class="val" id="d-r-act">—</span></div>
           </div>
         </div>
@@ -302,6 +329,17 @@
           </div>
           <div class="hint">力设定 HMI_rForceSet 与力传感页共用同一命令镜像；当前力由 PLC 回读 HMI_rForceShow。</div>
         </div>
+
+        <div class="card">
+          <h2>预设</h2>
+          <div class="row">
+            <button type="button" class="btn sm" id="btn-dir-home-y">Y 回零</button>
+            <button type="button" class="btn sm" id="btn-dir-home-z">Z 回零</button>
+            <button type="button" class="btn sm" id="btn-dir-home-r">R 回零</button>
+            <button type="button" class="btn sm danger" id="btn-dir-stop-all">全部停</button>
+          </div>
+          <div class="hint">回零脉冲走 HMI_xHomeY / HMI_xHomeZ / HMI_xHomeR；「全部停」置 HMI_xStop 并清零各直控给定。</div>
+        </div>
       </div>
     </section>
 
@@ -311,11 +349,13 @@
       <div class="grid">
         <div class="card">
           <h2>实时力</h2>
-          <div class="metric big ok" style="margin-bottom:8px"><div class="k">当前力 F_act</div><div class="v" id="out-force">0.0<span class="u">N</span></div></div>
+          <div class="metric big ok" style="margin-bottom:8px"><div class="k">当前力 F_act HMI_rForceShow</div><div class="v" id="out-force">0.0<span class="u">N</span></div></div>
+          <div class="metric big" style="margin-bottom:8px"><div class="k">峰值 Force_rPeak</div><div class="v" id="force-peak">0.0<span class="u">N</span></div><button type="button" class="btn xs" id="btn-force-peak-reset">复位峰值</button></div>
           <div class="list">
-            <div class="item"><span class="name">峰值</span><span class="val" id="force-peak">0.0 N</span></div>
-            <div class="item"><span class="name">设定 F_set</span><span class="val" id="q-fset">100 N</span></div>
+            <div class="item"><span class="name">设定 F_set</span><span class="val" id="force-set">100 N</span></div>
+            <div class="item"><span class="name">原始值 Force_wRaw</span><span class="val mono" id="force-raw">—</span></div>
             <div class="item"><span class="name">通讯</span><span class="val" id="p-force-diag">—</span></div>
+            <div class="item"><span class="name">状态位</span><span class="val mono" id="force-bits">—</span></div>
             <div class="item"><span class="name">去皮</span><span class="val" id="p-tare">—</span></div>
           </div>
         </div>
@@ -324,7 +364,10 @@
           <div style="position:relative;height:180px;background:#0b1017;border:1px solid var(--line);border-radius:5px;overflow:hidden">
             <div id="fg-fill" style="position:absolute;left:0;right:0;bottom:0;height:0;background:#2f6f4a"></div>
             <div id="fg-set" style="position:absolute;left:0;right:0;bottom:0;height:2px;background:#d29922"></div>
+            <div id="fg-peak" style="position:absolute;left:0;right:0;bottom:0;height:2px;background:#e05555"></div>
           </div>
+          <div class="hint" id="force-range">量程 0..100 N</div>
+          <div class="hint">绿=当前力 · 黄=设定线 · 红=峰值线，量程按三者自适应。</div>
         </div>
         <div class="card">
           <h2>操作</h2>
@@ -342,7 +385,8 @@
         </div>
         <div class="card span">
           <h2>力趋势</h2>
-          <canvas id="trend-force" width="900" height="220"></canvas>
+          <canvas id="force-trend" width="900" height="220"></canvas>
+          <div class="legend" id="force-trend-legend"></div>
         </div>
       </div>
     </section>
@@ -355,12 +399,16 @@
           <button type="button" class="btn sm" data-win="30">30s</button>
           <button type="button" class="btn sm" data-win="60">1min</button>
           <button type="button" class="btn sm" data-win="300">5min</button>
+          <button type="button" class="btn sm" id="btn-trend-pause">暂停</button>
+          <label><input type="checkbox" id="trend-autoscale" checked /> 自动缩放</label>
+          <button type="button" class="btn sm" id="btn-trend-export">导出 CSV</button>
           <button type="button" class="btn sm" id="btn-trend-clear">清空</button>
         </div>
       </div>
       <div class="grid wide">
-        <div class="card"><h2>X 速度（实线=实际 / 虚线=指令）</h2><canvas id="trend-vel" width="900" height="220"></canvas></div>
-        <div class="card"><h2>位置（M1 / M2 / ΔPos）</h2><canvas id="trend-pos" width="900" height="220"></canvas></div>
+        <div class="card"><h2>X 速度（实线=实际 / 虚线=指令）</h2><canvas id="trend-vel" width="900" height="220"></canvas><div class="legend" id="trend-vel-legend"></div></div>
+        <div class="card"><h2>位置（M1 / M2 / ΔPos）</h2><canvas id="trend-pos" width="900" height="220"></canvas><div class="legend" id="trend-pos-legend"></div></div>
+        <div class="card span"><h2>力（HMI_rForceShow）</h2><canvas id="trend-force" width="900" height="220"></canvas><div class="legend" id="trend-force-legend"></div></div>
       </div>
     </section>
 
@@ -385,7 +433,14 @@
           </div>
         </div>
         <div class="card span">
-          <h2>报警历史（本页会话）</h2>
+          <h2>报警历史（localStorage 持久化 lmm.alarm.hist.v1）</h2>
+          <div class="row">
+            <label>过滤 <select id="alarm-filter"><option value="all">全部</option><option value="unacked">未确认</option></select></label>
+            <button type="button" class="btn sm" id="btn-alarm-ack-all">全部确认</button>
+            <button type="button" class="btn sm" id="btn-alarm-clear-recovered">清空已恢复</button>
+            <button type="button" class="btn sm" id="btn-alarm-export">导出 CSV</button>
+            <span class="dim" id="alarm-count">共 0 条 · 未确认 0</span>
+          </div>
           <div id="alarm-list" class="hint">尚无报警。</div>
         </div>
       </div>
@@ -403,13 +458,29 @@
             <div class="item"><span class="name">轮询</span><span class="val" id="sys-poll">—</span></div>
             <div class="item"><span class="name">RTT</span><span class="val" id="sys-rtt">—</span></div>
             <div class="item"><span class="name">错误计数</span><span class="val" id="sys-err">—</span></div>
+            <div class="item"><span class="name">mode</span><span class="val mono" id="dbg-mode">—</span></div>
+            <div class="item"><span class="name">clients</span><span class="val mono" id="dbg-clients">—</span></div>
+            <div class="item"><span class="name">leaseOwner</span><span class="val mono" id="dbg-lease-owner">—</span></div>
+            <div class="item"><span class="name">statusIsOffline</span><span class="val mono" id="dbg-offline">—</span></div>
+            <div class="item"><span class="name">lastValidStatusAgeMs</span><span class="val mono" id="dbg-valid-age">—</span></div>
+            <div class="item"><span class="name">uptimeMs</span><span class="val mono" id="dbg-uptime">—</span></div>
+            <div class="item"><span class="name">master.connected</span><span class="val mono" id="dbg-master-connected">—</span></div>
+            <div class="item"><span class="name">master.host:port</span><span class="val mono" id="dbg-master-host">—</span></div>
+            <div class="item"><span class="name">master.unitID</span><span class="val mono" id="dbg-master-unit">—</span></div>
+            <div class="item"><span class="name">master.pollMs</span><span class="val mono" id="dbg-master-poll">—</span></div>
+            <div class="item"><span class="name">master.errorCount</span><span class="val mono" id="dbg-master-err">—</span></div>
+            <div class="item"><span class="name">master.lastError</span><span class="val mono" id="dbg-master-lasterr">—</span></div>
+            <div class="item"><span class="name">master.lastSuccessAt</span><span class="val mono" id="dbg-master-lastsuc">—</span></div>
           </div>
           <div class="row" style="margin-top:8px"><button type="button" class="btn sm" id="btn-health">刷新 /health</button><span class="dim" id="health-age">—</span></div>
           <pre class="health" id="health">点刷新…</pre>
+          <canvas id="diag-canvas" width="600" height="120" style="height:120px;margin-top:8px"></canvas>
+          <div class="hint" id="diag-legend">Poll — · RTT —</div>
         </div>
         <div class="card">
           <h2>命令控制台（白名单 JSON）</h2>
           <textarea id="cmd-json" rows="4" placeholder='{"HMI_rJogVelX":0.5}'></textarea>
+          <div class="hint" id="cmd-hint">仅白名单（命令镜像）字段可发送，其余字段会被拒绝。</div>
           <div class="row" style="margin-top:8px">
             <button type="button" class="btn sm primary" id="btn-send-json">发送</button>
             <button type="button" class="btn sm" id="btn-preset-safe">急停=FALSE</button>
@@ -417,6 +488,8 @@
             <button type="button" class="btn sm" id="btn-preset-auto">切自动</button>
             <button type="button" class="btn sm" id="btn-preset-manual">切手动</button>
           </div>
+          <div class="hint mono" id="cmd-ack">ack —</div>
+          <div class="log" id="cmd-hist" style="max-height:160px;margin-top:8px"><span class="hint">暂无发送记录（最近 20 条）。</span></div>
         </div>
         <div class="card">
           <h2>加减速</h2>
@@ -441,15 +514,33 @@
         </div>
         <div class="card span">
           <h2>寄存器表</h2>
+          <div class="row">
+            <input type="text" id="reg-filter" placeholder="按名称或地址过滤…" style="min-width:200px" />
+            <label>分区 <select id="reg-section"><option value="all">全部</option><option value="cmd">CMD</option><option value="st">ST</option></select></label>
+            <button type="button" class="btn sm" id="btn-reg-copy-visible">复制可见行</button>
+            <span class="dim mono" id="reg-meta">—</span>
+            <span class="dim" id="reg-count">—</span>
+          </div>
           <div class="tblwrap"><table class="tbl" id="regtable">
-            <thead><tr><th>区</th><th>Holding</th><th>变量</th><th>类型</th><th>当前值</th><th>说明</th></tr></thead>
+            <thead><tr><th>区</th><th>Holding</th><th>变量</th><th>类型</th><th>当前值</th><th>说明</th><th>操作</th></tr></thead>
             <tbody></tbody>
           </table></div>
         </div>
         <div class="card span">
           <h2>日志</h2>
-          <div class="row"><button type="button" class="btn sm" id="btn-log-clear">清空</button><button type="button" class="btn sm" id="btn-log-export">导出 CSV</button></div>
+          <div class="row">
+            <label>级别 <select id="log-level"><option value="all">全部</option><option value="info">info</option><option value="warn">warn</option><option value="err">err</option></select></label>
+            <input type="text" id="log-filter" placeholder="关键字搜索…" />
+            <button type="button" class="btn sm" id="btn-log-pause">暂停</button>
+            <button type="button" class="btn sm" id="btn-log-clear">清空</button>
+            <button type="button" class="btn sm" id="btn-log-export">导出 CSV</button>
+            <span class="dim" id="log-count">0 / 0</span>
+          </div>
           <div class="log" id="log" style="margin-top:8px"></div>
+        </div>
+        <div class="card span">
+          <h2>WS 报文摘要（最近 20 条 t:w / t:s）</h2>
+          <div class="log" id="ws-summary" style="max-height:220px"></div>
         </div>
       </div>
     </section>
@@ -466,6 +557,12 @@
             <div class="item"><span class="name">目标</span><span class="val" id="sys-host">—</span></div>
             <div class="item"><span class="name">模式</span><span class="val" id="sys-mode">—</span></div>
           </div>
+          <div class="row" style="margin-top:8px">
+            <button type="button" class="btn sm primary" id="btn-self-check">一键自检</button>
+            <button type="button" class="btn sm" id="btn-diag-export">导出诊断包</button>
+            <span class="dim mono" id="sys-check-time">—</span>
+          </div>
+          <div class="hint mono" id="sys-check-result">刷新 /health · GET /map · WS ping</div>
         </div>
         <div class="card">
           <h2>会话</h2>
@@ -475,6 +572,28 @@
             <div class="item"><span class="name">心跳</span><span class="val" id="sys-hb">—</span></div>
             <div class="item"><span class="name">送达 Ack</span><span class="val" id="sys-ack">—</span></div>
             <div class="item"><span class="name">版本</span><span class="val" id="sys-version">v3</span></div>
+          </div>
+        </div>
+        <div class="card">
+          <h2>/health 明细</h2>
+          <div class="list">
+            <div class="item"><span class="name">ok</span><span class="val mono" id="sys-health-ok">—</span></div>
+            <div class="item"><span class="name">mode</span><span class="val mono" id="sys-health-mode">—</span></div>
+            <div class="item"><span class="name">clients</span><span class="val mono" id="sys-health-clients">—</span></div>
+            <div class="item"><span class="name">leaseOwner</span><span class="val mono" id="sys-health-lease">—</span></div>
+            <div class="item"><span class="name">statusIsOffline</span><span class="val mono" id="sys-health-offline">—</span></div>
+            <div class="item"><span class="name">lastValidStatusAgeMs</span><span class="val mono" id="sys-health-age">—</span></div>
+            <div class="item"><span class="name">uptimeMs</span><span class="val mono" id="sys-health-uptime">—</span></div>
+            <div class="item"><span class="name">version</span><span class="val mono" id="sys-health-version">—</span></div>
+            <div class="item"><span class="name">startedAt</span><span class="val mono" id="sys-health-started">—</span></div>
+          </div>
+        </div>
+        <div class="card">
+          <h2>版本</h2>
+          <div class="list">
+            <div class="item"><span class="name">WebHMI</span><span class="val mono" id="ver-web">WebHMI v3</span></div>
+            <div class="item"><span class="name">Gateway</span><span class="val mono" id="ver-gw">—</span></div>
+            <div class="item"><span class="name">PLC 目标</span><span class="val mono" id="ver-plc">—</span></div>
           </div>
         </div>
       </div>

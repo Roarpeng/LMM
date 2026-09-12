@@ -20,6 +20,7 @@
     HMI_xHomeY: 'Y回零', HMI_xHomeZ: 'Z回零', HMI_xHomeR: 'R回零', HMI_xHomeExec: '回零执行',
     HMI_xAutoStart: '自动启动', HMI_xAutoAbort: '自动中止',
     HMI_xForceSimEnable: '力模拟', HMI_xForceTare: '去皮', HMI_xForceUntare: '取消去皮', HMI_xForceGuide: '力引导',
+    HMI_xForcePeakReset: '峰值复位',
     HMI_iHomeAxis: '回零轴', HMI_iAutoPasses: '道数',
     HMI_rJogVelX: 'X直行速度', HMI_rSpinVel: '旋转速度', HMI_rJogVelY: 'Y点动速度', HMI_rJogVelZ: 'Z点动速度', HMI_rJogVelR: 'R点动速度',
     HMI_rAutoDistX: '自动X走距', HMI_rAutoVelX: '自动X速度', HMI_rAutoVelY: '自动Y速度', HMI_rAutoVelZ: '自动Z速度',
@@ -42,6 +43,7 @@
     HMI_xHomeBusyY: 'Y回零中', HMI_xHomeBusyZ: 'Z回零中', HMI_xHomeBusyR: 'R回零中',
     Tcp_xConnected: '远程连接', Tcp_xTimeout: '远程超时',
     Force_xCommOk: '力通讯', Force_xTimeout: '力超时', Force_xSlaveFail: '力从站失败', Force_xTareBusy: '去皮中', Force_xTareDone: '去皮完成',
+    Force_rPeak: '峰值力', Force_wRaw: '力原始值',
     AxisFb_xReady: '全轴就绪', AxisFb_xMoveDoneX: 'X走距完成', AxisFb_xMoveDoneY: 'Y完成',
     AxisFb_xFaultM1: 'M1故障', AxisFb_xFaultM2: 'M2故障', AxisFb_xFaultY: 'Y故障', AxisFb_xFaultZ: 'Z故障', AxisFb_xFaultR: 'R故障',
     AxisFb_xHomedY: 'Y回零(轴)', AxisFb_xHomedZ: 'Z回零(轴)', AxisFb_xHomedR: 'R回零(轴)', HMI_rForceShow: '力显示',
@@ -60,7 +62,7 @@
     HMI_xJogXPos: false, HMI_xJogXNeg: false, HMI_xSpinLeft: false, HMI_xSpinRight: false,
     HMI_xJogYPos: false, HMI_xJogYNeg: false, HMI_xJogZPos: false, HMI_xJogZNeg: false, HMI_xJogRPos: false, HMI_xJogRNeg: false,
     HMI_xHomeY: false, HMI_xHomeZ: false, HMI_xHomeR: false, HMI_xHomeExec: false, HMI_xAutoStart: false, HMI_xAutoAbort: false,
-    HMI_xForceSimEnable: false, HMI_xForceTare: false, HMI_xForceUntare: false, HMI_xForceGuide: false,
+    HMI_xForceSimEnable: false, HMI_xForceTare: false, HMI_xForceUntare: false, HMI_xForceGuide: false, HMI_xForcePeakReset: false,
     HMI_iHomeAxis: 1, HMI_iAutoPasses: 1,
     HMI_rJogVelX: 0.4, HMI_rSpinVel: 0.3, HMI_rJogVelY: 0.3, HMI_rJogVelZ: 0.2, HMI_rJogVelR: 0.2,
     HMI_rAutoDistX: 1.0, HMI_rAutoVelX: 0.4, HMI_rAutoVelY: 0.3, HMI_rAutoVelZ: 0.15,
@@ -76,12 +78,62 @@
   const KEYMAP = { KeyW: 'x+', KeyS: 'x-', KeyA: 'y-', KeyD: 'y+', KeyQ: 'z+', KeyE: 'z-', KeyZ: 'r+', KeyC: 'r-', KeyX: 'spinL', KeyV: 'spinR' };
   let ws = null, seq = 0, dirty = false, lastSend = 0, activePage = 'overview';
   let controlClaimed = false;
-  let clientId = null, leaseOwner = null, lastAckAt = 0, lastWriteLog = 0, lastPingAt = 0, rtt = null;
+  let clientId = null, leaseOwner = null, lastAckAt = 0, lastWriteLog = 0, lastPingAt = 0, pongAt = 0, rtt = null;
   let gwHealth = null, healthAt = 0, MAP = null, rafPending = false, lastTrend = 0, lastAutoSnap = 0, lastHistAt = 0;
-  const regCells = {}; const logs = []; const SC = {};
+  const regCells = {}; const regRows = []; const logs = []; const SC = {};
   const HIST = { t: [], vel1: [], vel2: [], act1: [], act2: [], p1: [], p2: [], force: [] };
-  const HIST_MAX = 3000; let winSamples = 300;
-  const alarmHist = []; let lastAlarm = 0; let overlayHidden = false;
+  const HIST_MAX = 3000; let winSamples = 300; let trendWinSec = 30;
+  let trendPaused = false; let trendAutoScale = true; let visMode = 'B';
+  let logLevel = 'all'; let logQuery = ''; let logPaused = false;
+  let regQuery = ''; let regSection = 'all'; let regChanged = {};
+  const cmdHist = []; const wsLog = []; const WS_LOG_MAX = 20;
+  const diagSamples = { t: [], poll: [], rtt: [] }; const DIAG_MAX = 240;
+  let regSeq = 0;
+  function lsGet(k) { try { return (typeof localStorage !== 'undefined') ? localStorage.getItem(k) : null; } catch (e) { return null; } }
+  function lsSet(k, v) { try { if (typeof localStorage !== 'undefined') localStorage.setItem(k, v); } catch (e) { /* ignore */ } }
+  const ALARM_KEY = 'lmm.alarm.hist.v1';
+  function normalizeAlarm(a) {
+    if (!a || a.code == null) return null;
+    const code = Number(a.code) || 0;
+    const firstAt = Number(a.firstAt || a.at) || Date.now();
+    return {
+      code,
+      name: a.name || ((ALARMS[code] || {}).name || '报警 ' + code),
+      firstAt,
+      lastAt: Number(a.lastAt || a.firstAt || a.at) || firstAt,
+      recoveredAt: a.recoveredAt ? Number(a.recoveredAt) : null,
+      acked: !!a.acked,
+      count: Math.max(1, Number(a.count) || 1),
+    };
+  }
+  function loadAlarmHist() {
+    const raw = lsGet(ALARM_KEY); if (!raw) return [];
+    try { const arr = JSON.parse(raw); return Array.isArray(arr) ? arr.map(normalizeAlarm).filter(Boolean) : []; } catch (e) { return []; }
+  }
+  function saveAlarmHist() { lsSet(ALARM_KEY, JSON.stringify(alarmHist.slice(0, 500))); }
+  let alarmHist = loadAlarmHist(); let lastAlarm = 0; let overlayHidden = false; let alarmFilter = 'all';
+  function unackedCount() { return alarmHist.reduce((n, a) => n + (a.acked ? 0 : 1), 0); }
+  function wsSummary(obj) {
+    const t = (obj && obj.t) || '?';
+    if (t === 'w') { const n = Object.keys(obj).filter((k) => k !== 't' && k !== 'seq').length; return 'seq=' + (obj.seq == null ? '—' : obj.seq) + ' keys=' + n; }
+    if (t === 's') return 'alm=' + (obj.HMI_iAlarmShow == null ? '—' : obj.HMI_iAlarmShow) + ' m1=' + (obj.AxisFb_rVelActM1 == null ? '—' : obj.AxisFb_rVelActM1) + ' f=' + (obj.HMI_rForceShow == null ? '—' : obj.HMI_rForceShow);
+    return JSON.stringify(obj).slice(0, 90);
+  }
+  function wsNote(dir, obj) {
+    if (!obj) return;
+    const t = obj.t;
+    if (t !== 'w' && t !== 's') return;
+    wsLog.unshift({ at: Date.now(), dir, t, summary: wsSummary(obj) });
+    while (wsLog.length > WS_LOG_MAX) wsLog.pop();
+    const el = $('ws-summary'); if (!el) return;
+    el.innerHTML = '';
+    wsLog.forEach((e) => {
+      const d = document.createElement('div');
+      d.textContent = new Date(e.at).toLocaleTimeString() + '  ' + e.dir + ' t:' + e.t + '  ' + e.summary;
+      if (e.dir === '<-') d.style.color = 'var(--run)';
+      el.appendChild(d);
+    });
+  }
   const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
   const fmt = (v, d) => { if (typeof v === 'boolean') return v ? 'T' : 'F'; const n = Number(v); return Number.isFinite(n) ? n.toFixed(d == null ? 3 : d) : '—'; };
   const setText = (id, v) => { const el = $(id); if (!el) return; const s = String(v); if (el.textContent !== s) el.textContent = s; };
@@ -89,10 +141,27 @@
   function scaleUpd(k, v) { const s = SC[k] || (SC[k] = { lo: v, hi: v }); if (v < s.lo) s.lo = v; if (v > s.hi) s.hi = v; if (s.hi - s.lo < 1e-4) s.hi = s.lo + 1e-4; }
   function scaleN(k, v) { const s = SC[k]; if (!s) return 0.5; return Math.max(0, Math.min(1, (v - s.lo) / (s.hi - s.lo))); }
 
+  function logPasses(entry) {
+    if (logLevel !== 'all' && entry.kind !== logLevel) return false;
+    if (logQuery && String(entry.msg).toLowerCase().indexOf(logQuery) === -1) return false;
+    return true;
+  }
+  function renderLog() {
+    const el = $('log'); if (!el) return;
+    el.innerHTML = '';
+    logs.filter(logPasses).slice(-200).reverse().forEach((l) => {
+      const d = document.createElement('div');
+      d.textContent = new Date(l.at).toLocaleTimeString() + '  ' + l.msg;
+      if (l.kind === 'err') d.style.color = 'var(--alarm)';
+      if (l.kind === 'warn') d.style.color = 'var(--warn)';
+      el.appendChild(d);
+    });
+    const c = $('log-count'); if (c) c.textContent = logs.filter(logPasses).length + ' / ' + logs.length;
+  }
   function log(msg, kind) {
     logs.push({ at: Date.now(), kind: kind || 'info', msg });
-    const el = $('log');
-    if (el) { const d = document.createElement('div'); d.textContent = new Date().toLocaleTimeString() + '  ' + msg; if (kind === 'err') d.style.color = 'var(--alarm)'; if (kind === 'warn') d.style.color = 'var(--warn)'; el.prepend(d); while (el.children.length > 400) el.removeChild(el.lastChild); }
+    if (logs.length > 800) logs.splice(0, logs.length - 800);
+    if (!logPaused) renderLog();
     if (kind === 'err') { const box = $('toast'); if (box) { const d = document.createElement('div'); d.textContent = msg; box.appendChild(d); setTimeout(() => { if (d.parentNode) d.parentNode.removeChild(d); }, 4000); } }
   }
 
@@ -101,7 +170,8 @@
     if (!controlClaimed || !dirty) return;
     if (!force && now - lastSend < 50) return;
     if (!ws || ws.readyState !== 1) return;
-    ws.send(JSON.stringify(Object.assign({ t: 'w', seq: ++seq }, W)));
+    const payload = Object.assign({ t: 'w', seq: ++seq }, W);
+    ws.send(JSON.stringify(payload)); wsNote('->', payload);
     lastSend = now; dirty = false;
     if (now - lastWriteLog > 1000) { lastWriteLog = now; log('-> 写入网关 seq=' + seq); }
   }
@@ -137,12 +207,12 @@
       if (msg.t === 'pong') { applyPong(msg); return; }
       if (msg.t === 'hello') { clientId = msg.clientId; if (msg.mode) S._gateway = msg.mode; return; }
       if (msg.t === 'lease') { leaseOwner = msg.owner; return; }
-      if (msg.t === 'wack') { lastAckAt = Date.now(); return; }
+      if (msg.t === 'wack') { lastAckAt = Date.now(); setText('cmd-ack', 'ack seq=' + (msg.seq == null ? '—' : msg.seq) + ' @ ' + new Date().toLocaleTimeString()); return; }
       if (msg.t === 'err') { log('err ' + (msg.msg || msg.code), 'err'); return; }
       if (msg.t === 's' || msg.HMI_eDevState !== undefined) ingestStatus(msg);
     };
   }
-  function applyPong(msg) { rtt = typeof msg.rtt === 'number' ? msg.rtt : (lastPingAt ? Date.now() - lastPingAt : rtt); }
+  function applyPong(msg) { pongAt = Date.now(); rtt = typeof msg.rtt === 'number' ? msg.rtt : (lastPingAt ? Date.now() - lastPingAt : rtt); }
   function bindParam(rangeId, numId, key, digits, onUser) {
     const r = $(rangeId), n = $(numId);
     if (!r || !n) return;
@@ -185,6 +255,7 @@
     document.querySelectorAll('.hold, #btn-auto-start').forEach((el) => { el.disabled = !ok; });
   }
   function ingestStatus(msg) {
+    wsNote('<-', msg);
     if (msg._gateway) S._gateway = msg._gateway;
     for (const k in msg) { if (k !== 't' && k !== '_gateway') S[k] = msg[k]; }
     S.HMI_xDevStop = !!msg.HMI_xDevStop; S.HMI_xDevRun = !!msg.HMI_xDevRun; S.HMI_xDevError = !!msg.HMI_xDevError;
@@ -279,10 +350,18 @@
     const fok = S.Force_xCommOk && !S.Force_xTimeout && !S.Force_xSlaveFail;
     setChip('force-chip', fok ? 'ok' : 'alarm', fok ? '通讯正常' : (S.Force_xSlaveFail ? '从站失败' : (S.Force_xTimeout ? '超时' : '—')));
     setText('out-force', fmt(S.HMI_rForceShow, 1) + ' N');
-    const fg = $('fg-fill'); if (fg) fg.style.height = Math.max(0, Math.min(100, (num(S.HMI_rForceShow) / (num(W.HMI_rForceSet) || 1)) * 100)) + '%';
-    const fs = $('fg-set'); if (fs) fs.style.bottom = 'calc(100% - 2px)';
+    setText('force-peak', fmt(S.Force_rPeak, 1) + ' N');
+    setText('force-raw', S.Force_wRaw == null ? '—' : String(num(S.Force_wRaw)));
+    setText('force-set', fmt(W.HMI_rForceSet, 0) + ' N');
+    const fRng = Math.max(1, Math.abs(num(W.HMI_rForceSet)), Math.abs(num(S.Force_rPeak)), Math.abs(num(S.HMI_rForceShow)));
+    const fRatio = (v) => Math.max(0, Math.min(1, num(v) / fRng));
+    const fg = $('fg-fill'); if (fg) fg.style.height = (fRatio(S.HMI_rForceShow) * 100) + '%';
+    const fs = $('fg-set'); if (fs) fs.style.bottom = (fRatio(W.HMI_rForceSet) * 100) + '%';
+    const fp = $('fg-peak'); if (fp) fp.style.bottom = (fRatio(S.Force_rPeak) * 100) + '%';
+    setText('force-range', '量程 0..' + fRng.toFixed(0) + ' N');
     setText('p-force-diag', 'Comm=' + (S.Force_xCommOk ? 'OK' : '—') + (S.Force_xTimeout ? ' TO' : '') + (S.Force_xSlaveFail ? ' SlaveFail' : ''));
     setText('p-tare', S.Force_xTareBusy ? 'Busy' : (S.Force_xTareDone ? 'Done' : '—'));
+    setText('force-bits', 'CommOk=' + (S.Force_xCommOk ? 'T' : 'F') + ' Timeout=' + (S.Force_xTimeout ? 'T' : 'F') + ' SlaveFail=' + (S.Force_xSlaveFail ? 'T' : 'F') + ' TareBusy=' + (S.Force_xTareBusy ? 'T' : 'F') + ' TareDone=' + (S.Force_xTareDone ? 'T' : 'F'));
 
     // alarm page
     renderAlarms(alarm);
@@ -304,7 +383,7 @@
     setText('sys-ack', lastAckAt ? new Date(lastAckAt).toLocaleTimeString() : '—');
     setText('sys-version', 'v3');
 
-    renderDirect(); renderTrends(); refreshRegCells();
+    renderHealth(); renderDirect(); renderTrends(); refreshRegCells(); renderBadges();
     if ($('health-age') && healthAt) setText('health-age', (Date.now() - healthAt) + 'ms');
   }
   function renderMachine(avg, y, z, r, dpos) {
@@ -327,9 +406,15 @@
     set('lamp-comm', S.Tcp_xConnected && !S.Tcp_xTimeout, 'ok'); set('lamp-ready2', S.AxisFb_xReady, 'ok');
     set('lamp-force', S.Force_xCommOk && !S.Force_xTimeout, 'ok');
     if (code !== lastAlarm) {
-      if (code !== 0) alarmHist.unshift({ code, at: new Date(), recovered: false });
-      if (code === 0 && lastAlarm !== 0) { const e = alarmHist.find((x) => x.code === lastAlarm && !x.recovered); if (e) e.recovered = true; }
-      lastAlarm = code; renderAlarmList();
+      const nowAt = Date.now();
+      if (code !== 0) {
+        const infoName = (ALARMS[code] || {}).name || ('报警 ' + code);
+        const existing = alarmHist.find((x) => x.code === code);
+        if (existing) { existing.lastAt = nowAt; existing.count += 1; existing.recoveredAt = null; existing.acked = false; existing.name = existing.name || infoName; }
+        else alarmHist.unshift({ code, name: infoName, firstAt: nowAt, lastAt: nowAt, recoveredAt: null, acked: false, count: 1 });
+      }
+      if (code === 0 && lastAlarm !== 0) alarmHist.forEach((x) => { if (x.code === lastAlarm && !x.recoveredAt) x.recoveredAt = nowAt; });
+      lastAlarm = code; saveAlarmHist(); renderAlarmList();
     }
     const ov = $('overlay');
     if (ov) {
@@ -339,6 +424,7 @@
       if (estop) { setText('ov-alarm-desc', '请释放物理急停按钮，然后执行复位。（报警 ' + code + '）'); }
     }
   }
+  function visModeLabel() { return visMode === 'A' ? 'A 角度纠偏' : 'B 直给'; }
   function renderDirect() {
     const online = !!S.Direct2_xOnline, safe = !!S.Direct2_xSafe;
     setChip('direct-chip', !S.connected ? 'off' : (!safe ? 'alarm' : (online ? 'run' : 'warn')),
@@ -349,44 +435,163 @@
     setText('d2-seq', fmt(W.HMI_wDirectSeq, 0) + ' → ' + (S.Direct2_wSeqEcho == null ? '—' : fmt(S.Direct2_wSeqEcho, 0)));
     setText('d-ready', S.AxisFb_xReady ? 'TRUE' : 'FALSE');
     setText('d-alarm', fmt(S.HMI_iAlarmShow, 0));
+    setText('d-cmd-m1', fmt(S.AxisFb_rVelCmdM1, 3)); setText('d-cmd-m2', fmt(S.AxisFb_rVelCmdM2, 3));
     setText('d-m1-act', fmt(S.AxisFb_rVelActM1, 3)); setText('d-m2-act', fmt(S.AxisFb_rVelActM2, 3));
     setText('d-m1-pos', fmt(S.AxisFb_rPosM1, 4)); setText('d-m2-pos', fmt(S.AxisFb_rPosM2, 4));
     setText('d-sync', fmt(S.AxisFb_rSyncErr, 4));
-    setText('d-y-pos', fmt(S.AxisFb_rPosY, 4)); setText('d-y-act', fmt(S.AxisFb_rVelActY, 3));
-    setText('d-z-pos', fmt(S.AxisFb_rPosZ, 4)); setText('d-z-act', fmt(S.AxisFb_rVelActZ, 3));
-    setText('d-r-pos', fmt(S.AxisFb_rPosR, 4)); setText('d-r-act', fmt(S.AxisFb_rVelActR, 3));
+    setText('d-y-act', fmt(S.AxisFb_rVelActY, 3));
+    setText('d-z-act', fmt(S.AxisFb_rVelActZ, 3));
+    setText('d-r-act', fmt(S.AxisFb_rVelActR, 3));
     setText('d-force-show', fmt(S.HMI_rForceShow, 1) + ' N');
     setText('d-force-echo', S.HMI_rForceSetEcho == null ? '—' : fmt(S.HMI_rForceSetEcho, 1) + ' N');
+    // 视觉角度（航向纠偏）A/B 模式
+    setText('d-heading-err', fmt(W.HMI_rHeadingErr, 3) + ' rad');
+    setText('d-heading-kp', fmt(W.HMI_rKpTrack, 3));
+    const modeEl = $('d-vis-mode');
+    if (modeEl) { modeEl.className = 'chip ' + (visMode === 'A' ? 'run' : ''); const b = modeEl.querySelector('b'); if (b) b.textContent = visModeLabel(); }
+    const hh = $('d-heading-hint');
+    if (hh) hh.textContent = visMode === 'A'
+      ? '(A) 角度纠偏：PLC 以 HMI_rHeadingErr × HMI_rKpTrack 生成 M1/M2 差速纠偏；直给速度 (B) 互斥、此时忽略。'
+      : '(B) 直给：M1/M2 与各轴直接给定速度/目标；角度纠偏 (A) 互斥、此时不参与。';
+    // Y/Z/R 目标 vs 当前
+    const tgt = (id, w, cur, digits) => {
+      setText(id + '-tgt', fmt(w, digits)); setText(id + '-cur', fmt(cur, digits));
+      const diff = num(w) - num(cur); setText(id + '-diff', (diff >= 0 ? '+' : '') + fmt(diff, digits));
+    };
+    tgt('dy', W.HMI_rDirectPosY, S.AxisFb_rPosY, 4);
+    tgt('dz', W.HMI_rDirectPosZ, S.AxisFb_rPosZ, 4);
+    tgt('dr', W.HMI_rDirectPosR, S.AxisFb_rPosR, 4);
+    // 直控使能前置提示：手动模式 / 无报警 / 无急停
+    const manual = !W.HMI_xAutoMode && Number(S.HMI_eOpMode) === 0;
+    const noAlarm = num(S.HMI_iAlarmShow) === 0;
+    const noEStop = !S.HMI_xLampEStop && W.HMI_xEStop !== false;
+    const guardOk = manual && noAlarm && noEStop;
+    const g = $('dir-guard');
+    if (g) g.textContent = '前置：手动=' + (manual ? '✓' : '✗') + ' · 无报警=' + (noAlarm ? '✓' : '✗(' + num(S.HMI_iAlarmShow) + ')') + ' · 无急停=' + (noEStop ? '✓' : '✗') + (guardOk ? ' → 可直控' : ' → 直控使能受限');
+    const de = $('direct-enable'); if (de) de.disabled = !guardOk;
+    setChip('dir-precheck', guardOk ? 'ok' : 'warn', guardOk ? '前置就绪' : '前置未满足');
+  }
+  function fmtClock(ts) { return ts ? new Date(ts).toLocaleTimeString() : '—'; }
+  function renderBadges() {
+    const n = unackedCount();
+    const b = $('alarm-badge'); if (b) { b.textContent = n ? String(n) : ''; b.className = 'badge' + (n ? ' on' : ''); }
+    const nb = $('nav-alarm-badge'); if (nb) { nb.textContent = n ? String(n) : ''; nb.className = 'badge' + (n ? ' on' : ''); }
   }
   function renderAlarmList() {
     const el = $('alarm-list'); if (!el) return;
-    if (!alarmHist.length) { el.innerHTML = '<span class="hint">尚无报警。</span>'; return; }
+    const rows = alarmHist.filter((a) => alarmFilter === 'all' || !a.acked);
     el.innerHTML = '';
-    alarmHist.slice(0, 20).forEach((a) => { const d = document.createElement('div'); d.className = 'alert'; const info = ALARMS[a.code] || { name: '报警 ' + a.code }; d.innerHTML = '<div class="code">' + a.code + '</div><div class="body"><b>' + info.name + '</b><span>' + (a.recovered ? '已恢复' : '活动') + '</span></div><div class="time">' + a.at.toLocaleTimeString() + '</div>'; el.appendChild(d); });
+    if (!rows.length) {
+      el.innerHTML = '<span class="hint">' + (alarmHist.length ? '无匹配记录。' : '尚无报警。') + '</span>';
+    } else {
+      const head = document.createElement('div'); head.className = 'alarmrow head';
+      ['码', '名称', '首次', '最近', '次数', '状态', '确认'].forEach((t) => { const s = document.createElement('span'); s.textContent = t; head.appendChild(s); });
+      el.appendChild(head);
+      rows.slice(0, 100).forEach((a) => {
+        const d = document.createElement('div'); d.className = 'alarmrow' + (a.acked ? ' acked' : '') + (a.recoveredAt ? '' : ' active');
+        const mk = (t, cls) => { const s = document.createElement('span'); s.textContent = t; if (cls) s.className = cls; return s; };
+        d.appendChild(mk(String(a.code), 'mono'));
+        d.appendChild(mk(a.name));
+        d.appendChild(mk(fmtClock(a.firstAt), 'mono'));
+        d.appendChild(mk(fmtClock(a.lastAt), 'mono'));
+        d.appendChild(mk(String(a.count), 'mono'));
+        d.appendChild(mk(a.recoveredAt ? '已恢复' : '活动'));
+        const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'btn xs'; btn.textContent = a.acked ? '已确认' : '确认';
+        btn.addEventListener('click', () => { a.acked = true; saveAlarmHist(); renderAlarmList(); });
+        d.appendChild(btn);
+        el.appendChild(d);
+      });
+    }
+    const c = $('alarm-count'); if (c) c.textContent = '共 ' + alarmHist.length + ' 条 · 未确认 ' + unackedCount();
+    renderBadges();
   }
 
+  function fitCanvas(c, fw, fh) {
+    const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
+    const cw = c.clientWidth || fw, ch = c.clientHeight || fh;
+    if (c.width !== Math.round(cw * dpr) || c.height !== Math.round(ch * dpr)) { c.width = Math.round(cw * dpr); c.height = Math.round(ch * dpr); }
+    const ctx = c.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { ctx, w: cw, h: ch };
+  }
+  function visibleSeries(arr) { return arr.slice(Math.max(0, arr.length - winSamples)); }
+  function seriesRange(list) {
+    let lo = Infinity, hi = -Infinity;
+    list.forEach((s) => s.forEach((v) => { if (Number.isFinite(v)) { lo = Math.min(lo, v); hi = Math.max(hi, v); } }));
+    return { lo, hi };
+  }
+  function setTrendWin(sec) {
+    trendWinSec = sec; winSamples = Math.max(20, Math.round(sec * 11));
+    document.querySelectorAll('[data-win]').forEach((b) => b.classList.toggle('active', Number(b.dataset.win) === sec));
+  }
   function drawSeries(ctx, w, h, arr, color, lo, hi, dash) {
     if (arr.length < 2 || hi - lo < 1e-9) return;
     ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.beginPath(); if (dash) ctx.setLineDash([5, 4]);
     const n = arr.length;
-    for (let i = 0; i < n; i += 1) { const x = (i / Math.max(1, n - 1)) * (w - 4) + 2; const yy = h - ((arr[i] - lo) / (hi - lo)) * (h - 8) - 4; if (i === 0) ctx.moveTo(x, yy); else ctx.lineTo(x, yy); }
+    for (let i = 0; i < n; i += 1) { const x = 42 + (i / Math.max(1, n - 1)) * (w - 52); const yy = h - 16 - ((arr[i] - lo) / (hi - lo)) * (h - 30); if (i === 0) ctx.moveTo(x, yy); else ctx.lineTo(x, yy); }
     ctx.stroke(); if (dash) ctx.setLineDash([]);
   }
   function drawOne(id, series) {
-    const c = $(id); if (!c || !c.getContext) return; const ctx = c.getContext('2d'); const w = c.width, h = c.height;
-    ctx.clearRect(0, 0, w, h); ctx.strokeStyle = '#1a232e'; ctx.beginPath(); ctx.moveTo(0, h / 2); ctx.lineTo(w, h / 2); ctx.stroke();
-    const sl = (arr) => arr.slice(Math.max(0, arr.length - winSamples));
+    const c = $(id); if (!c || !c.getContext) return;
+    const fit = fitCanvas(c, 900, 220); const ctx = fit.ctx, w = fit.w, h = fit.h;
+    ctx.clearRect(0, 0, w, h);
+    const vis = series.map((s) => ({ s, arr: visibleSeries(s.arr) }));
     let lo = Infinity, hi = -Infinity;
-    series.forEach((s) => sl(s.arr).forEach((v) => { if (Number.isFinite(v)) { lo = Math.min(lo, v); hi = Math.max(hi, v); } }));
-    if (!Number.isFinite(lo)) return; const pad = Math.max(1e-4, (hi - lo) * 0.1);
-    series.forEach((s) => drawSeries(ctx, w, h, sl(s.arr), s.c, lo - pad, hi + pad, s.d));
+    vis.forEach((v) => v.arr.forEach((x) => { if (Number.isFinite(x)) { lo = Math.min(lo, x); hi = Math.max(hi, x); } }));
+    if (!Number.isFinite(lo)) { setText(id + '-legend', '无数据'); return; }
+    if (!trendAutoScale) { const full = seriesRange(series.map((s) => s.arr)); lo = Math.min(lo, full.lo); hi = Math.max(hi, full.hi); }
+    if (lo > 0) lo = 0; if (hi < 0) hi = 0;
+    const pad = Math.max(1e-4, (hi - lo) * 0.12); const ylo = lo - pad, yhi = hi + pad;
+    const yOf = (v) => h - 16 - ((v - ylo) / (yhi - ylo)) * (h - 30);
+    ctx.strokeStyle = '#1a232e'; ctx.fillStyle = '#5d6a79'; ctx.font = '10px monospace'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+    for (let k = 0; k <= 4; k += 1) {
+      const v = ylo + (yhi - ylo) * (k / 4); const y = yOf(v);
+      ctx.beginPath(); ctx.moveTo(40, y); ctx.lineTo(w - 8, y); ctx.stroke();
+      ctx.fillText(fmt(v, 3), 1, y);
+    }
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    for (let k = 0; k <= 4; k += 1) {
+      const x = 42 + (k / 4) * (w - 52);
+      ctx.beginPath(); ctx.moveTo(x, 10); ctx.lineTo(x, h - 16); ctx.stroke();
+      const rel = -trendWinSec * (1 - k / 4); ctx.fillText(rel.toFixed(0) + 's', x, h - 13);
+    }
+    ctx.textAlign = 'left';
+    series.forEach((s, i) => drawSeries(ctx, w, h, vis[i].arr, s.c, ylo, yhi, s.d));
+    const el = $(id + '-legend');
+    if (el) {
+      el.innerHTML = '';
+      series.forEach((s, i) => {
+        const last = vis[i].arr.length ? vis[i].arr[vis[i].arr.length - 1] : NaN;
+        const chip = document.createElement('span'); chip.className = 'lg';
+        chip.innerHTML = '<i style="background:' + s.c + '"></i>' + (s.n || ('#' + (i + 1))) + ' <b>' + (Number.isFinite(last) ? fmt(last, 3) : '—') + '</b>';
+        el.appendChild(chip);
+      });
+    }
   }
   function renderTrends() {
+    if (trendPaused) return;
     const now = performance.now(); if (now - lastTrend < 100) return; lastTrend = now;
-    drawOne('trend-xdual', [{ arr: HIST.act1, c: '#3fb950' }, { arr: HIST.act2, c: '#3b9dd6' }, { arr: HIST.vel1, c: '#8a97a6', d: 1 }, { arr: HIST.vel2, c: '#8a97a6', d: 1 }]);
-    drawOne('trend-vel', [{ arr: HIST.act1, c: '#3fb950' }, { arr: HIST.act2, c: '#3b9dd6' }, { arr: HIST.vel1, c: '#8a97a6', d: 1 }, { arr: HIST.vel2, c: '#8a97a6', d: 1 }]);
-    drawOne('trend-pos', [{ arr: HIST.p1, c: '#3fb950' }, { arr: HIST.p2, c: '#3b9dd6' }, { arr: HIST.p1.map((v, i) => v - num(HIST.p2[i])), c: '#e05555' }]);
-    drawOne('trend-force', [{ arr: HIST.force, c: '#d29922' }]);
+    const vel = [{ arr: HIST.act1, c: '#3fb950', n: 'M1实' }, { arr: HIST.act2, c: '#3b9dd6', n: 'M2实' }, { arr: HIST.vel1, c: '#8a97a6', d: 1, n: 'M1令' }, { arr: HIST.vel2, c: '#8a97a6', d: 1, n: 'M2令' }];
+    drawOne('trend-xdual', vel);
+    drawOne('trend-vel', vel);
+    drawOne('trend-pos', [{ arr: HIST.p1, c: '#3fb950', n: 'M1' }, { arr: HIST.p2, c: '#3b9dd6', n: 'M2' }, { arr: HIST.p1.map((v, i) => v - num(HIST.p2[i])), c: '#e05555', n: 'ΔPos' }]);
+    const forceSeries = [{ arr: HIST.force, c: '#d29922', n: '力' }];
+    drawOne('trend-force', forceSeries);
+    drawOne('force-trend', forceSeries);
+  }
+  function drawDiagCanvas() {
+    const c = $('diag-canvas'); if (!c || !c.getContext) return;
+    const fit = fitCanvas(c, 600, 120); const ctx = fit.ctx, w = fit.w, h = fit.h;
+    ctx.clearRect(0, 0, w, h);
+    const series = [{ a: diagSamples.poll, c: '#3b9dd6' }, { a: diagSamples.rtt, c: '#d29922' }];
+    let hi = 1; series.forEach((s) => s.a.forEach((v) => { if (Number.isFinite(v)) hi = Math.max(hi, v); }));
+    ctx.strokeStyle = '#1a232e'; ctx.beginPath(); ctx.moveTo(0, h - 1); ctx.lineTo(w, h - 1); ctx.stroke();
+    series.forEach((s) => {
+      if (s.a.length < 2) return;
+      ctx.strokeStyle = s.c; ctx.lineWidth = 1.5; ctx.beginPath();
+      s.a.forEach((v, i) => { const x = 2 + (i / Math.max(1, s.a.length - 1)) * (w - 4); const y = h - 4 - (Math.max(0, v) / hi) * (h - 8); if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); });
+      ctx.stroke();
+    });
+    setText('diag-legend', 'Poll ' + (diagSamples.poll.length ? diagSamples.poll[diagSamples.poll.length - 1] + 'ms' : '—') + ' · RTT ' + (diagSamples.rtt.length ? diagSamples.rtt[diagSamples.rtt.length - 1] + 'ms' : '—'));
   }
   function snapshot(tag) {
     const line = [tag || 'SNAP', 'act=' + fmt(S.AxisFb_rVelActM1, 3) + '/' + fmt(S.AxisFb_rVelActM2, 3), 'pos=' + fmt(S.AxisFb_rPosM1, 4) + '/' + fmt(S.AxisFb_rPosM2, 4), 'alm=' + num(S.HMI_iAlarmShow)].join('  ');
@@ -397,12 +602,174 @@
   function download(name, text) { const blob = new Blob([text], { type: 'text/csv;charset=utf-8' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0); }
   function exportHistory() { const rows = [['idx', 'velCmdM1', 'velCmdM2', 'velActM1', 'velActM2', 'posM1', 'posM2', 'force']]; for (let i = 0; i < HIST.t.length; i += 1) rows.push([i, HIST.vel1[i], HIST.vel2[i], HIST.act1[i], HIST.act2[i], HIST.p1[i], HIST.p2[i], HIST.force[i]]); download('lmm-trend-' + Date.now() + '.csv', rows.map((r) => r.map(csvEscape).join(',')).join('\n')); log('导出趋势 CSV ' + (rows.length - 1) + ' 行'); }
   function exportLog() { const rows = [['time', 'kind', 'msg']]; logs.forEach((l) => rows.push([new Date(l.at).toISOString(), l.kind, l.msg])); download('lmm-log-' + Date.now() + '.csv', rows.map((r) => r.map(csvEscape).join(',')).join('\n')); }
+  function exportAlarmCsv() {
+    const rows = [['code', 'name', 'firstAt', 'lastAt', 'count', 'status', 'recoveredAt', 'acked']];
+    alarmHist.forEach((a) => rows.push([a.code, a.name, new Date(a.firstAt).toISOString(), new Date(a.lastAt).toISOString(), a.count, a.recoveredAt ? 'recovered' : 'active', a.recoveredAt ? new Date(a.recoveredAt).toISOString() : '', a.acked ? '1' : '0']));
+    download('lmm-alarm-' + Date.now() + '.csv', rows.map((r) => r.map(csvEscape).join(',')).join('\n'));
+    log('导出报警 CSV ' + (rows.length - 1) + ' 行');
+  }
+  function copyText(text) {
+    try { if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(text); log('已复制到剪贴板'); return; } } catch (e) { /* ignore */ }
+    log('剪贴板不可用，内容见日志');
+  }
+  function pingWs() {
+    if (!ws || ws.readyState !== 1) return Promise.resolve('ws=DOWN');
+    const t0 = Date.now(); pongAt = 0;
+    ws.send(JSON.stringify({ t: 'ping' }));
+    return new Promise((resolve) => {
+      const check = setInterval(() => {
+        if (pongAt) { clearInterval(check); resolve('ws=PONG ' + (pongAt - t0) + 'ms'); }
+        else if (Date.now() - t0 > 1500) { clearInterval(check); resolve('ws=FAIL'); }
+      }, 50);
+    });
+  }
+  function sysCheck() {
+    const out = [];
+    setText('sys-check-time', new Date().toLocaleTimeString());
+    setText('sys-check-result', '检查中…');
+    const tasks = [];
+    tasks.push(pollHealth().then((h) => { out.push('health=' + (h && h.ok ? 'OK' : 'FAIL') + (h && h.mode ? ' mode=' + h.mode : '')); }));
+    tasks.push(fetch('/map').then((r) => r.json()).then((m) => { MAP = m; buildRegTable(); out.push('map=' + ((m && m.command && m.command.fields) ? m.command.fields.length : '?') + 'cmd/' + ((m && m.status && m.status.fields) ? m.status.fields.length : '?') + 'st'); }).catch(() => { out.push('map=FAIL'); }));
+    tasks.push(pingWs());
+    Promise.all(tasks).then(() => { setText('sys-check-result', out.join('  ·  ')); log('系统自检 ' + out.join(' ')); })
+      .catch((e) => { setText('sys-check-result', '自检异常 ' + e.message); log('系统自检异常 ' + e.message, 'err'); });
+  }
+  function exportDiag() {
+    const parts = ['# LMM WebHMI v3 diagnostic', 'time: ' + new Date().toISOString(), '', '## /health', JSON.stringify(gwHealth || { note: 'not fetched' }, null, 2), '', '## config /map (modbus-map.json)', JSON.stringify(MAP || { note: 'not fetched' }, null, 2), '', '## logs'];
+    logs.forEach((l) => parts.push('[' + new Date(l.at).toISOString() + '] ' + l.kind + ' ' + l.msg));
+    parts.push('', '## ws summary');
+    wsLog.forEach((e) => parts.push('[' + new Date(e.at).toISOString() + '] ' + e.dir + ' t:' + e.t + ' ' + e.summary));
+    const text = parts.join('\n');
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'lmm-diag-' + Date.now() + '.txt';
+    document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
+    log('导出诊断包 ' + text.length + ' 字符（/health + 配置 + 日志）');
+  }
 
   function allMapFields() { if (!MAP) return []; const out = []; const push = (sec, fs) => (fs || []).forEach((f) => out.push(Object.assign({ section: sec }, f))); push('cmd', MAP.command && MAP.command.fields); push('cmd', MAP.directx && MAP.directx.command && MAP.directx.command.fields); push('st', MAP.status && MAP.status.fields); push('st', MAP.directx && MAP.directx.status && MAP.directx.status.fields); return out; }
-  function buildRegTable() { const tb = document.querySelector('#regtable tbody'); if (!tb) return; tb.innerHTML = ''; allMapFields().forEach((f) => { const base = f.section === 'cmd' ? (MAP.command.baseAddress || 4096) : (MAP.status.baseAddress || 4352); const tr = document.createElement('tr'); const cells = [f.section === 'cmd' ? 'CMD' : 'ST', String(base + f.offset), f.name + (f.bit !== undefined ? '.' + f.bit : ''), f.type + (f.scale ? ' x' + f.scale : ''), '', f.zh || '']; cells.forEach((c, i) => { const td = document.createElement('td'); td.textContent = c; if (i === 1 || i === 2) td.className = 'mono'; tr.appendChild(td); }); tb.appendChild(tr); regCells[f.name] = tr.children[4]; }); }
-  function refreshRegCells() { if (!MAP) return; for (const k in regCells) { const v = regCells[k]; const raw = (k in W) ? W[k] : S[k]; const s = typeof raw === 'boolean' ? (raw ? 'T' : 'F') : (raw === undefined ? '—' : String(raw)); if (v.textContent !== s) v.textContent = s; } }
-  function sendJson() { const ta = $('cmd-json'); if (!ta) return; let obj; try { obj = JSON.parse(ta.value || '{}'); } catch (e) { log('JSON 解析失败: ' + e.message, 'err'); return; } const allowed = {}; for (const k in obj) { if (CMD_LABELS[k]) allowed[k] = obj[k]; else log('忽略非白名单字段 ' + k, 'warn'); } if (!Object.keys(allowed).length) { log('无可发送字段', 'warn'); return; } patch(allowed); log('console write ' + JSON.stringify(allowed)); }
-  function pollHealth() { fetch('/health').then((r) => r.json()).then((h) => { healthAt = Date.now(); gwHealth = h; const el = $('health'); if (el) el.textContent = JSON.stringify(h, null, 2); render(); }).catch(() => { gwHealth = null; render(); }); }
+  function regBase(f) { return f.section === 'cmd' ? ((MAP.command && MAP.command.baseAddress) || 4096) : ((MAP.status && MAP.status.baseAddress) || 4352); }
+  function regAddr(f) { return String(regBase(f) + f.offset) + (f.bit !== undefined ? '.' + f.bit : ''); }
+  function regMatches(f) {
+    if (regSection !== 'all' && f.section !== regSection) return false;
+    if (!regQuery) return true;
+    const q = regQuery.toLowerCase();
+    return f.name.toLowerCase().indexOf(q) !== -1 || regAddr(f).indexOf(q) !== -1;
+  }
+  function copyRegRow(f) {
+    const raw = (f.name in W) ? W[f.name] : S[f.name];
+    const line = [f.section === 'cmd' ? 'CMD' : 'ST', regAddr(f), f.name, f.type, raw === undefined ? '' : String(raw), f.zh || ''].join('\t');
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(line); log('已复制行 ' + f.name); }
+      else log('复制行: ' + line);
+    } catch (e) { log('复制失败，已输出: ' + line, 'warn'); }
+  }
+  function buildRegTable() {
+    const tb = document.querySelector('#regtable tbody'); if (!tb) return;
+    tb.innerHTML = ''; regRows.length = 0; Object.keys(regCells).forEach((k) => delete regCells[k]);
+    allMapFields().forEach((f) => {
+      const tr = document.createElement('tr');
+      const cells = [f.section === 'cmd' ? 'CMD' : 'ST', regAddr(f), f.name, f.type + (f.scale ? ' ×' + f.scale : ''), '', f.zh || ''];
+      cells.forEach((c, i) => { const td = document.createElement('td'); td.textContent = c; if (i === 1 || i === 2) td.className = 'mono'; tr.appendChild(td); });
+      const opTd = document.createElement('td'); const btn = document.createElement('button');
+      btn.type = 'button'; btn.className = 'btn xs'; btn.textContent = '复制';
+      btn.addEventListener('click', () => copyRegRow(f)); opTd.appendChild(btn); tr.appendChild(opTd);
+      tr.className = 'sec-' + f.section; tb.appendChild(tr);
+      regCells[f.name] = tr.children[4]; regRows.push({ f, tr, val: tr.children[4] });
+    });
+    applyRegFilter();
+    const meta = $('reg-meta');
+    if (meta) meta.textContent = 'imageWords=' + ((MAP.protocol && MAP.protocol.imageWords) != null ? MAP.protocol.imageWords : '—') + ' · CMD 基址=' + ((MAP.command && MAP.command.baseAddress) || 4096) + ' (0x' + (((MAP.command && MAP.command.baseAddress) || 4096)).toString(16) + ') · ST 基址=' + ((MAP.status && MAP.status.baseAddress) || 4352) + ' (0x' + (((MAP.status && MAP.status.baseAddress) || 4352)).toString(16) + ') · 字段 ' + regRows.length;
+  }
+  function applyRegFilter() {
+    regRows.forEach((r) => { r.tr.style.display = regMatches(r.f) ? '' : 'none'; });
+    const c = $('reg-count'); if (c) c.textContent = regRows.filter((r) => regMatches(r.f)).length + ' / ' + regRows.length;
+  }
+  function refreshRegCells() {
+    if (!MAP) return;
+    for (const k in regCells) {
+      const v = regCells[k]; if (!v) continue;
+      const raw = (k in W) ? W[k] : S[k];
+      const s = typeof raw === 'boolean' ? (raw ? 'T' : 'F') : ((raw === undefined || raw === null) ? '—' : String(raw));
+      if (v.textContent !== s) { v.textContent = s; v.classList.add('chg'); regChanged[k] = Date.now(); }
+      else if (regChanged[k] && Date.now() - regChanged[k] > 600) { v.classList.remove('chg'); delete regChanged[k]; }
+      v.classList.toggle('on', typeof raw === 'boolean' ? raw : (num(raw) !== 0));
+      v.classList.toggle('sec-cmd', k in W); v.classList.toggle('sec-st', !(k in W));
+    }
+  }
+  function renderCmdHist() {
+    const el = $('cmd-hist'); if (!el) return;
+    el.innerHTML = '';
+    if (!cmdHist.length) { el.innerHTML = '<span class="hint">暂无发送记录（最近 20 条）。</span>'; return; }
+    cmdHist.forEach((h) => {
+      const d = document.createElement('div'); d.className = 'histrow';
+      const t = document.createElement('span'); t.className = 'mono'; t.textContent = new Date(h.at).toLocaleTimeString() + '  ' + h.text;
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'btn xs'; b.textContent = '回填';
+      b.addEventListener('click', () => { const ta = $('cmd-json'); if (ta) ta.value = h.text; });
+      d.appendChild(t); d.appendChild(b); el.appendChild(d);
+    });
+  }
+  function sendJson() {
+    const ta = $('cmd-json'); if (!ta) return;
+    const hint = $('cmd-hint');
+    let obj; try { obj = JSON.parse(ta.value || '{}'); } catch (e) { log('JSON 解析失败: ' + e.message, 'err'); if (hint) hint.textContent = 'JSON 解析失败: ' + e.message; return; }
+    const allowed = {}; const rejected = [];
+    for (const k in obj) { if (CMD_LABELS[k] && (k in W)) allowed[k] = obj[k]; else rejected.push(k); }
+    if (rejected.length) log('忽略非白名单字段 ' + rejected.join(', '), 'warn');
+    if (!Object.keys(allowed).length) { if (hint) hint.textContent = '无白名单字段可发送' + (rejected.length ? '（已拒绝: ' + rejected.join(', ') + '）' : ''); log('无可发送字段', 'warn'); return; }
+    const text = JSON.stringify(allowed);
+    cmdHist.unshift({ at: Date.now(), text }); if (cmdHist.length > 20) cmdHist.pop(); renderCmdHist();
+    if (hint) hint.textContent = '已发送 ' + Object.keys(allowed).length + ' 字段' + (rejected.length ? '；拒绝 ' + rejected.join(', ') : '') + '；等待回读…';
+    patch(allowed); log('console write ' + text);
+    const expect = Object.assign({}, allowed);
+    setTimeout(() => {
+      const rows = Object.keys(expect).map((k) => {
+        const wv = W[k]; const sv = (k in S) ? S[k] : undefined;
+        const ok = sv !== undefined && String(sv) === String(wv);
+        return k + '=' + (sv === undefined ? '无回读' : sv) + (sv === undefined ? '' : (ok ? ' ✓' : ' ≠' + wv));
+      });
+      if (hint) hint.textContent = '回读确认： ' + rows.join('   ');
+      log('回读确认 ' + rows.join(' '));
+    }, 400);
+  }
+  function fmtDur(ms) { const n = Number(ms) || 0; const s = Math.floor(n / 1000); const hh = Math.floor(s / 3600); const mm = Math.floor((s % 3600) / 60); const ss = s % 60; return (hh ? hh + 'h ' : '') + mm + 'm ' + ss + 's'; }
+  function renderHealth() {
+    const h = gwHealth || {}; const m = h.master || {};
+    const d = (v) => (v == null || v === '' ? '—' : String(v));
+    const tf = (v) => (v === undefined ? '—' : (v ? 'TRUE' : 'FALSE'));
+    // debug 诊断
+    setText('dbg-clients', d(h.clients)); setText('dbg-lease-owner', d(h.leaseOwner));
+    setText('dbg-uptime', h.uptimeMs == null ? '—' : fmtDur(h.uptimeMs));
+    setText('dbg-mode', d(h.mode)); setText('dbg-offline', tf(h.statusIsOffline));
+    setText('dbg-valid-age', h.lastValidStatusAgeMs == null ? '—' : (h.lastValidStatusAgeMs + ' ms'));
+    setText('dbg-master-connected', m.connected === undefined ? '—' : (m.connected ? 'TRUE' : 'FALSE'));
+    setText('dbg-master-host', m.host ? (m.host + ':' + (m.port == null ? '' : m.port)) : '—');
+    setText('dbg-master-unit', d(m.unitID)); setText('dbg-master-poll', m.pollMs == null ? '—' : (m.pollMs + ' ms'));
+    setText('dbg-master-err', d(m.errorCount)); setText('dbg-master-lasterr', m.lastError ? String(m.lastError) : '—');
+    setText('dbg-master-lastsuc', m.lastSuccessAt ? new Date(m.lastSuccessAt).toLocaleTimeString() : '—');
+    // system /health 明细
+    setText('sys-health-ok', h.ok === undefined ? '—' : (h.ok ? 'OK' : 'FAIL'));
+    setText('sys-health-mode', d(h.mode)); setText('sys-health-clients', d(h.clients));
+    setText('sys-health-lease', d(h.leaseOwner)); setText('sys-health-offline', tf(h.statusIsOffline));
+    setText('sys-health-age', h.lastValidStatusAgeMs == null ? '—' : (h.lastValidStatusAgeMs + ' ms'));
+    setText('sys-health-uptime', h.uptimeMs == null ? '—' : fmtDur(h.uptimeMs));
+    setText('sys-health-version', d(h.version));
+    setText('sys-health-started', h.startedAt ? new Date(h.startedAt).toLocaleString() : '—');
+    // 版本区
+    setText('ver-web', 'WebHMI v3'); setText('ver-gw', h.version ? ('Gateway v' + h.version) : 'Gateway —');
+    setText('ver-plc', m.host ? ('PLC ' + m.host + ':' + (m.port == null ? '502' : m.port) + ' unit ' + (m.unitID == null ? '—' : m.unitID)) : 'PLC 目标 —');
+  }
+  function pollHealth() {
+    return fetch('/health').then((r) => r.json()).then((h) => {
+      healthAt = Date.now(); gwHealth = h;
+      const el = $('health'); if (el) el.textContent = JSON.stringify(h, null, 2);
+      const m = h && h.master;
+      diagSamples.t.push(Date.now());
+      diagSamples.poll.push(m && Number.isFinite(Number(m.pollMs)) ? Number(m.pollMs) : 0);
+      diagSamples.rtt.push(rtt == null ? 0 : rtt);
+      while (diagSamples.t.length > DIAG_MAX) { diagSamples.t.shift(); diagSamples.poll.shift(); diagSamples.rtt.shift(); }
+      renderHealth(); drawDiagCanvas(); render(); return h;
+    }).catch(() => { gwHealth = null; renderHealth(); render(); return null; });
+  }
 
   document.querySelectorAll('button[data-act]').forEach(bindHold);
   bindParam('p-velx', 'n-velx', 'HMI_rJogVelX', 2); bindParam('p-spin', 'n-spin', 'HMI_rSpinVel', 2);
@@ -416,6 +783,7 @@
   bindParam('p-base', 'n-base', 'HMI_rWheelBase', 1); bindParam('p-npass', 'n-npass', 'HMI_iAutoPasses', 0);
   bindParam('p-fset', 'n-fset', 'HMI_rForceSet', 0); bindParam('p-kpf', 'n-kpf', 'HMI_rKpForce', 1);
   bindParam('p-kpt', 'n-kpt', 'HMI_rKpTrack', 2); bindParam('p-herr', 'n-herr', 'HMI_rHeadingErr', 2);
+  bindParam('p-kpt2', 'n-kpt2', 'HMI_rKpTrack', 2); bindParam('p-herr2', 'n-herr2', 'HMI_rHeadingErr', 2);
   bindParam('p-fsim', 'n-fsim', 'HMI_rForceSim', 0);
   bindParam('p-dvm1', 'n-dvm1', 'HMI_rVelM1Set', 3); bindParam('p-dvm2', 'n-dvm2', 'HMI_rVelM2Set', 3);
   setCheckbox('force-sim', 'HMI_xForceSimEnable'); setCheckbox('force-guide', 'HMI_xForceGuide'); setCheckbox('x-direct', 'HMI_xDirectEnable');
@@ -450,7 +818,7 @@
   on('btn-trend-clear', 'click', () => { const keys = ['t', 'vel1', 'vel2', 'act1', 'act2', 'p1', 'p2', 'force']; keys.forEach((k) => { HIST[k].length = 0; }); log('趋势已清空'); });
   on('btn-clear-hist', 'click', () => { const keys = ['t', 'vel1', 'vel2', 'act1', 'act2', 'p1', 'p2', 'force']; keys.forEach((k) => { HIST[k].length = 0; }); const a = $('snap-list'); if (a) a.innerHTML = ''; const b = $('log'); if (b) b.innerHTML = ''; log('历史已清空'); });
   on('btn-export-csv', 'click', exportHistory);
-  on('btn-log-clear', 'click', () => { logs.length = 0; const le = $('log'); if (le) le.innerHTML = ''; });
+  on('btn-log-clear', 'click', () => { logs.length = 0; const le = $('log'); if (le) le.innerHTML = ''; renderLog(); });
   on('btn-log-export', 'click', exportLog);
   on('btn-send-json', 'click', sendJson);
   on('btn-preset-safe', 'click', () => patch({ HMI_xEStop: false })); on('btn-preset-normal', 'click', () => patch({ HMI_xEStop: true }));
@@ -459,7 +827,30 @@
   on('btn-dvm-rev', 'click', () => patch({ HMI_rVelM1Set: -0.3, HMI_rVelM2Set: -0.3, HMI_xDirectEnable: true }));
   on('btn-dvm-stop', 'click', () => patch({ HMI_rVelM1Set: 0, HMI_rVelM2Set: 0 })); on('btn-dvm-off', 'click', () => patch({ HMI_xDirectEnable: false }));
   on('btn-health', 'click', pollHealth);
-  document.querySelectorAll('[data-win]').forEach((b) => b.addEventListener('click', () => { winSamples = Number(b.dataset.win) * 10; }));
+  document.querySelectorAll('[data-win]').forEach((b) => b.addEventListener('click', () => setTrendWin(Number(b.dataset.win))));
+  setTrendWin(30);
+  on('btn-force-peak-reset', 'click', () => { pulse({ HMI_xForcePeakReset: true }, 150); log('力峰值复位脉冲'); });
+  on('btn-vis-a', 'click', () => { visMode = 'A'; render(); });
+  on('btn-vis-b', 'click', () => { visMode = 'B'; render(); });
+  on('btn-dir-home-y', 'click', () => pulseHome({ HMI_xHomeY: true }));
+  on('btn-dir-home-z', 'click', () => pulseHome({ HMI_xHomeZ: true }));
+  on('btn-dir-home-r', 'click', () => pulseHome({ HMI_xHomeR: true }));
+  on('btn-dir-stop-all', 'click', () => { patch({ HMI_xStop: true, HMI_rVelM1Set: 0, HMI_rVelM2Set: 0, HMI_rDirectVelY: 0, HMI_rDirectVelZ: 0, HMI_rDirectVelR: 0, HMI_xDirectEnable: false }); setTimeout(() => patch({ HMI_xStop: false }, false), 250); log('全部停'); });
+  on('btn-trend-pause', 'click', () => { trendPaused = !trendPaused; const b = $('btn-trend-pause'); if (b) { b.textContent = trendPaused ? '继续' : '暂停'; b.classList.toggle('active', trendPaused); } if (!trendPaused) { lastTrend = 0; renderTrends(); } });
+  on('trend-autoscale', 'change', () => { trendAutoScale = !!($('trend-autoscale') && $('trend-autoscale').checked); lastTrend = 0; renderTrends(); });
+  on('btn-trend-export', 'click', exportHistory);
+  on('btn-reg-copy-visible', 'click', () => { const vis = regRows.filter((r) => regMatches(r.f)); log('可见寄存器 ' + vis.length + ' 行：' + vis.slice(0, 40).map((r) => r.f.name + '@' + regAddr(r.f)).join(', ') + (vis.length > 40 ? ' …' : '')); copyText(vis.map((r) => [r.f.section === 'cmd' ? 'CMD' : 'ST', regAddr(r.f), r.f.name, r.f.type, ((r.f.name in W) ? W[r.f.name] : S[r.f.name]) === undefined ? '' : String((r.f.name in W) ? W[r.f.name] : S[r.f.name])].join('\t')).join('\n')); });
+  on('reg-filter', 'input', () => { regQuery = String($('reg-filter').value || '').trim(); applyRegFilter(); });
+  on('reg-section', 'change', () => { regSection = $('reg-section').value; applyRegFilter(); });
+  on('log-level', 'change', () => { logLevel = $('log-level').value; renderLog(); });
+  on('log-filter', 'input', () => { logQuery = String($('log-filter').value || '').trim().toLowerCase(); renderLog(); });
+  on('btn-log-pause', 'click', () => { logPaused = !logPaused; const b = $('btn-log-pause'); if (b) { b.textContent = logPaused ? '继续' : '暂停'; b.classList.toggle('active', logPaused); } if (!logPaused) renderLog(); });
+  on('alarm-filter', 'change', () => { alarmFilter = $('alarm-filter').value; renderAlarmList(); });
+  on('btn-alarm-clear-recovered', 'click', () => { const before = alarmHist.length; alarmHist = alarmHist.filter((a) => !a.recoveredAt); saveAlarmHist(); renderAlarmList(); log('清空已恢复报警 ' + (before - alarmHist.length) + ' 条'); });
+  on('btn-alarm-export', 'click', exportAlarmCsv);
+  on('btn-alarm-ack-all', 'click', () => { alarmHist.forEach((a) => { a.acked = true; }); saveAlarmHist(); renderAlarmList(); });
+  on('btn-self-check', 'click', sysCheck);
+  on('btn-diag-export', 'click', exportDiag);
 
   fetch('/map').then((r) => r.json()).then((m) => { MAP = m; buildRegTable(); }).catch(() => {});
   setInterval(() => { const c = $('clock'); if (c) c.textContent = new Date().toLocaleTimeString(); }, 1000);
@@ -472,6 +863,7 @@
     dirty = true; flush(false);
   }, 100);
 
+  renderAlarmList(); renderCmdHist(); renderLog(); renderHealth();
   setConn(false); render(); log('WebHMI v3 就绪 - 总览/自动/手动/X双驱/直控/力传感/趋势/报警/调试/系统');
   pollHealth(); setInterval(pollHealth, 2000); connect();
 })();

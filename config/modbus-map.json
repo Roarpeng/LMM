@@ -200,6 +200,13 @@
         "zh": "【力引导电平】TRUE=持续 Z 力跟随；FALSE=停止引导。手动/自动可用。"
       },
       {
+        "name": "HMI_xForcePeakReset",
+        "type": "BOOL",
+        "offset": 5,
+        "bit": 11,
+        "zh": "【力峰值复位】TRUE=清零 Force_rPeak（脉冲）"
+      },
+      {
         "name": "HMI_iHomeAxis",
         "type": "UINT",
         "offset": 6,
@@ -912,6 +919,19 @@
         "offset": 44,
         "scale": 100,
         "zh": "【只读·力设定回显】N"
+      },
+      {
+        "name": "Force_rPeak",
+        "type": "SCALED_DINT",
+        "offset": 46,
+        "scale": 100,
+        "zh": "【只读·力峰值】N；绝对值峰值，HMI_xForcePeakReset 清零"
+      },
+      {
+        "name": "Force_wRaw",
+        "type": "UINT",
+        "offset": 48,
+        "zh": "【只读·力原始计数】0..65535，诊断用"
       }
     ]
   },

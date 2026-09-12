@@ -71,6 +71,8 @@ function createMockPlc(initialCommands = {}) {
 
     state.eOpMode = req.HMI_xAutoMode ? 1 : 0;
     if (req.HMI_xForceSimEnable) state.forceShow = Number(req.HMI_rForceSim) || 0;
+    if (req.HMI_xForcePeakReset) state.forcePeak = 0;
+    state.forcePeak = Math.max(state.forcePeak || 0, Math.abs(state.forceShow || 0));
 
     const homeBusy = state.homeBusyY || state.homeBusyZ || state.homeBusyR;
     const trigY = req.HMI_xHomeY || (req.HMI_iHomeAxis === 1 && req.HMI_xHomeExec);
@@ -191,6 +193,8 @@ function createMockPlc(initialCommands = {}) {
       HMI_xAutoDone: state.autoDone,
       HMI_rForceShow: state.forceShow,
       HMI_rForceSetEcho: Number(req.HMI_rForceSet) || 0,
+      Force_rPeak: state.forcePeak || 0,
+      Force_wRaw: Math.max(0, Math.min(65535, Math.round((state.forceShow || 0) * 51.2 + 8192))),
       HMI_xHomedY: state.homedY,
       HMI_xHomedZ: state.homedZ,
       HMI_xHomedR: state.homedR,
