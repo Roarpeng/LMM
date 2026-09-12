@@ -45,6 +45,11 @@
   - 修：删除 `PRG_Axis_Control` 里 `Force_xCommOk := fbForce.xCommOk;` / `Force_xTimeout := fbForce.xTimeout;`，
     使 `PRG_Force485` 成为唯一写者；`tools/patch_g064.py` 由 0.63 生成 **`LMM_g_0.64.xml`**（幂等、XML 解析 OK）。
   - 代价：启动时 3 次读失败 → 1006（`Force_xSlaveFail`）；运行中失联的持续检测另行用 RTU 从站诊断位（待现场确认）。
+- **1007 静默误报修复（2026-09-12）**：`FB_XDual` 的 M1/M2 就绪判据误含 `NOT xStop`：
+  `xReadyM1 := xEnable AND NOT xStop AND NOT xFaultM1`。`xStop` 来自 `AxisCmd_xStopAll`（`HMI_xStop` 等），
+  设备停止/静默时 `xStop=TRUE` → Ready 立即 FALSE，而 `AxisCmd_xPower` 仍真且无故障 → `tonReady` 2s 后报 1007。
+  - 修：改为 `xPoweredM1/M2 AND NOT xFaultM1/M2`（与 `FB_Servo` 一致）；`tools/patch_g065.py` 由 0.64 生成 **`LMM_g_0.65.xml`**。
+  - `xPowerGate` 仍含 `NOT xStop`，运动互锁不变；仅「就绪」/1007 判据修正。
 
 ## Locked decisions
 - Modbus 角色维持 **Gateway 主站 / PLC 从站**（现场 Modbus client 连 `:502` 验证）

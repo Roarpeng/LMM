@@ -375,9 +375,9 @@ xPoweredM1 := fbPowerM1.Status;
 xPoweredM2 := fbPowerM2.Status;
 xFaultM1 := AxisM1.bError AND xRegOn AND NOT (xSoftHold OR (iHoldState = 1) OR xStopping OR ((eMode <> 0) AND NOT tonJogGrace.Q));
 xFaultM2 := AxisM2.bError AND xRegOn AND NOT (xSoftHold OR (iHoldState = 1) OR xStopping OR ((eMode <> 0) AND NOT tonJogGrace.Q));
-(* 故意停调节器时仍报就绪，避免 Logic 1007 *)
-xReadyM1 := xEnable AND NOT xStop AND NOT xFaultM1;
-xReadyM2 := xEnable AND NOT xStop AND NOT xFaultM2;
+(* 就绪 = 已上电且无故障；不并入 xStop，否则停止/静默时会误报 Logic 1007 *)
+xReadyM1 := xPoweredM1 AND NOT xFaultM1;
+xReadyM2 := xPoweredM2 AND NOT xFaultM2;
 xBothPowered := xPoweredM1 AND xPoweredM2;
 xPowerGate := xEnable AND NOT xStop AND NOT xFaultM1 AND NOT xFaultM2;
 tonPowerOk(IN := xRegOn AND xBothPowered AND (eMode <> 0), PT := T#80MS);

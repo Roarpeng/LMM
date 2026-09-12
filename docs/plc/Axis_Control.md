@@ -24,6 +24,9 @@
 
 `FB_XDual` 内部：`FB_XLineTrack` 合成 `rVelM1/rVelM2` → 双 `FB_Servo`（`xUseVelCmd`，`xLimEn:=FALSE`）。
 
+- **就绪**：`xReadyM1/M2 := xPoweredM1/M2 AND NOT xFaultM1/M2`（**不并入 `xStop`**，否则停止/静默时报 1007）；
+  运动互锁另由 `xPowerGate`（含 `NOT xStop`）保证。
+
 - **直行（JogX± / 自动 MoveRel）**：`eMode=1`，M1/M2 同向；可选 `rKpTrack·rHeadingErr` 航向纠偏（trim 限 `Cfg_rPhaseMax`）
 - **原地转（SpinL/R）**：`eMode=2/3`，一正一反差速
 - **走距完成**：`xMoveRel` 上升沿锁存 `(PosM1+PosM2)/2`；运行中平均相对位移 `|Δ| ≥ |rMoveDist|` → `AxisFb_xMoveDoneX`
