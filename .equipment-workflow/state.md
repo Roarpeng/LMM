@@ -55,9 +55,10 @@
 - **WebHMI v3（2026-09-12）**：前端重构为 `web/live/{index.html, styles.css, app.js}`（无构建）；信息架构 = 总览/自动/手动/X双驱/力传感/趋势/报警/调试/系统，左导航 + 设备视图 + 急停覆盖层；通讯层与 WS 契约不变。
   - Spec：`docs/superpowers/specs/2026-09-12-webhmi-v3-ui-design.md`。
   - `gateway/test/web-client.test.js` 改为读取三文件拼接校验；`npm test` 44 PASS、运行时自检 + Mock 冒烟 PASS。
-- **视觉直控全轴（2026-09-12，仅设计/文档，未实现）**：视觉走 Gateway `/vision/*`；新增独立 `VIS_CMD 0x1200` / `VIS_STATUS 0x1300` 镜像（不动 HMI 4096/4352）；
-  使能/报警/限位/急停仍 **PLC 独占**；新增 `PRG_Vision` + `eCtrlSrc=2` 仲裁 + 300ms 看门狗。
-  - 设计：`docs/superpowers/specs/2026-09-12-vision-axis-control-design.md`；开发者接口：`docs/plc/VISION_AXIS_API.md`。
+- **视觉直控全轴（2026-09-12，change-request；仅设计/文档，未实现）**：视觉工控机**也运行 WebHMI**，与操作员共用同一 WS/JSON 接口与页面 → **不新增 /vision/* 协议**；把「每轴直控」纳入现有命令/状态映射。
+  镜像 **64W → 96W**（尾部序号 63→95，单次 FC16/FC03 内）；新增每轴 方式/速度/位置 与 Y/Z/R 实际速度反馈；
+  使能/报警/限位/急停仍 **PLC 独占**；`PRG_TcpHmi` 解码、`PRG_Logic` 直控路由 + `HMI_wDirectSeq` 300ms 看门狗；`PRG_Axis_Control` 不变。
+  - 设计：`docs/superpowers/specs/2026-09-12-vision-axis-control-design.md`（含 Gate C 写者矩阵）；接口：`docs/plc/VISION_AXIS_API.md`。
 - **现场定稿 0.67（2026-09-12）**：`LMM_g_0.67.xml` 由 PLC 导出，POU 与 0.66 完全一致；
   设备树 TCP 从站为 `Type 40502 ModbusTcpSlave`（Port 502, UnitID 255），Channel 01 input `16#1000..103F`→`%IW103`(MB_CmdIn)、
   Channel 02 output `16#1100..113F`→`%QW44`(MB_StatusOut)。**WebHMI 自动/手动实控验证通过**，报警 1007/1005 不再出现。
