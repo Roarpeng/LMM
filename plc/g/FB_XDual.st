@@ -34,6 +34,11 @@ FUNCTION_BLOCK FB_XDual
  *         改单沿起步：一个上升沿写最终目标 + 钳制用户 Acc/Dec（0.05~1.0），
  *         SM3 自带斜坡 0→目标（0.8 → 0.5s）；稳态 trim/sync 更新走限频重触发
  *         （≥200ms 一次、差值≥0.004）；减速统一 Halt（用户 Dec 对称）。
+ *   0.79：删 0.74~0.77 运行时切 CSV（SMC_SetControllerMode / SDO 直写 0x6060）：
+ *         0x6060 被映射在 RxPDO 内，由驱动组件按"映像中的设定值通道"每周期写
+ *         （仅 0x607A 在映像 → CSP=8），运行时写 9 必被下一拍覆盖。
+ *         CSV 改由从站组态决定（RxPDO 换映射 0x60FF 目标速度），组件使能时自写 9。
+ *         xModeCsvM1/M2 保留为"6060 实测=9"只读诊断。
  * ============================================================================== *)
 VAR_IN_OUT
     AxisM1 : AXIS_REF_SM3;
@@ -68,6 +73,9 @@ VAR_INPUT
     rVelM1Direct : REAL;
     rVelM2Direct : REAL;
     tDirectRetrig : TIME := T#40MS;
+    (* 0.71 CoE SDO 从站物理地址（InoProShop 设备树显示，M1=MDX_EC / M2=MDX_EC_1） *)
+    wSdoDevM1 : UINT;
+    wSdoDevM2 : UINT;
 END_VAR
 VAR_OUTPUT
     xMoveDone : BOOL;
@@ -113,6 +121,36 @@ VAR_OUTPUT
     rVelActM1Out : REAL;
     rVelActM2Out : REAL;
     xDirectActive : BOOL;
+    (* 0.71 慢速 CoE 读取：M1/M2 转矩/电流实际值（‰额定） *)
+    rTorqueActM1 : REAL;
+    rTorqueActM2 : REAL;
+    rCurrentActM1 : REAL;
+    rCurrentActM2 : REAL;
+    xParamErr : BOOL;
+    (* 0.72 驱动诊断：状态字(6041)/错误码(603F)/最大转矩(6072)/正反限幅(60E0/60E1)，原始 16 位 *)
+    wSwM1 : WORD;
+    wErrM1 : WORD;
+    wTqMaxM1 : WORD;
+    wLimPM1 : WORD;
+    wLimNM1 : WORD;
+    wSwM2 : WORD;
+    wErrM2 : WORD;
+    wTqMaxM2 : WORD;
+    wLimPM2 : WORD;
+    wLimNM2 : WORD;
+    wModeM1 : WORD;
+    wTq03M1 : WORD;
+    wTq04M1 : WORD;
+    wTq05M1 : WORD;
+    wTq06M1 : WORD;
+    wModeM2 : WORD;
+    wTq03M2 : WORD;
+    wTq04M2 : WORD;
+    wTq05M2 : WORD;
+    wTq06M2 : WORD;
+    (* 0.79 CSV 只读诊断：6060 实测 = 9（模式由从站 RxPDO 组态决定） *)
+    xModeCsvM1 : BOOL;
+    xModeCsvM2 : BOOL;
 END_VAR
 VAR
     fbPowerM1 : MC_Power;
@@ -125,6 +163,58 @@ VAR
     fbHaltM2 : MC_Halt;
     fbStopM1 : MC_Stop;
     fbStopM2 : MC_Stop;
+    (* 0.73 CoE(SDO) 慢速轮询：ETC_CO_SdoRead，每台 12 对象，24 时隙 *)
+    fbSdoTqM1 : ETC_CO_SdoRead;
+    fbSdoCurM1 : ETC_CO_SdoRead;
+    fbSdoSwM1 : ETC_CO_SdoRead;
+    fbSdoErrM1 : ETC_CO_SdoRead;
+    fbSdoTqMaxM1 : ETC_CO_SdoRead;
+    fbSdoLimPM1 : ETC_CO_SdoRead;
+    fbSdoLimNM1 : ETC_CO_SdoRead;
+    fbSdoModeM1 : ETC_CO_SdoRead;
+    fbSdoTq03M1 : ETC_CO_SdoRead;
+    fbSdoTq04M1 : ETC_CO_SdoRead;
+    fbSdoTq05M1 : ETC_CO_SdoRead;
+    fbSdoTq06M1 : ETC_CO_SdoRead;
+    fbSdoTqM2 : ETC_CO_SdoRead;
+    fbSdoCurM2 : ETC_CO_SdoRead;
+    fbSdoSwM2 : ETC_CO_SdoRead;
+    fbSdoErrM2 : ETC_CO_SdoRead;
+    fbSdoTqMaxM2 : ETC_CO_SdoRead;
+    fbSdoLimPM2 : ETC_CO_SdoRead;
+    fbSdoLimNM2 : ETC_CO_SdoRead;
+    fbSdoModeM2 : ETC_CO_SdoRead;
+    fbSdoTq03M2 : ETC_CO_SdoRead;
+    fbSdoTq04M2 : ETC_CO_SdoRead;
+    fbSdoTq05M2 : ETC_CO_SdoRead;
+    fbSdoTq06M2 : ETC_CO_SdoRead;
+    abyTqM1 : ARRAY[0..1] OF BYTE;
+    abyCurM1 : ARRAY[0..1] OF BYTE;
+    abySwM1 : ARRAY[0..1] OF BYTE;
+    abyErrM1 : ARRAY[0..1] OF BYTE;
+    abyTqMaxM1 : ARRAY[0..1] OF BYTE;
+    abyLimPM1 : ARRAY[0..1] OF BYTE;
+    abyLimNM1 : ARRAY[0..1] OF BYTE;
+    abyModeM1 : ARRAY[0..1] OF BYTE;
+    abyTq03M1 : ARRAY[0..1] OF BYTE;
+    abyTq04M1 : ARRAY[0..1] OF BYTE;
+    abyTq05M1 : ARRAY[0..1] OF BYTE;
+    abyTq06M1 : ARRAY[0..1] OF BYTE;
+    abyTqM2 : ARRAY[0..1] OF BYTE;
+    abyCurM2 : ARRAY[0..1] OF BYTE;
+    abySwM2 : ARRAY[0..1] OF BYTE;
+    abyErrM2 : ARRAY[0..1] OF BYTE;
+    abyTqMaxM2 : ARRAY[0..1] OF BYTE;
+    abyLimPM2 : ARRAY[0..1] OF BYTE;
+    abyLimNM2 : ARRAY[0..1] OF BYTE;
+    abyModeM2 : ARRAY[0..1] OF BYTE;
+    abyTq03M2 : ARRAY[0..1] OF BYTE;
+    abyTq04M2 : ARRAY[0..1] OF BYTE;
+    abyTq05M2 : ARRAY[0..1] OF BYTE;
+    abyTq06M2 : ARRAY[0..1] OF BYTE;
+    wSdoRaw : WORD;
+    tonSdoSlot : TON;
+    iSdoSlot : INT;
     eDirM1 : MC_DIRECTION;
     eDirM2 : MC_DIRECTION;
     eMode : INT;
@@ -785,3 +875,173 @@ END_IF;
 xMovePrev := xMoveRel;
 eModePrev := eMode;
 xRegOnPrev := xRegOn;
+
+(* ------------------- 10. M1/M2 驱动诊断慢速 CoE 读取（0.73） ------------------- *)
+(* TxPDO 固定映射，诊断对象读不进 PDO；用 ETC_CO_SdoRead 走非循环 SDO。
+   100ms 一时隙、24 时隙轮询（单次一个 SDO，一轮约 2.4s）。各自独立缓冲；
+   xDone 取 2 字节小端。转矩/电流为‰额定(INT16)，其余原始 UINT16。 *)
+tonSdoSlot(IN := NOT tonSdoSlot.Q, PT := T#100MS);
+IF tonSdoSlot.Q THEN
+    iSdoSlot := iSdoSlot + 1;
+    IF iSdoSlot > 23 THEN
+        iSdoSlot := 0;
+    END_IF;
+END_IF;
+fbSdoTqM1(xExecute := (iSdoSlot = 0), xAbort := FALSE, usiCom := 1, uiDevice := wSdoDevM1,
+    usiChannel := 1, wIndex := 16#6077, bySubindex := 0, udiTimeOut := 500,
+    pBuffer := ADR(abyTqM1[0]), szSize := SIZEOF(abyTqM1));
+fbSdoCurM1(xExecute := (iSdoSlot = 1), xAbort := FALSE, usiCom := 1, uiDevice := wSdoDevM1,
+    usiChannel := 1, wIndex := 16#6078, bySubindex := 0, udiTimeOut := 500,
+    pBuffer := ADR(abyCurM1[0]), szSize := SIZEOF(abyCurM1));
+fbSdoSwM1(xExecute := (iSdoSlot = 2), xAbort := FALSE, usiCom := 1, uiDevice := wSdoDevM1,
+    usiChannel := 1, wIndex := 16#6041, bySubindex := 0, udiTimeOut := 500,
+    pBuffer := ADR(abySwM1[0]), szSize := SIZEOF(abySwM1));
+fbSdoErrM1(xExecute := (iSdoSlot = 3), xAbort := FALSE, usiCom := 1, uiDevice := wSdoDevM1,
+    usiChannel := 1, wIndex := 16#603F, bySubindex := 0, udiTimeOut := 500,
+    pBuffer := ADR(abyErrM1[0]), szSize := SIZEOF(abyErrM1));
+fbSdoTqMaxM1(xExecute := (iSdoSlot = 4), xAbort := FALSE, usiCom := 1, uiDevice := wSdoDevM1,
+    usiChannel := 1, wIndex := 16#6072, bySubindex := 0, udiTimeOut := 500,
+    pBuffer := ADR(abyTqMaxM1[0]), szSize := SIZEOF(abyTqMaxM1));
+fbSdoLimPM1(xExecute := (iSdoSlot = 5), xAbort := FALSE, usiCom := 1, uiDevice := wSdoDevM1,
+    usiChannel := 1, wIndex := 16#60E0, bySubindex := 0, udiTimeOut := 500,
+    pBuffer := ADR(abyLimPM1[0]), szSize := SIZEOF(abyLimPM1));
+fbSdoLimNM1(xExecute := (iSdoSlot = 6), xAbort := FALSE, usiCom := 1, uiDevice := wSdoDevM1,
+    usiChannel := 1, wIndex := 16#60E1, bySubindex := 0, udiTimeOut := 500,
+    pBuffer := ADR(abyLimNM1[0]), szSize := SIZEOF(abyLimNM1));
+fbSdoModeM1(xExecute := (iSdoSlot = 7), xAbort := FALSE, usiCom := 1, uiDevice := wSdoDevM1,
+    usiChannel := 1, wIndex := 16#6060, bySubindex := 0, udiTimeOut := 500,
+    pBuffer := ADR(abyModeM1[0]), szSize := SIZEOF(abyModeM1));
+fbSdoTq03M1(xExecute := (iSdoSlot = 8), xAbort := FALSE, usiCom := 1, uiDevice := wSdoDevM1,
+    usiChannel := 1, wIndex := 16#2403, bySubindex := 0, udiTimeOut := 500,
+    pBuffer := ADR(abyTq03M1[0]), szSize := SIZEOF(abyTq03M1));
+fbSdoTq04M1(xExecute := (iSdoSlot = 9), xAbort := FALSE, usiCom := 1, uiDevice := wSdoDevM1,
+    usiChannel := 1, wIndex := 16#2404, bySubindex := 0, udiTimeOut := 500,
+    pBuffer := ADR(abyTq04M1[0]), szSize := SIZEOF(abyTq04M1));
+fbSdoTq05M1(xExecute := (iSdoSlot = 10), xAbort := FALSE, usiCom := 1, uiDevice := wSdoDevM1,
+    usiChannel := 1, wIndex := 16#2405, bySubindex := 0, udiTimeOut := 500,
+    pBuffer := ADR(abyTq05M1[0]), szSize := SIZEOF(abyTq05M1));
+fbSdoTq06M1(xExecute := (iSdoSlot = 11), xAbort := FALSE, usiCom := 1, uiDevice := wSdoDevM1,
+    usiChannel := 1, wIndex := 16#2406, bySubindex := 0, udiTimeOut := 500,
+    pBuffer := ADR(abyTq06M1[0]), szSize := SIZEOF(abyTq06M1));
+fbSdoTqM2(xExecute := (iSdoSlot = 12), xAbort := FALSE, usiCom := 1, uiDevice := wSdoDevM2,
+    usiChannel := 1, wIndex := 16#6077, bySubindex := 0, udiTimeOut := 500,
+    pBuffer := ADR(abyTqM2[0]), szSize := SIZEOF(abyTqM2));
+fbSdoCurM2(xExecute := (iSdoSlot = 13), xAbort := FALSE, usiCom := 1, uiDevice := wSdoDevM2,
+    usiChannel := 1, wIndex := 16#6078, bySubindex := 0, udiTimeOut := 500,
+    pBuffer := ADR(abyCurM2[0]), szSize := SIZEOF(abyCurM2));
+fbSdoSwM2(xExecute := (iSdoSlot = 14), xAbort := FALSE, usiCom := 1, uiDevice := wSdoDevM2,
+    usiChannel := 1, wIndex := 16#6041, bySubindex := 0, udiTimeOut := 500,
+    pBuffer := ADR(abySwM2[0]), szSize := SIZEOF(abySwM2));
+fbSdoErrM2(xExecute := (iSdoSlot = 15), xAbort := FALSE, usiCom := 1, uiDevice := wSdoDevM2,
+    usiChannel := 1, wIndex := 16#603F, bySubindex := 0, udiTimeOut := 500,
+    pBuffer := ADR(abyErrM2[0]), szSize := SIZEOF(abyErrM2));
+fbSdoTqMaxM2(xExecute := (iSdoSlot = 16), xAbort := FALSE, usiCom := 1, uiDevice := wSdoDevM2,
+    usiChannel := 1, wIndex := 16#6072, bySubindex := 0, udiTimeOut := 500,
+    pBuffer := ADR(abyTqMaxM2[0]), szSize := SIZEOF(abyTqMaxM2));
+fbSdoLimPM2(xExecute := (iSdoSlot = 17), xAbort := FALSE, usiCom := 1, uiDevice := wSdoDevM2,
+    usiChannel := 1, wIndex := 16#60E0, bySubindex := 0, udiTimeOut := 500,
+    pBuffer := ADR(abyLimPM2[0]), szSize := SIZEOF(abyLimPM2));
+fbSdoLimNM2(xExecute := (iSdoSlot = 18), xAbort := FALSE, usiCom := 1, uiDevice := wSdoDevM2,
+    usiChannel := 1, wIndex := 16#60E1, bySubindex := 0, udiTimeOut := 500,
+    pBuffer := ADR(abyLimNM2[0]), szSize := SIZEOF(abyLimNM2));
+fbSdoModeM2(xExecute := (iSdoSlot = 19), xAbort := FALSE, usiCom := 1, uiDevice := wSdoDevM2,
+    usiChannel := 1, wIndex := 16#6060, bySubindex := 0, udiTimeOut := 500,
+    pBuffer := ADR(abyModeM2[0]), szSize := SIZEOF(abyModeM2));
+fbSdoTq03M2(xExecute := (iSdoSlot = 20), xAbort := FALSE, usiCom := 1, uiDevice := wSdoDevM2,
+    usiChannel := 1, wIndex := 16#2403, bySubindex := 0, udiTimeOut := 500,
+    pBuffer := ADR(abyTq03M2[0]), szSize := SIZEOF(abyTq03M2));
+fbSdoTq04M2(xExecute := (iSdoSlot = 21), xAbort := FALSE, usiCom := 1, uiDevice := wSdoDevM2,
+    usiChannel := 1, wIndex := 16#2404, bySubindex := 0, udiTimeOut := 500,
+    pBuffer := ADR(abyTq04M2[0]), szSize := SIZEOF(abyTq04M2));
+fbSdoTq05M2(xExecute := (iSdoSlot = 22), xAbort := FALSE, usiCom := 1, uiDevice := wSdoDevM2,
+    usiChannel := 1, wIndex := 16#2405, bySubindex := 0, udiTimeOut := 500,
+    pBuffer := ADR(abyTq05M2[0]), szSize := SIZEOF(abyTq05M2));
+fbSdoTq06M2(xExecute := (iSdoSlot = 23), xAbort := FALSE, usiCom := 1, uiDevice := wSdoDevM2,
+    usiChannel := 1, wIndex := 16#2406, bySubindex := 0, udiTimeOut := 500,
+    pBuffer := ADR(abyTq06M2[0]), szSize := SIZEOF(abyTq06M2));
+IF fbSdoTqM1.xDone THEN
+    wSdoRaw := BYTE_TO_WORD(abyTqM1[0]) OR SHL(BYTE_TO_WORD(abyTqM1[1]), 8);
+    rTorqueActM1 := INT_TO_REAL(WORD_TO_INT(wSdoRaw));
+END_IF;
+IF fbSdoCurM1.xDone THEN
+    wSdoRaw := BYTE_TO_WORD(abyCurM1[0]) OR SHL(BYTE_TO_WORD(abyCurM1[1]), 8);
+    rCurrentActM1 := INT_TO_REAL(WORD_TO_INT(wSdoRaw));
+END_IF;
+IF fbSdoSwM1.xDone THEN
+    wSwM1 := BYTE_TO_WORD(abySwM1[0]) OR SHL(BYTE_TO_WORD(abySwM1[1]), 8);
+END_IF;
+IF fbSdoErrM1.xDone THEN
+    wErrM1 := BYTE_TO_WORD(abyErrM1[0]) OR SHL(BYTE_TO_WORD(abyErrM1[1]), 8);
+END_IF;
+IF fbSdoTqMaxM1.xDone THEN
+    wTqMaxM1 := BYTE_TO_WORD(abyTqMaxM1[0]) OR SHL(BYTE_TO_WORD(abyTqMaxM1[1]), 8);
+END_IF;
+IF fbSdoLimPM1.xDone THEN
+    wLimPM1 := BYTE_TO_WORD(abyLimPM1[0]) OR SHL(BYTE_TO_WORD(abyLimPM1[1]), 8);
+END_IF;
+IF fbSdoLimNM1.xDone THEN
+    wLimNM1 := BYTE_TO_WORD(abyLimNM1[0]) OR SHL(BYTE_TO_WORD(abyLimNM1[1]), 8);
+END_IF;
+IF fbSdoModeM1.xDone THEN
+    wModeM1 := BYTE_TO_WORD(abyModeM1[0]) OR SHL(BYTE_TO_WORD(abyModeM1[1]), 8);
+END_IF;
+IF fbSdoTq03M1.xDone THEN
+    wTq03M1 := BYTE_TO_WORD(abyTq03M1[0]) OR SHL(BYTE_TO_WORD(abyTq03M1[1]), 8);
+END_IF;
+IF fbSdoTq04M1.xDone THEN
+    wTq04M1 := BYTE_TO_WORD(abyTq04M1[0]) OR SHL(BYTE_TO_WORD(abyTq04M1[1]), 8);
+END_IF;
+IF fbSdoTq05M1.xDone THEN
+    wTq05M1 := BYTE_TO_WORD(abyTq05M1[0]) OR SHL(BYTE_TO_WORD(abyTq05M1[1]), 8);
+END_IF;
+IF fbSdoTq06M1.xDone THEN
+    wTq06M1 := BYTE_TO_WORD(abyTq06M1[0]) OR SHL(BYTE_TO_WORD(abyTq06M1[1]), 8);
+END_IF;
+IF fbSdoTqM2.xDone THEN
+    wSdoRaw := BYTE_TO_WORD(abyTqM2[0]) OR SHL(BYTE_TO_WORD(abyTqM2[1]), 8);
+    rTorqueActM2 := INT_TO_REAL(WORD_TO_INT(wSdoRaw));
+END_IF;
+IF fbSdoCurM2.xDone THEN
+    wSdoRaw := BYTE_TO_WORD(abyCurM2[0]) OR SHL(BYTE_TO_WORD(abyCurM2[1]), 8);
+    rCurrentActM2 := INT_TO_REAL(WORD_TO_INT(wSdoRaw));
+END_IF;
+IF fbSdoSwM2.xDone THEN
+    wSwM2 := BYTE_TO_WORD(abySwM2[0]) OR SHL(BYTE_TO_WORD(abySwM2[1]), 8);
+END_IF;
+IF fbSdoErrM2.xDone THEN
+    wErrM2 := BYTE_TO_WORD(abyErrM2[0]) OR SHL(BYTE_TO_WORD(abyErrM2[1]), 8);
+END_IF;
+IF fbSdoTqMaxM2.xDone THEN
+    wTqMaxM2 := BYTE_TO_WORD(abyTqMaxM2[0]) OR SHL(BYTE_TO_WORD(abyTqMaxM2[1]), 8);
+END_IF;
+IF fbSdoLimPM2.xDone THEN
+    wLimPM2 := BYTE_TO_WORD(abyLimPM2[0]) OR SHL(BYTE_TO_WORD(abyLimPM2[1]), 8);
+END_IF;
+IF fbSdoLimNM2.xDone THEN
+    wLimNM2 := BYTE_TO_WORD(abyLimNM2[0]) OR SHL(BYTE_TO_WORD(abyLimNM2[1]), 8);
+END_IF;
+IF fbSdoModeM2.xDone THEN
+    wModeM2 := BYTE_TO_WORD(abyModeM2[0]) OR SHL(BYTE_TO_WORD(abyModeM2[1]), 8);
+END_IF;
+IF fbSdoTq03M2.xDone THEN
+    wTq03M2 := BYTE_TO_WORD(abyTq03M2[0]) OR SHL(BYTE_TO_WORD(abyTq03M2[1]), 8);
+END_IF;
+IF fbSdoTq04M2.xDone THEN
+    wTq04M2 := BYTE_TO_WORD(abyTq04M2[0]) OR SHL(BYTE_TO_WORD(abyTq04M2[1]), 8);
+END_IF;
+IF fbSdoTq05M2.xDone THEN
+    wTq05M2 := BYTE_TO_WORD(abyTq05M2[0]) OR SHL(BYTE_TO_WORD(abyTq05M2[1]), 8);
+END_IF;
+IF fbSdoTq06M2.xDone THEN
+    wTq06M2 := BYTE_TO_WORD(abyTq06M2[0]) OR SHL(BYTE_TO_WORD(abyTq06M2[1]), 8);
+END_IF;
+xParamErr := fbSdoTqM1.xError OR fbSdoCurM1.xError OR fbSdoSwM1.xError OR fbSdoErrM1.xError OR fbSdoTqMaxM1.xError OR fbSdoLimPM1.xError OR fbSdoLimNM1.xError OR fbSdoModeM1.xError OR fbSdoTq03M1.xError OR fbSdoTq04M1.xError OR fbSdoTq05M1.xError OR fbSdoTq06M1.xError OR fbSdoTqM2.xError OR fbSdoCurM2.xError OR fbSdoSwM2.xError OR fbSdoErrM2.xError OR fbSdoTqMaxM2.xError OR fbSdoLimPM2.xError OR fbSdoLimNM2.xError OR fbSdoModeM2.xError OR fbSdoTq03M2.xError OR fbSdoTq04M2.xError OR fbSdoTq05M2.xError OR fbSdoTq06M2.xError;
+
+(* ------------------- 11. CSV 模式诊断（0.79 只读） ------------------- *)
+(* 0.74~0.77 的 SMC_SetControllerMode / ETC_CO_SdoWrite4 直写 0x6060 已删除：
+   0x6060 被映射在 RxPDO 内，由驱动组件按"映像中的设定值通道"每周期写（CSP=8），
+   运行时改写必被下一拍覆盖。CSV 由从站组态决定（RxPDO 映射 0x60FF 目标速度），
+   组件使能时自行写 6060=9；此处仅回读 6060 实测值供在线确认。 *)
+xModeCsvM1 := (WORD_TO_INT(wModeM1) = 9);
+xModeCsvM2 := (WORD_TO_INT(wModeM2) = 9);
+

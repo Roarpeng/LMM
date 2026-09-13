@@ -37,6 +37,9 @@ const HEAD = [
   'stSeq', 'devState', 'alarm', 'posM1', 'posM2', 'dPos',
   'vCmdM1', 'vCmdM2', 'vActM1', 'vActM2', 'syncErr',
   'faultM1', 'faultM2', 'w36hex', 'dirXActive', 'dirOnline', 'tcpConn', 'tcpTimeout',
+  'tqM1', 'tqM2', 'curM1', 'curM2', 'paramErr',
+  'swM1', 'errM1', 'tqmaxM1', 'limP1', 'limN1', 'swM2', 'errM2', 'tqmaxM2', 'limP2', 'limN2',
+  'modeM1', 'mdxTq1a', 'mdxTq1b', 'mdxTq1c', 'mdxTq1d', 'modeM2', 'mdxTq2a', 'mdxTq2b', 'mdxTq2c', 'mdxTq2d',
 ].join(',');
 
 (async () => {
@@ -62,6 +65,9 @@ const HEAD = [
         f(sw, 24), f(sw, 26), f(sw, 32), f(sw, 34), f(sw, 37),
         bit(sw, 11, 8), bit(sw, 11, 9), '0x' + sw[36].toString(16).padStart(4, '0'),
         bit(sw, 42, 0), bit(sw, 42, 4), bit(sw, 10, 14), bit(sw, 10, 15),
+        sw[49], sw[50], sw[51], sw[52], bit(sw, 53, 0),
+        sw[54], sw[55], sw[56], sw[57], sw[58], sw[59], sw[60], sw[61], sw[62], sw[63],
+        sw[64], sw[65], sw[66], sw[67], sw[68], sw[69], sw[70], sw[71], sw[72], sw[73],
       ];
       fs.writeSync(fd, row.join(',') + '\n');
     } catch (e) {

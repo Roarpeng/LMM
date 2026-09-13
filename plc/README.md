@@ -31,6 +31,8 @@ python3 tools/check_lmm.py
 
 ## g 线（当前在役 `LMM_g_*.xml`）
 
+**当前版本 `LMM_g_0.79.xml`**（仓库只保留最新 3 个 XML：0.77/0.78/0.79；历史版本在 git 历史中）。
+
 `plc/g/*.st` 是 g 线 POU 源：`FB_Servo` / `FB_XDual` / `PRG_Axis_Control` / `PRG_Logic`。
 改完用 `python3 tools/inject_g.py <in>.xml <out>.xml` 注入（只替换同名 POU，不动设备树）。
 GVL 与 `PRG_TcpHmi` 的增量（0.60 视觉直控、0.63 通用速度透传）用幂等补丁脚本

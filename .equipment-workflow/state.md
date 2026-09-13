@@ -83,7 +83,93 @@
   - **已发现代码级缺陷（方向无关）**：`xTrimPulse` 限频重触发写作 `xTrimPulsePrev := xTrimWant`（应回写 `xTrimPulse`），导致 want 持续为真时脉冲恒 0 → 起步沿之后 `rVelLatch` 不再刷新，稳态视觉 trim/sync 修正不生效。可能放大「M2 拖后」。
   - 真机：`192.168.1.88:502` 可达，运行 96W 镜像（0.69/0.70）；静置 `AxisFb_xReady=1`、`rSyncErr≈0`、无 M1/M2 故障、pos≈0.491m。
   - 取证工具：`gateway/scripts/trace-x-live.js`（只读；同采命令镜像 4096 与状态镜像 4352，输出 `gateway/x-trace-live.csv`）。
-  - 待办：抓 X+/X− 对照波形，判定 **A 命令丢失 / B 轴故障锁存 / C 驱动机械不对称**；再出补丁版本（不改设备树）。
+  - **取证结论（2026-09-12 晚；真机录波 `gateway/x-trace-live.csv`，8 段 jog：4×X+ / 4×X−）**：
+    - 命令位全程 =1（无丢失）；`vCmd=±0.110`（`HMI_rJogVelX=110`，`HMI_rAccX=HMI_rDecX=300`）符合设定；`AxisFb_xFaultM1/M2` 恒 0、`HMI_iAlarmShow=0`。
+    - X+：位置速率 **+0.107~+0.109 m/s**，按住至录波结束全程不 stall（`vAct` 符号抖动是反馈纹波，位置平滑单调）。
+    - X−：移动段 −0.070~−0.103 m/s，跑 **6~13s 后位置速率塌到 0.003~0.008 m/s（顿死后不动）**，此时命令仍 −0.11、双轴 `powered=1`、`syncWarn` 置位、`xFaultM1=0`。
+    - 现场 M1 驱动红灯闪、停一会自恢复 → **根因 C：X− 方向驱动/机械负载不对称（M1 过载告警）**，非 PLC 逻辑（方向对称、0.59 单沿在、无软限位）。
+    - 副发现：`AxisFb_xFaultM1` 映不出驱动告警（`AxisM1.bError` 未置位），驱动红灯在 WebHMI 不可见。
+  - **现场澄清（用户）**：M1 驱动**故意反向**（设备树 `MDX_EC→Axis` InvertDirection=TRUE；同向会与 M2 拉扯）；M1/M2 **均直连车轮**（无减速箱）；**过载 + 跟随误差都报过**。
+  - **设备树核对**：X 双驱 M1=`MDX_EC` / M2=`MDX_EC_1`，**两者均 0x6060=9（CSV 速度模式）**，非混合模式；Y/Z/R=`MDX_EC_2/3/4` 为 0x6060=8（CSP）。=> 两轮同构速度环 + 机械刚性耦合；任何速度环增益/限幅不一致都会退化成互相较劲。
+  - 待办：① 读 M1 驱动故障码（过载/跟随误差具体 Er.xxx）；② 逐项对齐 M1/M2 速度环增益、滤波、**分方向转矩/电流限幅 0x60E0/0x60E1、0x6072**（M1 反向时限幅被镜像，非对称限幅会让 X− 偏弱）；③ X− 阻力/车轮打滑/重量转移等机械核查；④ `xTrimPulse` 重触发逻辑评估（直接"修好"会每 200ms 重踢 Execute，有 0.58 共振风险，需台架验证）；⑤ 状态镜像加轴状态/驱动错误码透传。
+
+## 0.71 交付：X 双驱 M1/M2 转矩/电流回传（2026-09-12 晚，待烧录）
+
+- 背景：驱动 TxPDO 固定映射，`0x6077/0x6078/0x606C` 在 CoE 字典存在但**加不进 PDO**；改用 Inovance 的 `ETC_CO_SdoRead`（EtherCATStack，按从站物理地址读，非循环 SDO）。
+- PLC：`FB_XDual` 新增 4 个 `ETC_CO_SdoRead`（M1/M2 的 0x6077 转矩、0x6078 电流），100ms 时隙 ×4 轮询（单次一个 SDO，各自独立 2 字节缓冲，约 400ms 刷新）；`PRG_Axis_Control` 透传 → GVL `AxisFb_rTorqueM1/M2`、`AxisFb_rCurrentM1/M2`、`AxisFb_xParamErr`。
+- 站号：新增 RETAIN `Cfg_wSdoDevM1/M2`（默认 1001/1002）= `MDX_EC` / `MDX_EC_1` 的 EtherCAT 物理地址，**必须与 InoProShop 设备树 Address 一致**（地址不在导出 XML 里，无法自动取）。
+- 镜像：状态 word49..52 = M1/M2 转矩/电流（`SCALED_INT ×1000`，线上值=千分比额定，网关解码 1.0=100%），word53 bit0 = 读取错误。
+- 链路：`config/modbus-map.json`（status 字段 49..53）+ `docs/plc/MODBUS_MAP.md`（已重生成）+ WebHMI「X 双驱」页显示；`gateway/lib/mock-plc.js` 已补。
+- 构建：`tools/patch_g071.py`（0.70 → `LMM_g_0.71.xml`，幂等，sha256 `46636e79…`）；校验：XML parse OK、`inject_g --check` OK、`check_plcopen_xml.py` OK、`npm test` 44 PASS。
+- **烧录步骤**：InoProShop 导入 `LMM_g_0.71.xml` → 编译（若报 `ETC_CO_SdoRead` 未定义则加 `EtherCATStack` 库；若参数名不符按提示对齐，如 `bySubindex/usiChannel`）→ 核对 `Cfg_wSdoDevM1/M2` 与设备树 Address 一致 → 下载。设备树/PDO 不动。
+- 预期：WebHMI「X 双驱」页出现 M1/M2 转矩/电流（%，100%=额定）+ CoE 读取错误位；X+ / X− 时对比可判定均载。
+- 注意：0x6077/0x6078 按 CiA402 为千分比额定（1000=100%）；若驱动手册单位不同，按比例修正编码前的系数。
+
+## 0.72 交付：X 双驱驱动诊断全量回传（2026-09-12 晚，待烧录）
+
+- 目的：查清"X− 空旷卡死、两台各 100%、手能推、M1 过流 0x2000"。把驱动内部状态拉进 WebHMI。
+- PLC：`FB_XDual` 每台驱动轮询 **7 个 CoE 对象**（0x6077 转矩 / 0x6078 电流 / **0x6041 状态字** / **0x603F 错误码** / **0x6072 最大转矩** / **0x60E0 正向限** / **0x60E1 反向限**），14 时隙 ×100ms（一轮约 1.4s），各自独立缓冲。
+- 镜像：状态 word49..52 转矩/电流（0.71 已有）；**word54..63** = M1/M2 状态字/错误码/最大转矩/正反限幅（原始 16 位）。
+- 链路：map status 字段 54..63 + `MODBUS_MAP.md` 重生成 + WebHMI「X 双驱」新增「驱动诊断」卡（状态字/错误码十六进制，限幅 ÷10=%）+ mock。
+- 构建：`tools/patch_g072.py`（0.71 → `LMM_g_0.72.xml`，幂等，sha256 `1ccc6206…`）；校验：XML parse OK、`inject_g --check` OK、`check_plcopen_xml.py` OK、`npm test` 44 PASS。
+- **烧录**：导入 `LMM_g_0.72.xml` → 编译下载（库/参数名同 0.71 说明）。WebHMI 硬刷新。
+- 判读：卡住时 M1 `0x6041` bit3=1 → 驱动已 Fault（输出撤了）→"先故障后停"；`0x6072/0x60E0/0x60E1` 若 ~1000(100%) → 限幅没余量；`0x603F` 显示具体错误码（M1 实测 0x2000 = 电流类）。
+- 现场已排除：一体机无 UVW 接线、抱闸已松、增益已标定、单驱因刚性走不动、不在行程头。
+
+## 0.73 交付：MDX 模式 + 转矩限值回传（2026-09-12 晚，待烧录）
+
+- 目的：0.72 显示"驱动使能中(0x1237)、无故障、无内部限幅，却只给 ~100% 顶不动"，需确认运行模式与 MDX 特有转矩限值。
+- PLC：`FB_XDual` 每台驱动轮询 **12 个对象** = 0.72 的 7 个 + **0x6060 模式** + **0x2403/0x2404/0x2405/0x2406（MDX 转矩限值）**；24 时隙 ×100ms（一轮约 2.4s）。
+- 镜像：状态 **word64..73** = M1/M2 的 0x6060 与 0x2403~0x2406（原始 16 位）。
+- 链路：map 字段 64..73 + MODBUS_MAP 重生成 + WebHMI「驱动诊断」卡加 M1/M2 模式与限值 + mock。
+- 构建：`tools/patch_g073.py`（0.72 → `LMM_g_0.73.xml`，幂等，sha256 `9441523d…`）；XML parse OK、`inject_g --check` OK、`check_plcopen_xml.py` OK、`npm test` 44 PASS。
+- 另修：WebHMI「CoE 读取错误」标签写死的 bug（录波证明 paramErr 全程 0）→ 改为按 `AxisFb_xParamErr` 动态显示 正常/错误。
+- **0.72 记录的在役事实**：0x6077 单位 0.1%（1000=100%）；卡住全程 M1/M2 状态字 `0x1237`（使能中、无 Fault、无内部限幅）；限幅 M1 300/400/400%、M2 300/300/300%；`0x603F` 抓到 `0xFF34`。
+- 现场已排除：一体机无 UVW、抱闸已松、增益已标定、单驱因刚性走不动、不在行程头。
+
+## 0.74 交付：X 双驱强制 CSV 速度模式（2026-09-12 晚，待烧录）
+
+- 根因线索：设备树 `0x6060=9`，但**运行时读到 8（CSP）**；现场又出现"跟随误差"（CSP 才有的概念）。SM3 DS402 接口默认按 `SMC_position` 给了 CSP。
+- 修复：`FB_XDual` 第 11 节在**空闲且使能**时调 `SMC_SetControllerMode(Axis, SMC_velocity)` 把 M1/M2 切到 CSV（`SMC_velocity=2`）；Done/Error 都置 done 防反复；`bError` 经 `xModeCsvErrM*` 暴露。
+- 配置：GVL RETAIN `Cfg_xForceCsvX`（默认 TRUE，可关）。
+- 镜像：状态 **word74** bit0 M1done / bit1 M1err / bit2 M2done / bit3 M2err。
+- 链路：map 字段 + MODBUS_MAP 重生成 + WebHMI「驱动诊断」加"已切CSV/失败" + mock。
+- 构建：`tools/patch_g074.py`（0.73 → `LMM_g_0.74.xml`，幂等，sha256 `15b81b5d…`）；XML parse OK、`inject_g --check` OK、`check_plcopen_xml.py` OK、`npm test` 44 PASS。
+- 风险/前提：`SMC_SetControllerMode` 需驱动支持 CSV 且速度 PDO(0x60FF) 已映射；若 `AxisFb_xModeCsvErrM*`=TRUE 则不支持，需在 InoProShop 改轴/PDO。若 `SMC_SetControllerMode` 未定义，编译会报，需改用 InoProShop 配置法。
+- 验证：烧后看 `AxisFb_wModeM1/M2` 是否变 9、`AxisFb_xModeCsvM1/M2` 是否 done。
+
+## 0.75 交付：启动直写 0x6060=9（2026-09-12 晚，待烧录）
+
+- 现象：烧 0.74 后 CoE `0x6060` 仍=8 → `SMC_SetControllerMode` 没被驱动接受（或被 SM3 回写）。
+- 做法（按用户要求、最小化）：`FB_XDual` 第 12 节在**空闲且使能**时用 `ETC_CO_SdoWrite4` **直写 `0x6060=9`**，写一次；0.74 的 `SMC_SetControllerMode` 保留。
+- 无 GVL / 镜像 / Web 变化；构建 `tools/patch_g075.py`（0.74→`LMM_g_0.75.xml`，幂等，sha256 `95696664…`）；XML parse / `check_plcopen_xml` / `inject_g --check` OK。
+- 验证：烧后看 `AxisFb_wModeM1/wModeM2`（word64/69）是否=9。仍=8 则驱动/PDO 不支持 CSV（查 `0x6502`、RxPDO 是否含 `0x60FF`）。
+
+## 0.76 交付：SMC_SetControllerMode 每秒脉冲切 CSV（2026-09-12 晚，待烧录）
+
+- 现象：0.74 的切换条件窗口太窄（只切一次、出错即锁），运行时 0x6060 仍是 8。
+- 做法：FB_XDual 第 11 节改为**空闲且使能时每秒给一次 bExecute 脉冲**调 `SMC_SetControllerMode(SMC_velocity)`；成功判据 = `bDone` 或 **0x6060 读回=9**。0.75 的直写 0x6060 保留兜底。
+- 无 GVL / 镜像变化；`tools/patch_g076.py`（0.75→`LMM_g_0.76.xml`，幂等，sha256 `83f6a4d0…`）。
+- 驱动能力已确认：`0x6502 = 66477 = 0x103AD` → bit7 csp、**bit8 csv 均支持**，CSV 可做。
+- 验证：烧 0.76 后使能并停几秒，`AxisFb_wModeM1/wModeM2` 应变 9；`AxisFb_xModeCsvM1/M2`=TRUE，`ErrM1/M2`=FALSE。
+
+## 0.77 交付：修 0.76 重触发 bug（保持 bExecute 到 Done）（2026-09-12 晚，待烧录）
+
+- 现场：烧 0.76 后 `w74=0`、mode 仍 8。**根因**：`SMC_SetControllerMode` 切换最长约 1000 周期(~4s)，0.76 每秒脉冲会在**切完前重启** → 永远完不成。
+- 修复：第 11 节改为**保持 bExecute 到 Done/Error**，空闲且使能时切一次。
+- 无 GVL/镜像变化；`tools/patch_g077.py`（0.76→`LMM_g_0.77.xml`，幂等，sha256 `09845010…`）；XML parse / PLCopen / `inject_g --check` OK。
+- 验证：烧 0.77 后使能并停 ~5s，`AxisFb_xModeCsvM1/M2`=TRUE（w74 bit0/bit2=1），`AxisFb_wModeM1/wModeM2`→9。
+
+## 0.79 交付：CSV 根因定论 + 删除无效运行时切模式（2026-09-13，待烧录 + 设备树改 PDO）
+
+- 现象（用户）：0.78 已"设置 M1/M2 速度模式"，在线 CoE 看 6060 仍是 8（位置模式）。
+- **根因定论（两层）**：
+  1. **设备树 PDO 是 CSP 集合**：M1/M2 轴选中 RxPDO1（`0x1600` = 6040+**6060**+**607A**+60B8+60FE）；目标速度 **0x60FF 未映射**（轴映射 `diSetVelocity` AdrOffset=`0xFFFFFFFF`）。`0x6060` 在 RxPDO 内，进 OP 后由驱动组件**每周期按映像中的设定值通道写 8**；启动参数/SDO 写的 9 只在上电瞬间生效，下一拍即被覆盖 → "设了速度模式但运行时还是位置模式"。
+  2. **0.74~0.78 的运行时切换代码双重无效**：第 11 节 `SMC_SetControllerMode` 被注入脚本误嵌进 `IF fbSdoTq03M2.xDone THEN`（每 ~2.4s 只执行 1 个周期，bExecute 保持不住 ~4s → 永远切不完，w74 恒 0）；第 12 节 `ETC_CO_SdoWrite4` 直写 6060 必然被 PDO 下一拍覆盖。且即使切成功，60FF 未映射速度设定值也没有下发通道。
+- **修复路径 = 设备树（唯一生效点）**：InoProShop 中 MDX_EC / MDX_EC_1 过程数据把 RxPDO 从 **RxPDO1(0x1600, CSP)** 改为 **RxPDO4(0x1603 = 6040+6060+60FF+60FE，CSV)**（或 RxPDO2/0x1601，多 60B8）；改后轴映射自动获得 set velocity 通道，组件使能时自行写 6060=9。FB_XDual 只用 MC_MoveVelocity/Halt/Stop/SetPosition（无定位 FB），切 CSV 不破坏功能。
+- **PLC（0.79）**：删除 0.74~0.77 的运行时切 CSV 死代码（`SMC_SetControllerMode`/`ETC_CO_SdoWrite4`/`xForceCsv` 入参）；`xModeCsvM1/M2` 改为 **6060 实测=9 只读诊断**；word74 bit0/bit2=6060=9（Err 位取消）。GVL `Cfg_xForceCsvX` 保留不用（无害）。
+- 构建：`tools/inject_g.py LMM_g_0.78.xml LMM_g_0.79.xml`（sha256 `434b934b…`）；校验：XML parse OK、`inject_g --check` OK、`check_plcopen_xml.py` OK；0.79 与 0.78 差异仅 FB_XDual/PRG_Axis_Control/PRG_Logic/PRG_TcpHmi 的上述清理，无现场手改被覆盖。
+- 烧录/验证：InoProShop 导入 0.79 → 改 MDX_EC/MDX_EC_1 的 RxPDO 选择 → 编译下载 → 使能后 WebHMI 驱动诊断 `AxisFb_wModeM1/M2`（word64/69）=9、word74 bit0/bit2=1；在线 CoE 6060=9。
 
 ## Locked decisions
 - Modbus 角色维持 **Gateway 主站 / PLC 从站**（现场 Modbus client 连 `:502` 验证）

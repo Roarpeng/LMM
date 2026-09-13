@@ -4,6 +4,7 @@ PROGRAM PRG_TcpHmi
    eCtrlSrc 为 GVL 变量：0=面板/触摸屏 1=远程(Web)。
    0.68：镜像 96 字；命令 word60..75 全轴直控；状态 word39..45 回传。
    0.70：命令 word5 bit11 力峰值复位；状态 word46/47 力峰值 ×100、word48 力原始计数。 *)
+SM3001:=TRUE;
 VAR
     xInit : BOOL;
     xPanelOp : BOOL;
@@ -343,6 +344,39 @@ dwTmp := DINT_TO_DWORD(diTmp);
 MB_StatusOut[46] := DWORD_TO_WORD(SHR(dwTmp, 16));
 MB_StatusOut[47] := DWORD_TO_WORD(dwTmp AND 16#FFFF);
 MB_StatusOut[48] := Force_wRaw;
+(* 0.71 M1/M2 转矩/电流（CoE 0x6077/0x6078 慢速读取，‰额定转矩/电流）word49..52；读错误 word53 bit0 *)
+MB_StatusOut[49] := INT_TO_WORD(REAL_TO_INT(AxisFb_rTorqueM1));
+MB_StatusOut[50] := INT_TO_WORD(REAL_TO_INT(AxisFb_rTorqueM2));
+MB_StatusOut[51] := INT_TO_WORD(REAL_TO_INT(AxisFb_rCurrentM1));
+MB_StatusOut[52] := INT_TO_WORD(REAL_TO_INT(AxisFb_rCurrentM2));
+MB_StatusOut[53] := 0;
+IF AxisFb_xParamErr THEN MB_StatusOut[53] := MB_StatusOut[53] OR 1; END_IF;
+(* 0.72 驱动诊断 word54..63：M1/M2 状态字/错误码/最大转矩/正反限幅（原始 16 位） *)
+MB_StatusOut[54] := AxisFb_wSwM1;
+MB_StatusOut[55] := AxisFb_wErrM1;
+MB_StatusOut[56] := AxisFb_wTqMaxM1;
+MB_StatusOut[57] := AxisFb_wLimPM1;
+MB_StatusOut[58] := AxisFb_wLimNM1;
+MB_StatusOut[59] := AxisFb_wSwM2;
+MB_StatusOut[60] := AxisFb_wErrM2;
+MB_StatusOut[61] := AxisFb_wTqMaxM2;
+MB_StatusOut[62] := AxisFb_wLimPM2;
+MB_StatusOut[63] := AxisFb_wLimNM2;
+(* 0.73 MDX 模式与转矩限值 word64..73 *)
+MB_StatusOut[64] := AxisFb_wModeM1;
+MB_StatusOut[65] := AxisFb_wTq03M1;
+MB_StatusOut[66] := AxisFb_wTq04M1;
+MB_StatusOut[67] := AxisFb_wTq05M1;
+MB_StatusOut[68] := AxisFb_wTq06M1;
+MB_StatusOut[69] := AxisFb_wModeM2;
+MB_StatusOut[70] := AxisFb_wTq03M2;
+MB_StatusOut[71] := AxisFb_wTq04M2;
+MB_StatusOut[72] := AxisFb_wTq05M2;
+MB_StatusOut[73] := AxisFb_wTq06M2;
+(* 0.79 CSV 模式诊断 word74：bit0 M1 6060=9 / bit2 M2 6060=9（模式由从站 RxPDO 组态决定，只读） *)
+MB_StatusOut[74] := 0;
+IF AxisFb_xModeCsvM1 THEN MB_StatusOut[74] := MB_StatusOut[74] OR 1; END_IF;
+IF AxisFb_xModeCsvM2 THEN MB_StatusOut[74] := MB_StatusOut[74] OR 4; END_IF;
 MB_StatusOut[95] := Tcp_wStatusSeq;
 
 (* ===== 控制源仲裁 ===== *)

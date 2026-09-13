@@ -932,6 +932,175 @@
         "type": "UINT",
         "offset": 48,
         "zh": "【只读·力原始计数】0..65535，诊断用"
+      },
+      {
+        "name": "AxisFb_rTorqueM1",
+        "type": "SCALED_INT",
+        "offset": 49,
+        "scale": 1000,
+        "zh": "【只读·M1转矩实际】CoE 0x6077 慢速 SDO；×额定（1.0=100%额定转矩）"
+      },
+      {
+        "name": "AxisFb_rTorqueM2",
+        "type": "SCALED_INT",
+        "offset": 50,
+        "scale": 1000,
+        "zh": "【只读·M2转矩实际】CoE 0x6077；×额定（1.0=100%）"
+      },
+      {
+        "name": "AxisFb_rCurrentM1",
+        "type": "SCALED_INT",
+        "offset": 51,
+        "scale": 1000,
+        "zh": "【只读·M1电流实际】CoE 0x6078；×额定（1.0=100%额定电流）"
+      },
+      {
+        "name": "AxisFb_rCurrentM2",
+        "type": "SCALED_INT",
+        "offset": 52,
+        "scale": 1000,
+        "zh": "【只读·M2电流实际】CoE 0x6078；×额定（1.0=100%）"
+      },
+      {
+        "name": "AxisFb_xParamErr",
+        "type": "BOOL",
+        "offset": 53,
+        "bit": 0,
+        "zh": "【只读·CoE读取错误】M1/M2 转矩电流 SDO 读失败"
+      },
+      {
+        "name": "AxisFb_wSwM1",
+        "type": "UINT",
+        "offset": 54,
+        "zh": "【只读·M1状态字】CoE 0x6041 原始 16 位（bit3 Fault / bit2 OpEnabled）"
+      },
+      {
+        "name": "AxisFb_wErrM1",
+        "type": "UINT",
+        "offset": 55,
+        "zh": "【只读·M1错误码】CoE 0x603F"
+      },
+      {
+        "name": "AxisFb_wTqMaxM1",
+        "type": "UINT",
+        "offset": 56,
+        "zh": "【只读·M1最大转矩】CoE 0x6072，0.1%额定"
+      },
+      {
+        "name": "AxisFb_wLimPM1",
+        "type": "UINT",
+        "offset": 57,
+        "zh": "【只读·M1正向转矩限】CoE 0x60E0，0.1%额定"
+      },
+      {
+        "name": "AxisFb_wLimNM1",
+        "type": "UINT",
+        "offset": 58,
+        "zh": "【只读·M1反向转矩限】CoE 0x60E1，0.1%额定"
+      },
+      {
+        "name": "AxisFb_wSwM2",
+        "type": "UINT",
+        "offset": 59,
+        "zh": "【只读·M2状态字】CoE 0x6041 原始 16 位"
+      },
+      {
+        "name": "AxisFb_wErrM2",
+        "type": "UINT",
+        "offset": 60,
+        "zh": "【只读·M2错误码】CoE 0x603F"
+      },
+      {
+        "name": "AxisFb_wTqMaxM2",
+        "type": "UINT",
+        "offset": 61,
+        "zh": "【只读·M2最大转矩】CoE 0x6072，0.1%额定"
+      },
+      {
+        "name": "AxisFb_wLimPM2",
+        "type": "UINT",
+        "offset": 62,
+        "zh": "【只读·M2正向转矩限】CoE 0x60E0，0.1%额定"
+      },
+      {
+        "name": "AxisFb_wLimNM2",
+        "type": "UINT",
+        "offset": 63,
+        "zh": "【只读·M2反向转矩限】CoE 0x60E1，0.1%额定"
+      },
+      {
+        "name": "AxisFb_wModeM1",
+        "type": "UINT",
+        "offset": 64,
+        "zh": "【只读·M1运行模式】CoE 0x6060（9=CSV / 8=CSP）"
+      },
+      {
+        "name": "AxisFb_wTq03M1",
+        "type": "UINT",
+        "offset": 65,
+        "zh": "【只读·M1转矩限值】CoE 0x2403，0.1%额定"
+      },
+      {
+        "name": "AxisFb_wTq04M1",
+        "type": "UINT",
+        "offset": 66,
+        "zh": "【只读·M1转矩限值】CoE 0x2404，0.1%额定"
+      },
+      {
+        "name": "AxisFb_wTq05M1",
+        "type": "UINT",
+        "offset": 67,
+        "zh": "【只读·M1转矩限值】CoE 0x2405，0.1%额定"
+      },
+      {
+        "name": "AxisFb_wTq06M1",
+        "type": "UINT",
+        "offset": 68,
+        "zh": "【只读·M1转矩限值】CoE 0x2406，0.1%额定"
+      },
+      {
+        "name": "AxisFb_wModeM2",
+        "type": "UINT",
+        "offset": 69,
+        "zh": "【只读·M2运行模式】CoE 0x6060（9=CSV / 8=CSP）"
+      },
+      {
+        "name": "AxisFb_wTq03M2",
+        "type": "UINT",
+        "offset": 70,
+        "zh": "【只读·M2转矩限值】CoE 0x2403，0.1%额定"
+      },
+      {
+        "name": "AxisFb_wTq04M2",
+        "type": "UINT",
+        "offset": 71,
+        "zh": "【只读·M2转矩限值】CoE 0x2404，0.1%额定"
+      },
+      {
+        "name": "AxisFb_wTq05M2",
+        "type": "UINT",
+        "offset": 72,
+        "zh": "【只读·M2转矩限值】CoE 0x2405，0.1%额定"
+      },
+      {
+        "name": "AxisFb_wTq06M2",
+        "type": "UINT",
+        "offset": 73,
+        "zh": "【只读·M2转矩限值】CoE 0x2406，0.1%额定"
+      },
+      {
+        "name": "AxisFb_xModeCsvM1",
+        "type": "BOOL",
+        "offset": 74,
+        "bit": 0,
+        "zh": "【只读·M1 6060 实测=9(CSV)】模式由从站 RxPDO 组态决定"
+      },
+      {
+        "name": "AxisFb_xModeCsvM2",
+        "type": "BOOL",
+        "offset": 74,
+        "bit": 2,
+        "zh": "【只读·M2 6060 实测=9(CSV)】"
       }
     ]
   },

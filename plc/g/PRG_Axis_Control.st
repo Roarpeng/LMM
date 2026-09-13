@@ -35,7 +35,8 @@ fbX(
     rTrimMax := Cfg_rPhaseMax,
     (* 0.60 视觉直控：绕过内部差速，直接给 M1/M2 速度 *)
     xDirectMode := AxisCmd_xDirectVel,
-    rVelM1Direct := AxisCmd_rVelM1Set, rVelM2Direct := AxisCmd_rVelM2Set);
+    rVelM1Direct := AxisCmd_rVelM1Set, rVelM2Direct := AxisCmd_rVelM2Set,
+    wSdoDevM1 := Cfg_wSdoDevM1, wSdoDevM2 := Cfg_wSdoDevM2);
 AxisFb_xMoveDoneX := fbX.xMoveDone;
 AxisFb_rPosX := fbX.rPosV;
 AxisFb_rSyncErr := fbX.rSyncErr;
@@ -49,6 +50,37 @@ AxisFb_xSyncFault := fbX.xSyncFault;
 AxisFb_iGantryState := fbX.iState;
 AxisFb_rVelCmdM1 := fbX.rVelCmdM1;
 AxisFb_rVelCmdM2 := fbX.rVelCmdM2;
+(* 0.71 M1/M2 转矩/电流（CoE 0x6077/0x6078 慢速读取，‰额定） *)
+AxisFb_rTorqueM1 := fbX.rTorqueActM1;
+AxisFb_rTorqueM2 := fbX.rTorqueActM2;
+AxisFb_rCurrentM1 := fbX.rCurrentActM1;
+AxisFb_rCurrentM2 := fbX.rCurrentActM2;
+AxisFb_xParamErr := fbX.xParamErr;
+(* 0.72 驱动诊断（原始 16 位） *)
+AxisFb_wSwM1 := fbX.wSwM1;
+AxisFb_wErrM1 := fbX.wErrM1;
+AxisFb_wTqMaxM1 := fbX.wTqMaxM1;
+AxisFb_wLimPM1 := fbX.wLimPM1;
+AxisFb_wLimNM1 := fbX.wLimNM1;
+AxisFb_wSwM2 := fbX.wSwM2;
+AxisFb_wErrM2 := fbX.wErrM2;
+AxisFb_wTqMaxM2 := fbX.wTqMaxM2;
+AxisFb_wLimPM2 := fbX.wLimPM2;
+AxisFb_wLimNM2 := fbX.wLimNM2;
+(* 0.73 MDX：模式(0x6060) + 转矩限值(0x2403~0x2406) *)
+AxisFb_wModeM1 := fbX.wModeM1;
+AxisFb_wTq03M1 := fbX.wTq03M1;
+AxisFb_wTq04M1 := fbX.wTq04M1;
+AxisFb_wTq05M1 := fbX.wTq05M1;
+AxisFb_wTq06M1 := fbX.wTq06M1;
+AxisFb_wModeM2 := fbX.wModeM2;
+AxisFb_wTq03M2 := fbX.wTq03M2;
+AxisFb_wTq04M2 := fbX.wTq04M2;
+AxisFb_wTq05M2 := fbX.wTq05M2;
+AxisFb_wTq06M2 := fbX.wTq06M2;
+    (* 0.79 CSV 只读诊断（6060 实测=9） *)
+    AxisFb_xModeCsvM1 := fbX.xModeCsvM1;
+    AxisFb_xModeCsvM2 := fbX.xModeCsvM2;
 AxisFb_rPosM1 := fbX.rPosM1;
 AxisFb_rPosM2 := fbX.rPosM2;
 AxisFb_xMovingM1 := fbX.xMovingM1;

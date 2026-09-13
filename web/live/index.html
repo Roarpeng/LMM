@@ -204,6 +204,47 @@
           </div>
         </div>
         <div class="card span">
+          <h2>M1/M2 负载（转矩 / 电流）</h2>
+          <div class="metrics">
+            <div class="metric"><div class="k">M1 转矩 %</div><div class="v" id="x-tq-m1">—</div></div>
+            <div class="metric"><div class="k">M2 转矩 %</div><div class="v" id="x-tq-m2">—</div></div>
+            <div class="metric"><div class="k">M1 电流 %</div><div class="v" id="x-cur-m1">—</div></div>
+            <div class="metric"><div class="k">M2 电流 %</div><div class="v" id="x-cur-m2">—</div></div>
+          </div>
+          <div class="row" style="margin-top:10px">
+            <span class="chip" id="x-param-err"><span class="dot"></span><b>CoE —</b></span>
+          </div>
+          <div class="hint">转矩/电流为额定百分比（100%=额定）；CoE 0x6077/0x6078 慢速 SDO，约 400ms 刷新。需 PLC ≥0.71 且网关已重启。</div>
+        </div>
+        <div class="card span">
+          <h2>驱动诊断 · M1/M2（状态字 / 错误码 / 限幅）</h2>
+          <div class="list">
+            <div class="item"><span class="name">M1 状态字 AxisFb_wSwM1</span><span class="val" id="x-sw1">—</span></div>
+            <div class="item"><span class="name">M1 错误码 AxisFb_wErrM1</span><span class="val" id="x-err1">—</span></div>
+            <div class="item"><span class="name">M1 最大转矩 AxisFb_wTqMaxM1</span><span class="val" id="x-tqmax1">—</span></div>
+            <div class="item"><span class="name">M1 正向限 AxisFb_wLimPM1</span><span class="val" id="x-limp1">—</span></div>
+            <div class="item"><span class="name">M1 反向限 AxisFb_wLimNM1</span><span class="val" id="x-limn1">—</span></div>
+            <div class="item"><span class="name">M2 状态字 AxisFb_wSwM2</span><span class="val" id="x-sw2">—</span></div>
+            <div class="item"><span class="name">M2 错误码 AxisFb_wErrM2</span><span class="val" id="x-err2">—</span></div>
+            <div class="item"><span class="name">M2 最大转矩 AxisFb_wTqMaxM2</span><span class="val" id="x-tqmax2">—</span></div>
+            <div class="item"><span class="name">M2 正向限 AxisFb_wLimPM2</span><span class="val" id="x-limp2">—</span></div>
+            <div class="item"><span class="name">M2 反向限 AxisFb_wLimNM2</span><span class="val" id="x-limn2">—</span></div>
+            <div class="item"><span class="name">M1 模式 AxisFb_wModeM1</span><span class="val" id="x-mode1">—</span></div>
+            <div class="item"><span class="name">M1 限值2403 AxisFb_wTq03M1</span><span class="val" id="x-tq031">—</span></div>
+            <div class="item"><span class="name">M1 限值2404 AxisFb_wTq04M1</span><span class="val" id="x-tq041">—</span></div>
+            <div class="item"><span class="name">M1 限值2405 AxisFb_wTq05M1</span><span class="val" id="x-tq051">—</span></div>
+            <div class="item"><span class="name">M1 限值2406 AxisFb_wTq06M1</span><span class="val" id="x-tq061">—</span></div>
+            <div class="item"><span class="name">M2 模式 AxisFb_wModeM2</span><span class="val" id="x-mode2">—</span></div>
+            <div class="item"><span class="name">M2 限值2403 AxisFb_wTq03M2</span><span class="val" id="x-tq032">—</span></div>
+            <div class="item"><span class="name">M2 限值2404 AxisFb_wTq04M2</span><span class="val" id="x-tq042">—</span></div>
+            <div class="item"><span class="name">M2 限值2405 AxisFb_wTq05M2</span><span class="val" id="x-tq052">—</span></div>
+            <div class="item"><span class="name">M2 限值2406 AxisFb_wTq06M2</span><span class="val" id="x-tq062">—</span></div>
+            <div class="item"><span class="name">M1 6060=9(CSV) AxisFb_xModeCsvM1</span><span class="val" id="x-csv1">—</span></div>
+            <div class="item"><span class="name">M2 6060=9(CSV) AxisFb_xModeCsvM2</span><span class="val" id="x-csv2">—</span></div>
+          </div>
+          <div class="hint">状态字/错误码为十六进制；限幅数值 ÷10 = %（0.1%单位）；CoE 慢速 SDO，一轮约 1.4s。</div>
+        </div>
+        <div class="card span">
           <h2>速度趋势</h2>
           <canvas id="trend-xdual" width="900" height="260"></canvas>
         </div>
@@ -263,6 +304,11 @@
             <div class="item"><span class="name">M1 指令速度 AxisFb_rVelCmdM1</span><span class="val" id="d-cmd-m1">—</span></div>
             <div class="item"><span class="name">M2 指令速度 AxisFb_rVelCmdM2</span><span class="val" id="d-cmd-m2">—</span></div>
             <div class="item"><span class="name">同步误差 AxisFb_rSyncErr</span><span class="val" id="d-sync">—</span></div>
+            <div class="item"><span class="name">M1 转矩 AxisFb_rTorqueM1</span><span class="val" id="d-tq-m1">—</span></div>
+            <div class="item"><span class="name">M2 转矩 AxisFb_rTorqueM2</span><span class="val" id="d-tq-m2">—</span></div>
+            <div class="item"><span class="name">M1 电流 AxisFb_rCurrentM1</span><span class="val" id="d-cur-m1">—</span></div>
+            <div class="item"><span class="name">M2 电流 AxisFb_rCurrentM2</span><span class="val" id="d-cur-m2">—</span></div>
+            <div class="item"><span class="name">CoE 读取错误 AxisFb_xParamErr</span><span class="val" id="d-param-err">—</span></div>
           </div>
         </div>
 

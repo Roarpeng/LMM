@@ -345,6 +345,33 @@
     const sw = $('sync-warn'); if (sw) sw.className = 'chip ' + (S.AxisFb_xSyncWarn ? 'warn' : ''); const sf = $('sync-fault'); if (sf) sf.className = 'chip ' + (S.AxisFb_xSyncFault ? 'alarm' : '');
     const da = $('d-active'); if (da) da.className = 'chip ' + (S.Direct_xActive ? 'run' : ''); const doln = $('d-online'); if (doln) doln.className = 'chip ' + (S.Direct_xOnline ? 'ok' : '');
     setText('d-act-m1', 'M1 ' + fmt(S.Direct_rVelM1Act, 3)); setText('d-act-m2', 'M2 ' + fmt(S.Direct_rVelM2Act, 3));
+    setText('x-tq-m1', S.AxisFb_rTorqueM1 == null ? '—' : fmt(S.AxisFb_rTorqueM1 * 100, 1) + '%');
+    setText('x-tq-m2', S.AxisFb_rTorqueM2 == null ? '—' : fmt(S.AxisFb_rTorqueM2 * 100, 1) + '%');
+    setText('x-cur-m1', S.AxisFb_rCurrentM1 == null ? '—' : fmt(S.AxisFb_rCurrentM1 * 100, 1) + '%');
+    setText('x-cur-m2', S.AxisFb_rCurrentM2 == null ? '—' : fmt(S.AxisFb_rCurrentM2 * 100, 1) + '%');
+    const xpe = $('x-param-err'); if (xpe) { xpe.className = 'chip ' + (S.AxisFb_xParamErr ? 'alarm' : 'ok'); const b = xpe.querySelector('b'); if (b) b.textContent = S.AxisFb_xParamErr ? 'CoE 读取错误' : 'CoE 读取正常'; }
+    setText('x-sw1', S.AxisFb_wSwM1 == null ? '—' : '0x' + Number(S.AxisFb_wSwM1).toString(16).padStart(4, '0'));
+    setText('x-err1', S.AxisFb_wErrM1 == null ? '—' : '0x' + Number(S.AxisFb_wErrM1).toString(16).padStart(4, '0'));
+    setText('x-tqmax1', S.AxisFb_wTqMaxM1 == null ? '—' : fmt(S.AxisFb_wTqMaxM1 / 10, 1) + '%');
+    setText('x-limp1', S.AxisFb_wLimPM1 == null ? '—' : fmt(S.AxisFb_wLimPM1 / 10, 1) + '%');
+    setText('x-limn1', S.AxisFb_wLimNM1 == null ? '—' : fmt(S.AxisFb_wLimNM1 / 10, 1) + '%');
+    setText('x-sw2', S.AxisFb_wSwM2 == null ? '—' : '0x' + Number(S.AxisFb_wSwM2).toString(16).padStart(4, '0'));
+    setText('x-err2', S.AxisFb_wErrM2 == null ? '—' : '0x' + Number(S.AxisFb_wErrM2).toString(16).padStart(4, '0'));
+    setText('x-tqmax2', S.AxisFb_wTqMaxM2 == null ? '—' : fmt(S.AxisFb_wTqMaxM2 / 10, 1) + '%');
+    setText('x-limp2', S.AxisFb_wLimPM2 == null ? '—' : fmt(S.AxisFb_wLimPM2 / 10, 1) + '%');
+    setText('x-limn2', S.AxisFb_wLimNM2 == null ? '—' : fmt(S.AxisFb_wLimNM2 / 10, 1) + '%');
+    setText('x-mode1', S.AxisFb_wModeM1 == null ? '—' : ('M=' + fmt(S.AxisFb_wModeM1, 0)));
+    setText('x-tq031', S.AxisFb_wTq03M1 == null ? '—' : (fmt(S.AxisFb_wTq03M1 / 10, 1) + '%'));
+    setText('x-tq041', S.AxisFb_wTq04M1 == null ? '—' : (fmt(S.AxisFb_wTq04M1 / 10, 1) + '%'));
+    setText('x-tq051', S.AxisFb_wTq05M1 == null ? '—' : (fmt(S.AxisFb_wTq05M1 / 10, 1) + '%'));
+    setText('x-tq061', S.AxisFb_wTq06M1 == null ? '—' : (fmt(S.AxisFb_wTq06M1 / 10, 1) + '%'));
+    setText('x-mode2', S.AxisFb_wModeM2 == null ? '—' : ('M=' + fmt(S.AxisFb_wModeM2, 0)));
+    setText('x-tq032', S.AxisFb_wTq03M2 == null ? '—' : (fmt(S.AxisFb_wTq03M2 / 10, 1) + '%'));
+    setText('x-tq042', S.AxisFb_wTq04M2 == null ? '—' : (fmt(S.AxisFb_wTq04M2 / 10, 1) + '%'));
+    setText('x-tq052', S.AxisFb_wTq05M2 == null ? '—' : (fmt(S.AxisFb_wTq05M2 / 10, 1) + '%'));
+    setText('x-tq062', S.AxisFb_wTq06M2 == null ? '—' : (fmt(S.AxisFb_wTq06M2 / 10, 1) + '%'));
+    setText('x-csv1', S.AxisFb_xModeCsvM1 ? 'TRUE' : 'FALSE');
+    setText('x-csv2', S.AxisFb_xModeCsvM2 ? 'TRUE' : 'FALSE');
 
     // force
     const fok = S.Force_xCommOk && !S.Force_xTimeout && !S.Force_xSlaveFail;
@@ -439,6 +466,11 @@
     setText('d-m1-act', fmt(S.AxisFb_rVelActM1, 3)); setText('d-m2-act', fmt(S.AxisFb_rVelActM2, 3));
     setText('d-m1-pos', fmt(S.AxisFb_rPosM1, 4)); setText('d-m2-pos', fmt(S.AxisFb_rPosM2, 4));
     setText('d-sync', fmt(S.AxisFb_rSyncErr, 4));
+    setText('d-tq-m1', S.AxisFb_rTorqueM1 == null ? '—' : fmt(S.AxisFb_rTorqueM1 * 100, 1) + '%');
+    setText('d-tq-m2', S.AxisFb_rTorqueM2 == null ? '—' : fmt(S.AxisFb_rTorqueM2 * 100, 1) + '%');
+    setText('d-cur-m1', S.AxisFb_rCurrentM1 == null ? '—' : fmt(S.AxisFb_rCurrentM1 * 100, 1) + '%');
+    setText('d-cur-m2', S.AxisFb_rCurrentM2 == null ? '—' : fmt(S.AxisFb_rCurrentM2 * 100, 1) + '%');
+    setText('d-param-err', S.AxisFb_xParamErr ? 'TRUE' : 'FALSE');
     setText('d-y-act', fmt(S.AxisFb_rVelActY, 3));
     setText('d-z-act', fmt(S.AxisFb_rVelActZ, 3));
     setText('d-r-act', fmt(S.AxisFb_rVelActR, 3));
