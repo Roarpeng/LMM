@@ -125,6 +125,7 @@ function startGateway(env = process.env) {
   const statusTimeoutMs = Number(env.STATUS_TIMEOUT_MS || 1000);
   const statusCheckMs = Number(env.STATUS_CHECK_MS || 100);
   const visionTimeoutMs = Number(env.VISION_TIMEOUT_MS || 200);
+  const cmdEchoMs = Number(env.CMD_ECHO_MS || 200);
   let handleVision = () => {};
   const httpServer = createHttpServer(ROOT, {
     onVision: (message) => handleVision(message),
@@ -136,6 +137,8 @@ function startGateway(env = process.env) {
   let statusIsOffline = true;
   let leaseOwner = null;
   let leaseTimer = null;
+  let cmdEchoTimer = null;
+  let cmdEchoAt = 0;
   let closing = false;
   let clientSeq = 0;
   const startedAt = Date.now();
@@ -145,6 +148,31 @@ function startGateway(env = process.env) {
     for (const client of wss.clients) {
       if (client.readyState === WebSocket.OPEN) client.send(payload);
     }
+  }
+
+  // 命令镜像回显 {t:"c"}：网关实际收下、将写给 PLC 的命令（含其他写者，如视觉工控机），
+  // 供所有页面只读显示。写入后按 CMD_ECHO_MS 节流（首帧立即、末帧补发），租约变化/安全值立即发。
+  function commandEcho() {
+    return {
+      t: 'c',
+      owner: leaseOwner ? leaseOwner._clientId ?? null : null,
+      at: Date.now(),
+      values: store.getCommandValues(),
+    };
+  }
+
+  function broadcastCommandEcho() {
+    clearTimeout(cmdEchoTimer);
+    cmdEchoTimer = null;
+    cmdEchoAt = Date.now();
+    broadcast(commandEcho());
+  }
+
+  function scheduleCommandEcho() {
+    if (cmdEchoTimer) return;
+    const wait = cmdEchoMs - (Date.now() - cmdEchoAt);
+    if (wait <= 0) broadcastCommandEcho();
+    else cmdEchoTimer = setTimeout(broadcastCommandEcho, wait);
   }
 
   const store = createModbusStore({
@@ -190,13 +218,16 @@ function startGateway(env = process.env) {
     store.safeguardCommands();
     if (mockPlc) mockPlc.applyWrite(store.getCommandValues());
     broadcast({ t: 'lease', owner: null });
+    if (!closing) broadcastCommandEcho();
   }
 
   function renewWriterLease(ws) {
+    const changed = leaseOwner !== ws;
     leaseOwner = ws;
     clearTimeout(leaseTimer);
     leaseTimer = setTimeout(() => safeguardAndRelease(ws), writerLeaseMs);
-    broadcast({ t: 'lease', owner: ws._clientId ?? null });
+    // 只在易主时广播（续约每 30 ms 一次，逐次广播会刷屏）；新连接在 connection 时单独补发
+    if (changed) broadcast({ t: 'lease', owner: ws._clientId ?? null });
   }
 
   if (mode === 'mock') {
@@ -270,6 +301,8 @@ function startGateway(env = process.env) {
     ws._clientId = ++clientSeq;
     ws.send(JSON.stringify(latestStatus));
     ws.send(JSON.stringify({ t: 'hello', clientId: ws._clientId, mode }));
+    if (leaseOwner) ws.send(JSON.stringify({ t: 'lease', owner: leaseOwner._clientId ?? null }));
+    ws.send(JSON.stringify(commandEcho()));
     ws.on('close', () => safeguardAndRelease(ws));
     ws.on('message', (raw) => {
       let message;
@@ -298,6 +331,7 @@ function startGateway(env = process.env) {
         store.applyWebWrite(message);
         if (mockPlc) mockPlc.applyWrite(message);
         renewWriterLease(ws);
+        scheduleCommandEcho();
         // 写入确认：让页面能区分「点了但没到网关」与「网关已收下」
         ws.send(JSON.stringify({ t: 'wack', seq: message.seq ?? null, at: Date.now() }));
       } catch (error) {
@@ -340,6 +374,7 @@ function startGateway(env = process.env) {
       closing = true;
       if (leaseOwner) safeguardAndRelease(leaseOwner);
       clearTimeout(leaseTimer);
+      clearTimeout(cmdEchoTimer);
       clearInterval(mockTimer);
       clearInterval(statusTimer);
       clearInterval(visionTimer);

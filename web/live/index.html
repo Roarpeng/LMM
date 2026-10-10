@@ -281,12 +281,15 @@
             <div class="item"><span class="name">心跳在线 Direct2_xOnline</span><span class="val" id="d2-online">—</span></div>
             <div class="item"><span class="name">安全允许 Direct2_xSafe</span><span class="val" id="d2-safe">—</span></div>
             <div class="item"><span class="name">在役 X/Y/Z/R Direct2_xActiveX / Y / Z / R</span><span class="val mono" id="d2-active">—</span></div>
-            <div class="item"><span class="name">心跳序号 HMI_wDirectSeq → Direct2_wSeqEcho</span><span class="val mono" id="d2-seq">—</span></div>
+            <div class="item"><span class="name">当前写者（写租约）</span><span class="val mono" id="d2-writer">—</span></div>
+            <div class="item"><span class="name">网关实收 直控使能 / 点动X+− HMI_xDirectEnable / HMI_xJogXPos HMI_xJogXNeg</span><span class="val mono" id="d2-cmd">—</span></div>
+            <div class="item"><span class="name">网关实收 航向 / Kp HMI_rHeadingErr / HMI_rKpTrack</span><span class="val mono" id="d2-heading">—</span></div>
+            <div class="item"><span class="name">心跳序号（网关实收）HMI_wDirectSeq → Direct2_wSeqEcho</span><span class="val mono" id="d2-seq">—</span></div>
             <div class="item"><span class="name">全轴就绪 AxisFb_xReady</span><span class="val" id="d-ready">—</span></div>
             <div class="item"><span class="name">报警号 HMI_iAlarmShow</span><span class="val" id="d-alarm">—</span></div>
             <div class="item"><span class="name">使能前置 手动/无报警/无急停</span><span class="val mono" id="dir-guard">—</span></div>
           </div>
-          <div class="hint">视觉工控机与操作员共用本页写入；M1/M2 走速度环（无独立位置），X 位置为整机目标 HMI_rDirectPosX。使能/报警/限位/急停由 PLC 全权负责。</div>
+          <div class="hint">视觉工控机与操作员共用本页写入；M1/M2 走速度环（无独立位置），X 位置为整机目标 HMI_rDirectPosX。使能/报警/限位/急停由 PLC 全权负责。「网关实收」是网关当前命令镜像（谁持有写租约就是谁写的），视觉工控机下发的航向在这里看；航向只在 X 走直线（点动 X / 自动走距）时才产生 M1/M2 差速。</div>
         </div>
 
         <div class="card span">
@@ -336,8 +339,8 @@
           <div class="slider"><span class="lab">航向误差 rad</span><input type="range" id="p-herr2" min="-0.5" max="0.5" step="0.01" value="0" /><input type="number" id="n-herr2" step="0.01" value="0" /></div>
           <div class="slider"><span class="lab">纠偏 Kp</span><input type="range" id="p-kpt2" min="0" max="3" step="0.01" value="0" /><input type="number" id="n-kpt2" step="0.01" value="0" /></div>
           <div class="list">
-            <div class="item"><span class="name">航向误差 HMI_rHeadingErr</span><span class="val mono" id="d-heading-err">—</span></div>
-            <div class="item"><span class="name">纠偏 Kp HMI_rKpTrack</span><span class="val mono" id="d-heading-kp">—</span></div>
+            <div class="item"><span class="name">航向误差（网关实收）HMI_rHeadingErr</span><span class="val mono" id="d-heading-err">—</span></div>
+            <div class="item"><span class="name">纠偏 Kp（网关实收）HMI_rKpTrack</span><span class="val mono" id="d-heading-kp">—</span></div>
           </div>
           <div class="hint" id="d-heading-hint">（A）角度纠偏与（B）直给互斥。</div>
         </div>

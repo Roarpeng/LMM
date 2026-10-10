@@ -54,7 +54,8 @@ npm start           # 仅本地 Mock（无 PLC）
 ## 诊断与实时性
 
 - `GET /health`：模式、客户端数、写租约归属、在线判定、Modbus 主站诊断（连接/轮询/错误计数/最近成功）。
-- WS 连接立即收到首帧 `t:"s"`，随后 `t:"hello"`（clientId/mode）；写租约变化广播 `t:"lease"`。
+- WS 连接立即收到首帧 `t:"s"`，随后 `t:"hello"`（clientId/mode）、当前租约 `t:"lease"`（有写者时）和命令镜像 `t:"c"`；写租约**易主时**广播 `t:"lease"`（续约不广播）。
+- 命令镜像回显 `{"t":"c","owner":N|null,"at":ms,"values":{...}}`：网关实际收下、将写给 PLC 的命令（含视觉工控机等其他写者），写入后按 `CMD_ECHO_MS`（默认 200 ms）节流广播，租约释放切安全值时立即广播。WebHMI 直控页「网关实收」与寄存器表命令区据此显示。
 - 遥测为**每轮询周期整帧推送**（非浏览器轮询）；默认 50ms，端到端典型 50–120ms。WebHMI v2 用 rAF 合帧 + 变更 diff 渲染。
 - Mock 冒烟：`cd gateway && node scripts/smoke-webhmi.js`（校验页面/health/map/WS 新字段）。
 - 外部工步（0.80）验收：`node scripts/smoke-step.js [--hold] [--fault heartbeat|stop|busy|nocontact|limit]`，扮演上位机经 WS 跑一道作业；台架连真网关加 `--url ws://… --allow-motion`。接口见 `docs/plc/STEP_MODE.md`。

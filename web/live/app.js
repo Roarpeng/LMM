@@ -73,6 +73,8 @@
     HMI_iDirectModeZ: 0, HMI_rDirectVelZ: 0, HMI_rDirectPosZ: 0, HMI_iDirectModeR: 0, HMI_rDirectVelR: 0, HMI_rDirectPosR: 0,
   };
   const S = {};
+  // 网关命令镜像回显 {t:'c'}：当前写者（可能是视觉工控机）实际下发、网关将写给 PLC 的命令；只读显示
+  let CMD = null;
   const ACT = { 'x+': 'HMI_xJogXPos', 'x-': 'HMI_xJogXNeg', spinL: 'HMI_xSpinLeft', spinR: 'HMI_xSpinRight',
     'y+': 'HMI_xJogYPos', 'y-': 'HMI_xJogYNeg', 'z+': 'HMI_xJogZPos', 'z-': 'HMI_xJogZNeg', 'r+': 'HMI_xJogRPos', 'r-': 'HMI_xJogRNeg' };
   const KEYMAP = { KeyW: 'x+', KeyS: 'x-', KeyA: 'y-', KeyD: 'y+', KeyQ: 'z+', KeyE: 'z-', KeyZ: 'r+', KeyC: 'r-', KeyX: 'spinL', KeyV: 'spinR' };
@@ -196,7 +198,7 @@
     ws = new WebSocket(proto + '://' + location.host);
     ws.onopen = () => { setConn(true); log('WS open'); ws.send(JSON.stringify({ t: 'ping' })); };
     ws.onclose = () => {
-      controlClaimed = false; dirty = false; leaseOwner = null; setConn(false); log('WS closed - retry 2s', 'warn');
+      controlClaimed = false; dirty = false; leaseOwner = null; CMD = null; setConn(false); log('WS closed - retry 2s', 'warn');
       Object.keys(ACT).forEach((k) => { W[ACT[k]] = false; });
       W.HMI_xStart = false; W.HMI_xEnable = false; W.HMI_xAutoStart = false; W.HMI_xStop = false; W.HMI_xEStop = true; W.HMI_xForceGuide = false; W.HMI_xDirectEnable = false;
       setTimeout(connect, 2000);
@@ -207,6 +209,7 @@
       if (msg.t === 'pong') { applyPong(msg); return; }
       if (msg.t === 'hello') { clientId = msg.clientId; if (msg.mode) S._gateway = msg.mode; return; }
       if (msg.t === 'lease') { leaseOwner = msg.owner; return; }
+      if (msg.t === 'c') { CMD = msg; schedule(); return; }
       if (msg.t === 'wack') { lastAckAt = Date.now(); setText('cmd-ack', 'ack seq=' + (msg.seq == null ? '—' : msg.seq) + ' @ ' + new Date().toLocaleTimeString()); return; }
       if (msg.t === 'err') { log('err ' + (msg.msg || msg.code), 'err'); return; }
       if (msg.t === 's' || msg.HMI_eDevState !== undefined) ingestStatus(msg);
@@ -459,7 +462,15 @@
     setText('d2-online', online ? 'TRUE' : 'FALSE');
     setText('d2-safe', safe ? 'TRUE' : 'FALSE');
     setText('d2-active', 'X=' + (S.Direct2_xActiveX ? 'T' : 'F') + ' Y=' + (S.Direct2_xActiveY ? 'T' : 'F') + ' Z=' + (S.Direct2_xActiveZ ? 'T' : 'F') + ' R=' + (S.Direct2_xActiveR ? 'T' : 'F'));
-    setText('d2-seq', fmt(W.HMI_wDirectSeq, 0) + ' → ' + (S.Direct2_wSeqEcho == null ? '—' : fmt(S.Direct2_wSeqEcho, 0)));
+    // 网关实收（命令镜像回显）：谁持有写租约就显示谁写的值；本页未写时也能看到视觉工控机的下发
+    const cv = (CMD && CMD.values) || {};
+    const has = (k) => CMD != null && cv[k] !== undefined;
+    const tfc = (k) => (has(k) ? (cv[k] ? 'T' : 'F') : '—');
+    setText('d2-writer', CMD == null ? '—' : (CMD.owner == null ? '无（命令镜像为安全值）'
+      : (CMD.owner === clientId ? '本页 #' + CMD.owner : '#' + CMD.owner + '（其他客户端，如视觉工控机）')));
+    setText('d2-cmd', tfc('HMI_xDirectEnable') + ' / ' + tfc('HMI_xJogXPos') + tfc('HMI_xJogXNeg') + ' @ ' + (has('HMI_rJogVelX') ? fmt(cv.HMI_rJogVelX, 3) : '—') + ' m/s');
+    setText('d2-heading', (has('HMI_rHeadingErr') ? fmt(cv.HMI_rHeadingErr, 4) : '—') + ' rad / ' + (has('HMI_rKpTrack') ? fmt(cv.HMI_rKpTrack, 3) : '—'));
+    setText('d2-seq', fmt(has('HMI_wDirectSeq') ? cv.HMI_wDirectSeq : W.HMI_wDirectSeq, 0) + ' → ' + (S.Direct2_wSeqEcho == null ? '—' : fmt(S.Direct2_wSeqEcho, 0)));
     setText('d-ready', S.AxisFb_xReady ? 'TRUE' : 'FALSE');
     // 0.80 外部工步（只读）
     const tf = (v) => (v ? 'T' : 'F');
@@ -488,8 +499,8 @@
     setText('d-force-show', fmt(S.HMI_rForceShow, 1) + ' N');
     setText('d-force-echo', S.HMI_rForceSetEcho == null ? '—' : fmt(S.HMI_rForceSetEcho, 1) + ' N');
     // 视觉角度（航向纠偏）A/B 模式
-    setText('d-heading-err', fmt(W.HMI_rHeadingErr, 3) + ' rad');
-    setText('d-heading-kp', fmt(W.HMI_rKpTrack, 3));
+    setText('d-heading-err', fmt(has('HMI_rHeadingErr') ? cv.HMI_rHeadingErr : W.HMI_rHeadingErr, 4) + ' rad');
+    setText('d-heading-kp', fmt(has('HMI_rKpTrack') ? cv.HMI_rKpTrack : W.HMI_rKpTrack, 3));
     const modeEl = $('d-vis-mode');
     if (modeEl) { modeEl.className = 'chip ' + (visMode === 'A' ? 'run' : ''); const b = modeEl.querySelector('b'); if (b) b.textContent = visModeLabel(); }
     const hh = $('d-heading-hint');
@@ -689,6 +700,8 @@
     log('导出诊断包 ' + text.length + ' 字符（/health + 配置 + 日志）');
   }
 
+  // 命令区优先显示网关实收值（命令镜像回显），没有回显时才退回本页本地值
+  function cmdOrStatus(k) { if (k in W) return (CMD && CMD.values && CMD.values[k] !== undefined) ? CMD.values[k] : W[k]; return S[k]; }
   function allMapFields() { if (!MAP) return []; const out = []; const push = (sec, fs) => (fs || []).forEach((f) => out.push(Object.assign({ section: sec }, f))); push('cmd', MAP.command && MAP.command.fields); push('cmd', MAP.directx && MAP.directx.command && MAP.directx.command.fields); push('st', MAP.status && MAP.status.fields); push('st', MAP.directx && MAP.directx.status && MAP.directx.status.fields); return out; }
   function regBase(f) { return f.section === 'cmd' ? ((MAP.command && MAP.command.baseAddress) || 4096) : ((MAP.status && MAP.status.baseAddress) || 4352); }
   function regAddr(f) { return String(regBase(f) + f.offset) + (f.bit !== undefined ? '.' + f.bit : ''); }
@@ -699,7 +712,7 @@
     return f.name.toLowerCase().indexOf(q) !== -1 || regAddr(f).indexOf(q) !== -1;
   }
   function copyRegRow(f) {
-    const raw = (f.name in W) ? W[f.name] : S[f.name];
+    const raw = cmdOrStatus(f.name);
     const line = [f.section === 'cmd' ? 'CMD' : 'ST', regAddr(f), f.name, f.type, raw === undefined ? '' : String(raw), f.zh || ''].join('\t');
     try {
       if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(line); log('已复制行 ' + f.name); }
@@ -731,7 +744,7 @@
     if (!MAP) return;
     for (const k in regCells) {
       const v = regCells[k]; if (!v) continue;
-      const raw = (k in W) ? W[k] : S[k];
+      const raw = cmdOrStatus(k);
       const s = typeof raw === 'boolean' ? (raw ? 'T' : 'F') : ((raw === undefined || raw === null) ? '—' : String(raw));
       if (v.textContent !== s) { v.textContent = s; v.classList.add('chg'); regChanged[k] = Date.now(); }
       else if (regChanged[k] && Date.now() - regChanged[k] > 600) { v.classList.remove('chg'); delete regChanged[k]; }
