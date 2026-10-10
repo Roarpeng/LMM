@@ -200,7 +200,8 @@ function startGateway(env = process.env) {
   }
 
   if (mode === 'mock') {
-    mockPlc = createMockPlc();
+    // MOCK_GROUND_Z：模拟地面高度（m，Z 向下为负；默认 -0.3），供外部工步压力/未接触场景
+    mockPlc = createMockPlc({}, { groundZ: Number(env.MOCK_GROUND_Z) });
     latestStatus = { ...statusDefaults, ...mockPlc.statusMessage(), _gateway: mode };
     let lastTick = Date.now();
     mockTimer = setInterval(() => {

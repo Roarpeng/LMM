@@ -1,7 +1,7 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <project xmlns="http://www.plcopen.org/xml/tc6_0200">
-  <fileHeader companyName="Inovance company" productName="InoProShop(V1.9.1.6)" productVersion="InoProShop(V1.9.1.6)" creationDateTime="2026-09-12T14:36:15.9701158" />
-  <contentHeader name="LMM.project" modificationDateTime="2026-09-12T14:35:03.9471954">
+  <fileHeader companyName="Inovance company" productName="InoProShop(V1.9.1.6)" productVersion="InoProShop(V1.9.1.6)" creationDateTime="2026-09-12T22:49:48.5577606" />
+  <contentHeader name="LMM.project" modificationDateTime="2026-09-12T22:49:26.9924488">
     <coordinateInfo>
       <fbd>
         <scaling x="1" y="1" />
@@ -118,9 +118,6 @@
             </variable>
             <variable name="wSdoDevM2">
               <type><UINT /></type>
-            </variable>
-            <variable name="xForceCsv">
-              <type><BOOL /></type>
             </variable>
           </inputVars>
           <outputVars>
@@ -331,13 +328,7 @@
             <variable name="xModeCsvM1">
               <type><BOOL /></type>
             </variable>
-            <variable name="xModeCsvErrM1">
-              <type><BOOL /></type>
-            </variable>
             <variable name="xModeCsvM2">
-              <type><BOOL /></type>
-            </variable>
-            <variable name="xModeCsvErrM2">
               <type><BOOL /></type>
             </variable>
           </outputVars>
@@ -515,45 +506,6 @@
             </variable>
             <variable name="abyTq06M2">
               <type><array><dimension lower="0" upper="1" /><baseType><BYTE /></baseType></array></type>
-            </variable>
-            <variable name="fbSetModeM1">
-              <type><derived name="SMC_SetControllerMode" /></type>
-            </variable>
-            <variable name="fbSetModeM2">
-              <type><derived name="SMC_SetControllerMode" /></type>
-            </variable>
-            <variable name="xModeVelDoneM1">
-              <type><BOOL /></type>
-            </variable>
-            <variable name="xModeVelDoneM2">
-              <type><BOOL /></type>
-            </variable>
-            <variable name="fbWrModeM1">
-              <type><derived name="ETC_CO_SdoWrite4" /></type>
-            </variable>
-            <variable name="fbWrModeM2">
-              <type><derived name="ETC_CO_SdoWrite4" /></type>
-            </variable>
-            <variable name="xModeReqM1">
-              <type><BOOL /></type>
-            </variable>
-            <variable name="xModeReqM2">
-              <type><BOOL /></type>
-            </variable>
-            <variable name="abyModeWr">
-              <type><array><dimension lower="1" upper="4" /><baseType><BYTE /></baseType></array></type>
-            </variable>
-            <variable name="xModeWrDoneM1">
-              <type><BOOL /></type>
-            </variable>
-            <variable name="xModeWrDoneM2">
-              <type><BOOL /></type>
-            </variable>
-            <variable name="xModeWrErrM1">
-              <type><BOOL /></type>
-            </variable>
-            <variable name="xModeWrErrM2">
-              <type><BOOL /></type>
             </variable>
             <variable name="wSdoRaw">
               <type><WORD /></type>
@@ -984,6 +936,11 @@
  *         改单沿起步：一个上升沿写最终目标 + 钳制用户 Acc/Dec（0.05~1.0），
  *         SM3 自带斜坡 0→目标（0.8 → 0.5s）；稳态 trim/sync 更新走限频重触发
  *         （≥200ms 一次、差值≥0.004）；减速统一 Halt（用户 Dec 对称）。
+ *   0.79：删 0.74~0.77 运行时切 CSV（SMC_SetControllerMode / SDO 直写 0x6060）：
+ *         0x6060 被映射在 RxPDO 内，由驱动组件按"映像中的设定值通道"每周期写
+ *         （仅 0x607A 在映像 → CSP=8），运行时写 9 必被下一拍覆盖。
+ *         CSV 改由从站组态决定（RxPDO 换映射 0x60FF 目标速度），组件使能时自写 9。
+ *         xModeCsvM1/M2 保留为"6060 实测=9"只读诊断。
  * ============================================================================== *)
 
 rVelFactor := 0.0;
@@ -1672,31 +1629,6 @@ IF fbSdoModeM2.xDone THEN
     wModeM2 := BYTE_TO_WORD(abyModeM2[0]) OR SHL(BYTE_TO_WORD(abyModeM2[1]), 8);
 END_IF;
 IF fbSdoTq03M2.xDone THEN
-
-(* ------------------- 11. 强制 X 双驱 CSV 速度模式（0.77） ------------------- *)
-(* SMC_SetControllerMode 切换最长约 1000 周期(~4s)：必须保持 bExecute 到 Done/Error。
-   0.76 每秒脉冲会在切完前重启 -&gt; 永远完不成(w74 恒 0)。这里空闲且使能时切一次并保持。 *)
-IF NOT xEnable OR xStop THEN
-    xModeVelDoneM1 := FALSE;
-    xModeVelDoneM2 := FALSE;
-END_IF;
-xModeReqM1 := xForceCsv AND xEnable AND NOT xStop AND NOT xStopping AND NOT xDecelActive
-              AND (eMode = 0) AND NOT xModeVelDoneM1;
-fbSetModeM1(Axis := AxisM1, bExecute := xModeReqM1, nControllerMode := SMC_velocity);
-IF fbSetModeM1.bDone OR fbSetModeM1.bError THEN
-    xModeVelDoneM1 := TRUE;
-END_IF;
-xModeCsvM1 := fbSetModeM1.bDone OR (WORD_TO_INT(wModeM1) = 9);
-xModeCsvErrM1 := fbSetModeM1.bError;
-xModeReqM2 := xForceCsv AND xEnable AND NOT xStop AND NOT xStopping AND NOT xDecelActive
-              AND (eMode = 0) AND NOT xModeVelDoneM2;
-fbSetModeM2(Axis := AxisM2, bExecute := xModeReqM2, nControllerMode := SMC_velocity);
-IF fbSetModeM2.bDone OR fbSetModeM2.bError THEN
-    xModeVelDoneM2 := TRUE;
-END_IF;
-xModeCsvM2 := fbSetModeM2.bDone OR (WORD_TO_INT(wModeM2) = 9);
-xModeCsvErrM2 := fbSetModeM2.bError;
-
     wTq03M2 := BYTE_TO_WORD(abyTq03M2[0]) OR SHL(BYTE_TO_WORD(abyTq03M2[1]), 8);
 END_IF;
 IF fbSdoTq04M2.xDone THEN
@@ -1710,32 +1642,13 @@ IF fbSdoTq06M2.xDone THEN
 END_IF;
 xParamErr := fbSdoTqM1.xError OR fbSdoCurM1.xError OR fbSdoSwM1.xError OR fbSdoErrM1.xError OR fbSdoTqMaxM1.xError OR fbSdoLimPM1.xError OR fbSdoLimNM1.xError OR fbSdoModeM1.xError OR fbSdoTq03M1.xError OR fbSdoTq04M1.xError OR fbSdoTq05M1.xError OR fbSdoTq06M1.xError OR fbSdoTqM2.xError OR fbSdoCurM2.xError OR fbSdoSwM2.xError OR fbSdoErrM2.xError OR fbSdoTqMaxM2.xError OR fbSdoLimPM2.xError OR fbSdoLimNM2.xError OR fbSdoModeM2.xError OR fbSdoTq03M2.xError OR fbSdoTq04M2.xError OR fbSdoTq05M2.xError OR fbSdoTq06M2.xError;
 
-(* ------------------- 12. 启动直写 0x6060=9(CSV) 再运动（0.75） ------------------- *)
-(* 若 0.74 的 SMC_SetControllerMode 被驱动/PDO 拒绝，用 ETC_CO_SdoWrite4 直写 0x6060=9。
-   空闲且使能时写一次；Done/Error 都锁，避免反复。 *)
-IF NOT xEnable OR xStop THEN
-    xModeWrDoneM1 := FALSE;
-    xModeWrDoneM2 := FALSE;
-END_IF;
-abyModeWr[1] := 9;
-fbWrModeM1(xExecute := xForceCsv AND xEnable AND NOT xStop AND NOT xDecelActive
-                        AND (eMode = 0) AND NOT xModeWrDoneM1,
-    xAbort := FALSE, usiCom := 1, uiDevice := wSdoDevM1, usiChannel := 1,
-    wIndex := 16#6060, bySubindex := 0, udiTimeOut := 500,
-    abyData := abyModeWr, usiDataLength := 1);
-IF fbWrModeM1.xDone OR fbWrModeM1.xError THEN
-    xModeWrDoneM1 := TRUE;
-END_IF;
-xModeWrErrM1 := fbWrModeM1.xError;
-fbWrModeM2(xExecute := xForceCsv AND xEnable AND NOT xStop AND NOT xDecelActive
-                        AND (eMode = 0) AND NOT xModeWrDoneM2,
-    xAbort := FALSE, usiCom := 1, uiDevice := wSdoDevM2, usiChannel := 1,
-    wIndex := 16#6060, bySubindex := 0, udiTimeOut := 500,
-    abyData := abyModeWr, usiDataLength := 1);
-IF fbWrModeM2.xDone OR fbWrModeM2.xError THEN
-    xModeWrDoneM2 := TRUE;
-END_IF;
-xModeWrErrM2 := fbWrModeM2.xError;</xhtml>
+(* ------------------- 11. CSV 模式诊断（0.79 只读） ------------------- *)
+(* 0.74~0.77 的 SMC_SetControllerMode / ETC_CO_SdoWrite4 直写 0x6060 已删除：
+   0x6060 被映射在 RxPDO 内，由驱动组件按"映像中的设定值通道"每周期写（CSP=8），
+   运行时改写必被下一拍覆盖。CSV 由从站组态决定（RxPDO 映射 0x60FF 目标速度），
+   组件使能时自行写 6060=9；此处仅回读 6060 实测值供在线确认。 *)
+xModeCsvM1 := (WORD_TO_INT(wModeM1) = 9);
+xModeCsvM2 := (WORD_TO_INT(wModeM2) = 9);</xhtml>
           </ST>
         </body>
         <addData>
@@ -1752,143 +1665,6 @@ xModeWrErrM2 := fbWrModeM2.xError;</xhtml>
           </data>
           <data name="http://www.3s-software.com/plcopenxml/objectid" handleUnknown="discard">
             <ObjectId>d4e5f6a7-b8c9-4012-c345-d6e7f8a90002</ObjectId>
-          </data>
-        </addData>
-      </pou>
-      <pou name="FB_XLineTrack" pouType="functionBlock">
-        <interface>
-          <inputVars>
-            <variable name="xEnable">
-              <type>
-                <BOOL />
-              </type>
-            </variable>
-            <variable name="xStop">
-              <type>
-                <BOOL />
-              </type>
-            </variable>
-            <variable name="eMode">
-              <type>
-                <INT />
-              </type>
-            </variable>
-            <variable name="rBaseVel">
-              <type>
-                <REAL />
-              </type>
-              <documentation>
-                <xhtml xmlns="http://www.w3.org/1999/xhtml">直行基础速度（可正可负）</xhtml>
-              </documentation>
-            </variable>
-            <variable name="rSpinVel">
-              <type>
-                <REAL />
-              </type>
-              <documentation>
-                <xhtml xmlns="http://www.w3.org/1999/xhtml">原地旋转速度（正值）</xhtml>
-              </documentation>
-            </variable>
-            <variable name="rHeadingErr">
-              <type>
-                <REAL />
-              </type>
-              <documentation>
-                <xhtml xmlns="http://www.w3.org/1999/xhtml">航向误差（视觉/外部；手动传 0）</xhtml>
-              </documentation>
-            </variable>
-            <variable name="rKpTrack">
-              <type>
-                <REAL />
-              </type>
-              <documentation>
-                <xhtml xmlns="http://www.w3.org/1999/xhtml">纠偏 Kp</xhtml>
-              </documentation>
-            </variable>
-            <variable name="rTrimMax">
-              <type>
-                <REAL />
-              </type>
-              <documentation>
-                <xhtml xmlns="http://www.w3.org/1999/xhtml">纠偏限幅</xhtml>
-              </documentation>
-            </variable>
-          </inputVars>
-          <outputVars>
-            <variable name="rVelM1">
-              <type>
-                <REAL />
-              </type>
-              <documentation>
-                <xhtml xmlns="http://www.w3.org/1999/xhtml">M1 速度指令</xhtml>
-              </documentation>
-            </variable>
-            <variable name="rVelM2">
-              <type>
-                <REAL />
-              </type>
-              <documentation>
-                <xhtml xmlns="http://www.w3.org/1999/xhtml">M2 速度指令</xhtml>
-              </documentation>
-            </variable>
-            <variable name="xActive">
-              <type>
-                <BOOL />
-              </type>
-            </variable>
-          </outputVars>
-          <localVars>
-            <variable name="rTrim">
-              <type>
-                <REAL />
-              </type>
-            </variable>
-          </localVars>
-        </interface>
-        <body>
-          <ST>
-            <xhtml xmlns="http://www.w3.org/1999/xhtml">(* FB_XLineTrack — X 直行按航向误差纠偏差速 / 原地左右转。
-   eMode: 0=无  1=直行(rBaseVel 带符号 + 纠偏)  2=左旋  3=右旋 *)
-
-rTrim := LIMIT(-ABS(rTrimMax), rKpTrack * rHeadingErr, ABS(rTrimMax));
-
-CASE eMode OF
-    1:
-        rVelM1 := rBaseVel + rTrim;
-        rVelM2 := rBaseVel - rTrim;
-    2:
-        rVelM1 := ABS(rSpinVel);
-        rVelM2 := -ABS(rSpinVel);
-    3:
-        rVelM1 := -ABS(rSpinVel);
-        rVelM2 := ABS(rSpinVel);
-ELSE
-    rVelM1 := 0.0;
-    rVelM2 := 0.0;
-END_CASE;
-
-IF xStop OR NOT xEnable THEN
-    rVelM1 := 0.0;
-    rVelM2 := 0.0;
-END_IF;
-
-xActive := (eMode &lt;&gt; 0) AND xEnable AND NOT xStop;</xhtml>
-          </ST>
-        </body>
-        <addData>
-          <data name="http://www.3s-software.com/plcopenxml/pathstructure" handleUnknown="discard">
-            <pathStructure isFolder="False" name="Device" namespace="1ee21fdd-5562-44a0-a3ce-665d74916d50" factoryName="Inovance.InoPro.InoDeviceObject.DeviceObjectFactory" factoryGuid="{84d12aa5-3225-473b-9df6-18af40889bdf}" objectGuid="d7de5ac3-3f30-45ac-8468-ec250b4e523b">
-              <pathStructure isFolder="False" name="Plc Logic" namespace="00000000-0000-0000-0000-000000000000" factoryName="_3S.CoDeSys.PlcLogicObject.PlcLogicObjectFactory" factoryGuid="{8ceeba4e-ac7a-4fbd-9415-bfb2d98668ab}" objectGuid="8a291c6e-c5c5-4a07-8c04-1100df0e1491">
-                <pathStructure isFolder="False" name="Application" namespace="e5b60c93-5445-4e40-ada9-cd9c005549b4" factoryName="_3S.CoDeSys.ApplicationObject.ApplicationObjectFactory" factoryGuid="{ECADC42E-716E-4ff3-A93C-0CD143F9743F}" objectGuid="69822df8-b9c0-4a01-9450-b2cdc030688c">
-                  <pathStructure isFolder="True" name="FB" namespace="00000000-0000-0000-0000-000000000000" factoryName="Inovance.InoPro.InoNavigators.FolderObjectFactory" factoryGuid="{BA66A801-C738-4176-B072-DFE26ACE36D3}" objectGuid="2dc75837-520f-43d9-90dd-47cded0212a2">
-                    <pathStructure isFolder="False" name="FB_XLineTrack" namespace="e5b60c93-5445-4e40-ada9-cd9c005549b4" factoryName="Inovance.InoPro.InoPOUObject.POUObjectFactory" factoryGuid="{39C4ED2B-903C-464c-9041-7DF4ECEE9609}" objectGuid="92cd9ff9-634c-4ba6-b757-ed5688751163" />
-                  </pathStructure>
-                </pathStructure>
-              </pathStructure>
-            </pathStructure>
-          </data>
-          <data name="http://www.3s-software.com/plcopenxml/objectid" handleUnknown="discard">
-            <ObjectId>92cd9ff9-634c-4ba6-b757-ed5688751163</ObjectId>
           </data>
         </addData>
       </pou>
@@ -2113,6 +1889,113 @@ xActive := (eMode &lt;&gt; 0) AND xEnable AND NOT xStop;</xhtml>
             <variable name="rDirectPosRSel">
               <type><REAL /></type>
             </variable>
+            <variable name="rForceSetSel">
+              <type><REAL /></type>
+            </variable>
+            <variable name="rForceKpSel">
+              <type><REAL /></type>
+            </variable>
+            <variable name="rForceVelMaxSel">
+              <type><REAL /></type>
+            </variable>
+            <variable name="xStepModePrev">
+              <type><BOOL /></type>
+            </variable>
+            <variable name="xStepOk">
+              <type><BOOL /></type>
+              <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">安全门 ∧ 直控心跳在线</xhtml></documentation>
+            </variable>
+            <variable name="xStepNew">
+              <type><BOOL /></type>
+            </variable>
+            <variable name="wStepIdPrev">
+              <type><WORD /></type>
+            </variable>
+            <variable name="iStepCmdL">
+              <type><UINT /></type>
+            </variable>
+            <variable name="wStepFlagsL">
+              <type><WORD /></type>
+            </variable>
+            <variable name="rStepDistL">
+              <type><REAL /></type>
+            </variable>
+            <variable name="rStepVelL">
+              <type><REAL /></type>
+            </variable>
+            <variable name="rStepVelRL">
+              <type><REAL /></type>
+            </variable>
+            <variable name="rStepPosYL">
+              <type><REAL /></type>
+            </variable>
+            <variable name="rStepPosZL">
+              <type><REAL /></type>
+            </variable>
+            <variable name="rStepPosRL">
+              <type><REAL /></type>
+            </variable>
+            <variable name="rStepForceL">
+              <type><REAL /></type>
+            </variable>
+            <variable name="rStepKpL">
+              <type><REAL /></type>
+            </variable>
+            <variable name="rStepVelZL">
+              <type><REAL /></type>
+            </variable>
+            <variable name="rStepTimeoutL">
+              <type><REAL /></type>
+            </variable>
+            <variable name="iStepErrNew">
+              <type><INT /></type>
+            </variable>
+            <variable name="xStepSelY">
+              <type><BOOL /></type>
+            </variable>
+            <variable name="xStepSelZ">
+              <type><BOOL /></type>
+            </variable>
+            <variable name="xStepSelR">
+              <type><BOOL /></type>
+            </variable>
+            <variable name="xStepForceKeep">
+              <type><BOOL /></type>
+              <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">工步 2/3 完成后保持力跟随，直到下一条命令</xhtml></documentation>
+            </variable>
+            <variable name="xStepTareSent">
+              <type><BOOL /></type>
+            </variable>
+            <variable name="xStepInPos">
+              <type><BOOL /></type>
+            </variable>
+            <variable name="rStepPosX">
+              <type><REAL /></type>
+            </variable>
+            <variable name="rStepStartX">
+              <type><REAL /></type>
+            </variable>
+            <variable name="rStepStartY">
+              <type><REAL /></type>
+            </variable>
+            <variable name="rStepRHold">
+              <type><REAL /></type>
+            </variable>
+            <variable name="tonStepTime">
+              <type><derived name="TON" /></type>
+            </variable>
+            <variable name="tonStepPhase">
+              <type><derived name="TON" /></type>
+            </variable>
+            <variable name="tonStepForce">
+              <type><derived name="TON" /></type>
+            </variable>
+            <variable name="tonStepInPos">
+              <type><derived name="TON" /></type>
+            </variable>
+            <variable name="tonStepNoContact">
+              <type><derived name="TON" /></type>
+            </variable>
           </localVars>
         </interface>
         <body>
@@ -2141,7 +2024,14 @@ END_IF;
 xFaultAggregate := AxisFb_xFaultM1 OR AxisFb_xFaultM2 OR AxisFb_xFaultY OR AxisFb_xFaultZ
     OR (xM5Ready AND AxisFb_xFaultR);
 
-IF HMI_xAutoMode THEN eOpMode := 1; ELSE eOpMode := 0; END_IF;
+(* 0.80：2 = 外部工步（HMI_xStepMode，自动优先）；手动点动/回零/直控/自动循环都只在各自 eOpMode 下生效 *)
+IF HMI_xAutoMode THEN
+    eOpMode := 1;
+ELSIF HMI_xStepMode THEN
+    eOpMode := 2;
+ELSE
+    eOpMode := 0;
+END_IF;
 HMI_eOpMode := eOpMode;
 
 (* 安全 / 使能 —— 去耦：只看急停 + 故障 *)
@@ -2256,20 +2146,19 @@ Direct2_xActiveY := xDirect2Enable AND (HMI_iDirectModeY &lt;&gt; UINT#0);
 Direct2_xActiveZ := xDirect2Enable AND (HMI_iDirectModeZ &lt;&gt; UINT#0);
 Direct2_xActiveR := xDirect2Enable AND (HMI_iDirectModeR &lt;&gt; UINT#0);
 
-(* 力/纠偏参数下发 *)
+(* 力/纠偏参数：先算本扫描选用值（局部），外部工步可覆盖，扫描末尾一次性写 AxisCmd_rForce*（0.80） *)
 rForceKp := HMI_rKpForce;
 IF rForceKp &lt; 1.0E-6 THEN rForceKp := 1.0; END_IF;
-AxisCmd_rForceSet := HMI_rForceSet;
-AxisCmd_rForceKp := rForceKp;
-AxisCmd_rForceVelMax := ABS(HMI_rAutoVelZ);
-IF AxisCmd_rForceVelMax &lt; 1.0E-6 THEN AxisCmd_rForceVelMax := ABS(HMI_rJogVelZ); END_IF;
+rForceSetSel := HMI_rForceSet;
+rForceKpSel := rForceKp;
+rForceVelMaxSel := ABS(HMI_rAutoVelZ);
+IF rForceVelMaxSel &lt; 1.0E-6 THEN rForceVelMaxSel := ABS(HMI_rJogVelZ); END_IF;
 AxisCmd_rHeadingErr := HMI_rHeadingErr;
 
 IF HMI_xForceSimEnable THEN
     rForceAct := HMI_rForceSim;
 END_IF;
 HMI_rForceShow := rForceAct;
-HMI_rForceSetEcho := HMI_rForceSet;
 (* 力峰值（绝对值）+ 原始计数：复位脉冲先清零，再对新值取峰值 *)
 IF HMI_xForcePeakReset THEN Force_rPeak := 0.0; END_IF;
 Force_rPeak := MAX(Force_rPeak, ABS(HMI_rForceShow));
@@ -2428,6 +2317,264 @@ IF xSafe AND (eOpMode = 1) AND NOT HMI_xStop AND NOT xFaultAggregate THEN
     END_CASE;
 END_IF;
 
+(* ===== 0.80 外部工步：上位机（RK3588）逐条下发原语，PLC 只执行当前一条 =====
+   接口文档：docs/plc/STEP_MODE.md。
+   - 命令号 HMI_wStepId 变化 = 新命令：锁存全部工步参数 → 校验 → 执行；执行中改参数无效。
+   - 进入模式瞬间吞掉现存命令号（不执行模式切换前的旧命令）。
+   - 忙时来非 0 新命令 = 协议错误：停当前工步，新命令以 ERR_BUSY 失败；命令 0 随时中止。
+   - 心跳复用 HMI_wDirectSeq（Direct2_xOnline，300ms）；丢失即失败并停。
+   Step_iState 0空闲 1执行 2完成 3失败
+   Step_iErr   1模式 2参数 3越限 4忙 10超时 11安全(急停/停止/故障) 12心跳 20未接触 *)
+Step_xModeActive := (eOpMode = 2);
+xStepOk := xSafe AND NOT HMI_xStop AND NOT xFaultAggregate AND Direct2_xOnline;
+rStepPosX := (AxisFb_rPosM1 + AxisFb_rPosM2) / 2.0;
+xStepNew := FALSE;
+iStepErrNew := 0;
+
+IF Step_xModeActive AND NOT xStepModePrev THEN
+    wStepIdPrev := HMI_wStepId;
+    Step_wIdEcho := HMI_wStepId;
+    Step_iCmdEcho := 0;
+    Step_iState := 0;
+    Step_iErr := 0;
+    Step_iPhase := 0;
+    xStepForceKeep := FALSE;
+    rStepRHold := AxisFb_rPosR;
+END_IF;
+xStepModePrev := Step_xModeActive;
+
+IF NOT Step_xModeActive THEN
+    IF Step_iState = 1 THEN
+        Step_iState := 3;
+        Step_iErr := 1;
+    END_IF;
+    xStepForceKeep := FALSE;
+    Step_xRHold := FALSE;
+ELSE
+    IF HMI_wStepId &lt;&gt; wStepIdPrev THEN
+        wStepIdPrev := HMI_wStepId;
+        xStepNew := TRUE;
+    END_IF;
+
+    (* --- 新命令：锁存 + 校验 --- *)
+    IF xStepNew THEN
+        iStepCmdL := HMI_iStepCmd;
+        wStepFlagsL := HMI_wStepFlags;
+        rStepDistL := HMI_rStepDist;
+        rStepVelL := HMI_rStepVel;
+        rStepVelRL := HMI_rStepVelR;
+        rStepPosYL := HMI_rStepPosY;
+        rStepPosZL := HMI_rStepPosZ;
+        rStepPosRL := HMI_rStepPosR;
+        rStepForceL := HMI_rStepForce;
+        rStepKpL := HMI_rStepKpForce;
+        rStepVelZL := HMI_rStepVelZMax;
+        rStepTimeoutL := HMI_rStepTimeout;
+        xStepSelY := (wStepFlagsL AND 16#0001) &lt;&gt; 0;
+        xStepSelZ := (wStepFlagsL AND 16#0002) &lt;&gt; 0;
+        xStepSelR := (wStepFlagsL AND 16#0004) &lt;&gt; 0;
+
+        IF (Step_iState = 1) AND (iStepCmdL &lt;&gt; 0) THEN
+            iStepErrNew := 4;
+        ELSIF iStepCmdL = 0 THEN
+            iStepErrNew := 0;
+        ELSIF NOT Direct2_xOnline THEN
+            iStepErrNew := 12;
+        ELSIF NOT xStepOk THEN
+            iStepErrNew := 11;
+        ELSIF iStepCmdL = 1 THEN
+            IF (ABS(rStepDistL) &lt; 0.001) OR (rStepVelL &lt;= 0.0) OR (rStepVelL &gt; Cfg_rDirectVelMaxX) THEN
+                iStepErrNew := 2;
+            END_IF;
+        ELSIF (iStepCmdL = 2) OR (iStepCmdL = 3) THEN
+            IF (rStepForceL &lt;= 0.0) OR (rStepKpL &lt;= 0.0) OR (rStepVelZL &lt;= 0.0)
+                    OR (rStepVelZL &gt; Cfg_rDirectVelMaxZ) THEN
+                iStepErrNew := 2;
+            ELSIF iStepCmdL = 3 THEN
+                IF (ABS(rStepDistL) &lt; 0.001) OR (rStepVelL &lt;= 0.0) OR (rStepVelL &gt; Cfg_rDirectVelMaxY) THEN
+                    iStepErrNew := 2;
+                ELSIF ((AxisFb_rPosY + rStepDistL) &gt; Cfg_rLimYPos) OR ((AxisFb_rPosY + rStepDistL) &lt; Cfg_rLimYNeg) THEN
+                    iStepErrNew := 3;
+                END_IF;
+            END_IF;
+        ELSIF iStepCmdL = 4 THEN
+            IF NOT (xStepSelY OR xStepSelZ OR xStepSelR) THEN
+                iStepErrNew := 2;
+            ELSIF (xStepSelY OR xStepSelZ) AND (rStepVelL &lt;= 0.0) THEN
+                iStepErrNew := 2;
+            ELSIF xStepSelY AND (rStepVelL &gt; Cfg_rDirectVelMaxY) THEN
+                iStepErrNew := 2;
+            ELSIF xStepSelZ AND (rStepVelL &gt; Cfg_rDirectVelMaxZ) THEN
+                iStepErrNew := 2;
+            ELSIF xStepSelR AND ((NOT xM5Ready) OR (rStepVelRL &lt;= 0.0) OR (rStepVelRL &gt; Cfg_rDirectVelMaxR)) THEN
+                iStepErrNew := 2;
+            ELSIF xStepSelY AND ((rStepPosYL &gt; Cfg_rLimYPos) OR (rStepPosYL &lt; Cfg_rLimYNeg)) THEN
+                iStepErrNew := 3;
+            ELSIF xStepSelZ AND ((rStepPosZL &gt; Cfg_rLimZPos) OR (rStepPosZL &lt; Cfg_rLimZNeg)) THEN
+                iStepErrNew := 3;
+            ELSIF xStepSelR AND ((rStepPosRL &gt; Cfg_rLimRPos) OR (rStepPosRL &lt; Cfg_rLimRNeg)) THEN
+                iStepErrNew := 3;
+            END_IF;
+        ELSE
+            iStepErrNew := 2;
+        END_IF;
+
+        Step_wIdEcho := HMI_wStepId;
+        Step_iCmdEcho := iStepCmdL;
+        Step_iPhase := 0;
+        xStepForceKeep := FALSE;
+        xStepTareSent := FALSE;
+        Step_xForceReached := FALSE;
+        Step_xForceLow := FALSE;
+        Step_rProgress := 0.0;
+        Step_rElapsed := 0.0;
+        rStepStartX := rStepPosX;
+        rStepStartY := AxisFb_rPosY;
+        tonStepTime(IN := FALSE);
+        tonStepPhase(IN := FALSE);
+        tonStepForce(IN := FALSE);
+        tonStepInPos(IN := FALSE);
+        tonStepNoContact(IN := FALSE);
+        IF iStepCmdL = 0 THEN
+            Step_iState := 2;
+            Step_iErr := 0;
+        ELSIF iStepErrNew &lt;&gt; 0 THEN
+            Step_iState := 3;
+            Step_iErr := iStepErrNew;
+        ELSE
+            Step_iState := 1;
+            Step_iErr := 0;
+            IF rStepTimeoutL &lt;= 0.0 THEN
+                IF (iStepCmdL = 1) OR (iStepCmdL = 3) THEN
+                    rStepTimeoutL := ABS(rStepDistL) / rStepVelL * 2.0 + 5.0;
+                ELSE
+                    rStepTimeoutL := 60.0;
+                END_IF;
+            END_IF;
+        END_IF;
+    END_IF;
+
+    (* --- 监视：心跳 &gt; 安全 &gt; 超时 --- *)
+    tonStepTime(IN := Step_iState = 1, PT := T#1D);
+    IF Step_iState = 1 THEN
+        Step_rElapsed := MIN(UDINT_TO_REAL(TIME_TO_UDINT(tonStepTime.ET)) / 1000.0, 3000.0);
+        IF NOT Direct2_xOnline THEN
+            Step_iState := 3;
+            Step_iErr := 12;
+        ELSIF NOT xStepOk THEN
+            Step_iState := 3;
+            Step_iErr := 11;
+        ELSIF Step_rElapsed &gt; rStepTimeoutL THEN
+            Step_iState := 3;
+            Step_iErr := 10;
+        END_IF;
+    END_IF;
+    IF NOT xStepOk THEN
+        xStepForceKeep := FALSE;
+    END_IF;
+
+    (* --- 执行（写局部运动位，扫描末尾统一写 AxisCmd_*） --- *)
+    IF Step_iState = 1 THEN
+        CASE iStepCmdL OF
+            1: (* X 走距：MoveRelX → FB_XDual eMode=1，视觉航向 trim 生效 *)
+                xCmdMoveRelX := TRUE;
+                AxisCmd_rMoveDistX := rStepDistL;
+                AxisCmd_rMoveVelX := rStepVelL;
+                Step_rProgress := ABS(rStepPosX - rStepStartX);
+                tonStepPhase(IN := TRUE, PT := T#100MS);
+                IF tonStepPhase.Q AND AxisFb_xMoveDoneX THEN
+                    xCmdMoveRelX := FALSE;
+                    Step_iState := 2;
+                END_IF;
+            2: (* Z 压到力：[去皮 + 300ms] → 力跟随，力 ≥ F−0.5N 持续 100ms 完成
+                  （0.5N = FB_ForceFollow 死区：死区内 Z 不再动，判 ≥F 会永远等不到） *)
+                IF ((wStepFlagsL AND 16#0008) &lt;&gt; 0) AND NOT xStepTareSent THEN
+                    Logic_xForceTare := TRUE;
+                    xStepTareSent := TRUE;
+                END_IF;
+                tonStepPhase(IN := TRUE, PT := T#300MS);
+                IF tonStepPhase.Q OR ((wStepFlagsL AND 16#0008) = 0) THEN
+                    Step_iPhase := 1;
+                    xCmdForceFollow := TRUE;
+                END_IF;
+                tonStepForce(IN := (Step_iPhase = 1) AND (rForceAct &gt;= (rStepForceL - 0.5)), PT := T#100MS);
+                tonStepNoContact(IN := (Step_iPhase = 1) AND (AxisFb_rPosZ &lt;= (Cfg_rLimZNeg + 0.001))
+                    AND (rForceAct &lt; (rStepForceL - 0.5)), PT := T#300MS);
+                IF tonStepForce.Q THEN
+                    Step_xForceReached := TRUE;
+                    xStepForceKeep := TRUE;
+                    Step_iState := 2;
+                ELSIF tonStepNoContact.Q THEN
+                    xCmdForceFollow := FALSE;
+                    Step_iState := 3;
+                    Step_iErr := 20;
+                END_IF;
+            3: (* Y 恒力行程：力跟随 + Y 相对走；力偏低只报 Step_xForceLow 不中止 *)
+                xCmdForceFollow := TRUE;
+                xCmdMoveRelY := TRUE;
+                AxisCmd_rMoveDistY := rStepDistL;
+                AxisCmd_rMoveVelY := rStepVelL;
+                Step_rProgress := ABS(AxisFb_rPosY - rStepStartY);
+                Step_xForceReached := rForceAct &gt;= (rStepForceL - 0.5);
+                Step_xForceLow := rForceAct &lt; (0.8 * rStepForceL);
+                tonStepPhase(IN := TRUE, PT := T#100MS);
+                IF tonStepPhase.Q AND AxisFb_xMoveDoneY THEN
+                    xCmdMoveRelY := FALSE;
+                    xStepForceKeep := TRUE;
+                    Step_iState := 2;
+                END_IF;
+            4: (* Y/Z/R 点位：phase0 撤一拍 Execute（保证 MC_MoveAbsolute 上升沿），phase1 同时定位 *)
+                IF Step_iPhase = 0 THEN
+                    Step_iPhase := 1;
+                ELSE
+                    IF xStepSelY THEN
+                        xDirectAbsY := TRUE;
+                        rDirectPosYSel := rStepPosYL;
+                        rDirectVelYSel := rStepVelL;
+                    END_IF;
+                    IF xStepSelZ THEN
+                        xDirectAbsZ := TRUE;
+                        rDirectPosZSel := rStepPosZL;
+                        rDirectVelZSel := rStepVelL;
+                    END_IF;
+                    IF xStepSelR THEN
+                        xDirectAbsR := TRUE;
+                        rDirectPosRSel := rStepPosRL;
+                        rDirectVelRSel := rStepVelRL;
+                    END_IF;
+                    xStepInPos := ((NOT xStepSelY) OR ((ABS(AxisFb_rPosY - rStepPosYL) &lt; 0.001) AND AxisFb_xStandstillY))
+                        AND ((NOT xStepSelZ) OR ((ABS(AxisFb_rPosZ - rStepPosZL) &lt; 0.001) AND AxisFb_xStandstillZ))
+                        AND ((NOT xStepSelR) OR ((ABS(AxisFb_rPosR - rStepPosRL) &lt; 0.1) AND AxisFb_xStandstillR));
+                    tonStepInPos(IN := xStepInPos, PT := T#50MS);
+                    IF tonStepInPos.Q THEN
+                        IF xStepSelR THEN
+                            rStepRHold := rStepPosRL;
+                        END_IF;
+                        Step_iState := 2;
+                    END_IF;
+                END_IF;
+        END_CASE;
+    END_IF;
+
+    (* --- 输出：R 全程保持（工步 4 选 R 期间交给绝对定位）；工步 2/3 完成后力跟随保持 --- *)
+    Step_xRHold := xM5Ready AND NOT ((Step_iState = 1) AND (iStepCmdL = 4) AND xStepSelR);
+    IF Step_xRHold THEN
+        xCmdHoldR := TRUE;
+        AxisCmd_rRHoldPos := rStepRHold;
+    END_IF;
+    IF xStepForceKeep AND (Step_iState = 2) THEN
+        xCmdForceFollow := TRUE;
+    END_IF;
+    IF xCmdForceFollow THEN
+        rForceSetSel := rStepForceL;
+        rForceKpSel := rStepKpL;
+        rForceVelMaxSel := rStepVelZL;
+    END_IF;
+END_IF;
+Step_xForceFollow := Step_xModeActive AND xCmdForceFollow;
+Step_rRHoldPos := rStepRHold;
+Step_rKpForceEcho := rStepKpL;
+
 (* ===== 回零：Y/Z/R；同时只回一轴 ===== *)
 xHomeTrigY := HMI_xHomeY OR ((HMI_iHomeAxis = 1) AND HMI_xHomeExec);
 xHomeTrigZ := HMI_xHomeZ OR ((HMI_iHomeAxis = 2) AND HMI_xHomeExec);
@@ -2478,6 +2625,11 @@ AxisCmd_xDirectRelY := xDirectRelY; AxisCmd_xDirectRelZ := xDirectRelZ; AxisCmd_
 AxisCmd_rDirectVelY := rDirectVelYSel; AxisCmd_rDirectVelZ := rDirectVelZSel; AxisCmd_rDirectVelR := rDirectVelRSel;
 AxisCmd_rDirectAbsY := rDirectPosYSel; AxisCmd_rDirectAbsZ := rDirectPosZSel; AxisCmd_rDirectAbsR := rDirectPosRSel;
 AxisCmd_rDirectRelY := rDirectPosYSel; AxisCmd_rDirectRelZ := rDirectPosZSel; AxisCmd_rDirectRelR := rDirectPosRSel;
+(* 0.80 力参数一次性下发（外部工步可能已覆盖为锁存值）；回显实际下发值 *)
+AxisCmd_rForceSet := rForceSetSel;
+AxisCmd_rForceKp := rForceKpSel;
+AxisCmd_rForceVelMax := rForceVelMaxSel;
+HMI_rForceSetEcho := rForceSetSel;
 
 HMI_xHomedY := AxisFb_xHomedY;
 HMI_xHomedZ := AxisFb_xHomedZ;
@@ -3583,8 +3735,7 @@ fbX(
     (* 0.60 视觉直控：绕过内部差速，直接给 M1/M2 速度 *)
     xDirectMode := AxisCmd_xDirectVel,
     rVelM1Direct := AxisCmd_rVelM1Set, rVelM2Direct := AxisCmd_rVelM2Set,
-    wSdoDevM1 := Cfg_wSdoDevM1, wSdoDevM2 := Cfg_wSdoDevM2,
-    xForceCsv := Cfg_xForceCsvX);
+    wSdoDevM1 := Cfg_wSdoDevM1, wSdoDevM2 := Cfg_wSdoDevM2);
 AxisFb_xMoveDoneX := fbX.xMoveDone;
 AxisFb_rPosX := fbX.rPosV;
 AxisFb_rSyncErr := fbX.rSyncErr;
@@ -3626,11 +3777,9 @@ AxisFb_wTq03M2 := fbX.wTq03M2;
 AxisFb_wTq04M2 := fbX.wTq04M2;
 AxisFb_wTq05M2 := fbX.wTq05M2;
 AxisFb_wTq06M2 := fbX.wTq06M2;
-(* 0.74 CSV 模式切换状态 *)
-AxisFb_xModeCsvM1 := fbX.xModeCsvM1;
-AxisFb_xModeCsvErrM1 := fbX.xModeCsvErrM1;
-AxisFb_xModeCsvM2 := fbX.xModeCsvM2;
-AxisFb_xModeCsvErrM2 := fbX.xModeCsvErrM2;
+    (* 0.79 CSV 只读诊断（6060 实测=9） *)
+    AxisFb_xModeCsvM1 := fbX.xModeCsvM1;
+    AxisFb_xModeCsvM2 := fbX.xModeCsvM2;
 AxisFb_rPosM1 := fbX.rPosM1;
 AxisFb_rPosM2 := fbX.rPosM2;
 AxisFb_xMovingM1 := fbX.xMovingM1;
@@ -3779,7 +3928,10 @@ AxisFb_xReady := AxisFb_xReadyM1 AND AxisFb_xReadyM2 AND fbY.xReady AND fbZ.xRea
    PLC=从站；Gateway=主站：FC16 写 Holding1000 命令 / FC03 读 Holding1100 状态。
    eCtrlSrc 为 GVL 变量：0=面板/触摸屏 1=远程(Web)。
    0.68：镜像 96 字；命令 word60..75 全轴直控；状态 word39..45 回传。
-   0.70：命令 word5 bit11 力峰值复位；状态 word46/47 力峰值 ×100、word48 力原始计数。 *)
+   0.70：命令 word5 bit11 力峰值复位；状态 word46/47 力峰值 ×100、word48 力原始计数。
+   0.80：外部工步模式 —— 命令 word5 bit12 + word76..94 直写 HMI_*（不受 eCtrlSrc 门控）；
+         状态 word75..87 工步回报；航向误差非远程源时清零（修 0.79 面板点动冻结旧航向）。 *)
+SM3001:=TRUE;
 
 (* PRG_TcpHmi — Modbus TCP 过程映像编解码 + 控制源仲裁。
    PLC=Master 读 Holding1000 / 写 Holding1100；Gateway=Server。
@@ -3927,6 +4079,27 @@ IF xValid THEN
         dwTmp := SHL(WORD_TO_DWORD(MB_CmdIn[73]), 16) OR WORD_TO_DWORD(MB_CmdIn[74]);
         Tcp_rDirectPosR := DINT_TO_REAL(DWORD_TO_DINT(dwTmp)) / 1000.0;
         Tcp_wDirectSeq := MB_CmdIn[75];
+        (* 0.80 外部工步：word5 bit12 + word76..94 直写 HMI_*（同直控字段，每个新快照都跟随，不受 eCtrlSrc 门控） *)
+        HMI_xStepMode := (MB_CmdIn[5] AND 4096) &lt;&gt; 0;
+        HMI_iStepCmd := WORD_TO_UINT(MB_CmdIn[76]);
+        HMI_wStepId := MB_CmdIn[77];
+        HMI_wStepFlags := MB_CmdIn[78];
+        dwTmp := SHL(WORD_TO_DWORD(MB_CmdIn[79]), 16) OR WORD_TO_DWORD(MB_CmdIn[80]);
+        HMI_rStepDist := DINT_TO_REAL(DWORD_TO_DINT(dwTmp)) / 1000.0;
+        HMI_rStepVel := INT_TO_REAL(WORD_TO_INT(MB_CmdIn[81])) / 1000.0;
+        HMI_rStepVelR := INT_TO_REAL(WORD_TO_INT(MB_CmdIn[82])) / 100.0;
+        dwTmp := SHL(WORD_TO_DWORD(MB_CmdIn[83]), 16) OR WORD_TO_DWORD(MB_CmdIn[84]);
+        HMI_rStepPosY := DINT_TO_REAL(DWORD_TO_DINT(dwTmp)) / 1000.0;
+        dwTmp := SHL(WORD_TO_DWORD(MB_CmdIn[85]), 16) OR WORD_TO_DWORD(MB_CmdIn[86]);
+        HMI_rStepPosZ := DINT_TO_REAL(DWORD_TO_DINT(dwTmp)) / 1000.0;
+        dwTmp := SHL(WORD_TO_DWORD(MB_CmdIn[87]), 16) OR WORD_TO_DWORD(MB_CmdIn[88]);
+        HMI_rStepPosR := DINT_TO_REAL(DWORD_TO_DINT(dwTmp)) / 1000.0;
+        dwTmp := SHL(WORD_TO_DWORD(MB_CmdIn[89]), 16) OR WORD_TO_DWORD(MB_CmdIn[90]);
+        HMI_rStepForce := DINT_TO_REAL(DWORD_TO_DINT(dwTmp)) / 100.0;
+        dwTmp := SHL(WORD_TO_DWORD(MB_CmdIn[91]), 16) OR WORD_TO_DWORD(MB_CmdIn[92]);
+        HMI_rStepKpForce := DINT_TO_REAL(DWORD_TO_DINT(dwTmp)) / 1000000.0;
+        HMI_rStepVelZMax := INT_TO_REAL(WORD_TO_INT(MB_CmdIn[93])) / 1000.0;
+        HMI_rStepTimeout := INT_TO_REAL(WORD_TO_INT(MB_CmdIn[94])) / 10.0;
     END_IF;
 ELSIF wMagic &lt;&gt; 0 AND wMagic &lt;&gt; 19533 THEN
     Tcp_iCommStatus := 2;
@@ -3965,6 +4138,7 @@ IF tonHb.Q OR Tcp_iCommStatus = 0 THEN
     Tcp_xAutoStart := FALSE;
     Tcp_xForceTare := FALSE; Tcp_xForceUntare := FALSE; Tcp_xForceGuide := FALSE;
     Tcp_xForcePeakReset := FALSE;
+    HMI_xStepMode := FALSE;          (* 0.80：网关离线即退出外部工步 *)
     Tcp_xStop := TRUE;
     Tcp_xAutoAbort := TRUE;
     Tcp_xEStop := TRUE;
@@ -4132,12 +4306,38 @@ MB_StatusOut[70] := AxisFb_wTq03M2;
 MB_StatusOut[71] := AxisFb_wTq04M2;
 MB_StatusOut[72] := AxisFb_wTq05M2;
 MB_StatusOut[73] := AxisFb_wTq06M2;
-(* 0.74 CSV 模式切换状态 word74：bit0 M1done / bit1 M1err / bit2 M2done / bit3 M2err *)
+(* 0.79 CSV 模式诊断 word74：bit0 M1 6060=9 / bit2 M2 6060=9（模式由从站 RxPDO 组态决定，只读） *)
 MB_StatusOut[74] := 0;
 IF AxisFb_xModeCsvM1 THEN MB_StatusOut[74] := MB_StatusOut[74] OR 1; END_IF;
-IF AxisFb_xModeCsvErrM1 THEN MB_StatusOut[74] := MB_StatusOut[74] OR 2; END_IF;
 IF AxisFb_xModeCsvM2 THEN MB_StatusOut[74] := MB_StatusOut[74] OR 4; END_IF;
-IF AxisFb_xModeCsvErrM2 THEN MB_StatusOut[74] := MB_StatusOut[74] OR 8; END_IF;
+(* 0.80 外部工步回报 word75..87 *)
+MB_StatusOut[75] := Step_wIdEcho;
+MB_StatusOut[76] := UINT_TO_WORD(Step_iCmdEcho);
+MB_StatusOut[77] := INT_TO_WORD(Step_iState);
+MB_StatusOut[78] := INT_TO_WORD(Step_iErr);
+MB_StatusOut[79] := INT_TO_WORD(Step_iPhase);
+MB_StatusOut[80] := 0;
+IF Step_xModeActive THEN MB_StatusOut[80] := MB_StatusOut[80] OR 1; END_IF;
+IF Step_xForceFollow THEN MB_StatusOut[80] := MB_StatusOut[80] OR 2; END_IF;
+IF Step_xForceReached THEN MB_StatusOut[80] := MB_StatusOut[80] OR 4; END_IF;
+IF Step_xForceLow THEN MB_StatusOut[80] := MB_StatusOut[80] OR 8; END_IF;
+IF Step_xRHold THEN MB_StatusOut[80] := MB_StatusOut[80] OR 16; END_IF;
+IF AxisFb_xStandstillY THEN MB_StatusOut[80] := MB_StatusOut[80] OR 32; END_IF;
+IF AxisFb_xStandstillZ THEN MB_StatusOut[80] := MB_StatusOut[80] OR 64; END_IF;
+IF AxisFb_xStandstillR THEN MB_StatusOut[80] := MB_StatusOut[80] OR 128; END_IF;
+diTmp := REAL_TO_DINT(Step_rProgress * 1000.0);
+dwTmp := DINT_TO_DWORD(diTmp);
+MB_StatusOut[81] := DWORD_TO_WORD(SHR(dwTmp, 16));
+MB_StatusOut[82] := DWORD_TO_WORD(dwTmp AND 16#FFFF);
+diTmp := REAL_TO_DINT(Step_rKpForceEcho * 1000000.0);
+dwTmp := DINT_TO_DWORD(diTmp);
+MB_StatusOut[83] := DWORD_TO_WORD(SHR(dwTmp, 16));
+MB_StatusOut[84] := DWORD_TO_WORD(dwTmp AND 16#FFFF);
+diTmp := REAL_TO_DINT(Step_rRHoldPos * 1000.0);
+dwTmp := DINT_TO_DWORD(diTmp);
+MB_StatusOut[85] := DWORD_TO_WORD(SHR(dwTmp, 16));
+MB_StatusOut[86] := DWORD_TO_WORD(dwTmp AND 16#FFFF);
+MB_StatusOut[87] := INT_TO_WORD(REAL_TO_INT(Step_rElapsed * 10.0));
 MB_StatusOut[95] := Tcp_wStatusSeq;
 
 (* ===== 控制源仲裁 ===== *)
@@ -4180,13 +4380,23 @@ IF eCtrlSrc = 1 THEN
     HMI_rWheelBase := Tcp_rWheelBase; HMI_rForceSet := Tcp_rForceSet;
     HMI_rForceSim := Tcp_rForceSim;
     HMI_iAutoPasses := Tcp_iAutoPasses;
-    HMI_rHeadingErr := Tcp_rHeadingErr;
     HMI_rKpTrack := Tcp_rKpTrack;
     HMI_rKpForce := Tcp_rKpForce;
     HMI_rAccX := Tcp_rAccX; HMI_rDecX := Tcp_rDecX;
     HMI_rAccY := Tcp_rAccY; HMI_rDecY := Tcp_rDecY;
     HMI_rAccZ := Tcp_rAccZ; HMI_rDecZ := Tcp_rDecZ;
     HMI_rAccR := Tcp_rAccR; HMI_rDecR := Tcp_rDecR;
+END_IF;
+
+(* 0.80 航向误差：只在远程源在线时采用（远程操作源，或外部工步模式）；否则清零。
+   0.79 及以前只在 eCtrlSrc=1 时复制，面板点动 X 时 HMI_rHeadingErr 会冻结在最后一个远程值继续打差速。 *)
+IF Tcp_xOnline AND ((eCtrlSrc = 1) OR HMI_xStepMode) THEN
+    HMI_rHeadingErr := Tcp_rHeadingErr;
+ELSE
+    HMI_rHeadingErr := 0.0;
+END_IF;
+IF Tcp_xOnline AND HMI_xStepMode THEN
+    HMI_rKpTrack := Tcp_rKpTrack;
 END_IF;
 
 HMI_xEStop := EStop AND Tcp_xEStop AND HMI_xEStopReq;
@@ -5704,7 +5914,7 @@ PRG_Force485();</xhtml>
                       </Parameter>
                       <Parameter ParameterId="1343291392" type="std:BOOL">
                         <Attributes download="false" />
-                        <Value name="_x0031_343291392" visiblename="AutoUpdate">False</Value>
+                        <Value name="_x0031_343291392" visiblename="AutoUpdate">True</Value>
                         <Name>AutoUpdate</Name>
                       </Parameter>
                     </ParameterSection>
@@ -8309,206 +8519,6 @@ PRG_Force485();</xhtml>
                         <Value name="_x0038_024" visiblename="BitLength_8020" offlineaccess="read" onlineaccess="read">32</Value>
                         <Name>BitLength_8020</Name>
                       </Parameter>
-                      <Parameter ParameterId="8030" type="std:INT" IndexInDevDesc="37">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_030" visiblename="set velocity (diSetVelocity)" offlineaccess="read" onlineaccess="read">1118</Value>
-                        <Name>set velocity (diSetVelocity)</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8031" type="std:STRING" IndexInDevDesc="38">
-                        <Attributes download="false" offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_031" visiblename="Object_8030" offlineaccess="read" onlineaccess="read">16#60FF:16#00</Value>
-                        <Name>Object_8030</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8032" type="std:UDINT" IndexInDevDesc="39">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_032" visiblename="AdrOffset_8030" offlineaccess="read" onlineaccess="read">4294967295</Value>
-                        <Name>AdrOffset_8030</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8033" type="std:USINT" IndexInDevDesc="40">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_033" visiblename="BitOffset_8030" offlineaccess="read" onlineaccess="read">0</Value>
-                        <Name>BitOffset_8030</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8034" type="std:USINT" IndexInDevDesc="41">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_034" visiblename="BitLength_8030" offlineaccess="read" onlineaccess="read">0</Value>
-                        <Name>BitLength_8030</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8040" type="std:INT" IndexInDevDesc="42">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_040" visiblename="set torque (wSetTorque)" offlineaccess="read" onlineaccess="read">1168</Value>
-                        <Name>set torque (wSetTorque)</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8041" type="std:STRING" IndexInDevDesc="43">
-                        <Attributes download="false" offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_041" visiblename="Object_8040" offlineaccess="read" onlineaccess="read">16#6071:16#00</Value>
-                        <Name>Object_8040</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8042" type="std:UDINT" IndexInDevDesc="44">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_042" visiblename="AdrOffset_8040" offlineaccess="read" onlineaccess="read">4294967295</Value>
-                        <Name>AdrOffset_8040</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8043" type="std:USINT" IndexInDevDesc="45">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_043" visiblename="BitOffset_8040" offlineaccess="read" onlineaccess="read">0</Value>
-                        <Name>BitOffset_8040</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8044" type="std:USINT" IndexInDevDesc="46">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_044" visiblename="BitLength_8040" offlineaccess="read" onlineaccess="read">0</Value>
-                        <Name>BitLength_8040</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8050" type="std:INT" IndexInDevDesc="47">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_050" visiblename="Modes of operation (OP)" offlineaccess="read" onlineaccess="read">10096</Value>
-                        <Name>Modes of operation (OP)</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8051" type="std:STRING" IndexInDevDesc="48">
-                        <Attributes download="false" offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_051" visiblename="Object_8050" offlineaccess="read" onlineaccess="read">16#6060:16#00</Value>
-                        <Name>Object_8050</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8052" type="std:UDINT" IndexInDevDesc="49">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_052" visiblename="AdrOffset_8050" offlineaccess="read" onlineaccess="read">6</Value>
-                        <Name>AdrOffset_8050</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8053" type="std:USINT" IndexInDevDesc="50">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_053" visiblename="BitOffset_8050" offlineaccess="read" onlineaccess="read">0</Value>
-                        <Name>BitOffset_8050</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8054" type="std:USINT" IndexInDevDesc="51">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_054" visiblename="BitLength_8050" offlineaccess="read" onlineaccess="read">8</Value>
-                        <Name>BitLength_8050</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8060" type="std:INT" IndexInDevDesc="52">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_060" visiblename="Touch Probe Function" offlineaccess="read" onlineaccess="read">10184</Value>
-                        <Name>Touch Probe Function</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8061" type="std:STRING" IndexInDevDesc="53">
-                        <Attributes download="false" offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_061" visiblename="Object_8060" offlineaccess="read" onlineaccess="read">16#60B8:16#00</Value>
-                        <Name>Object_8060</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8062" type="std:UDINT" IndexInDevDesc="54">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_062" visiblename="AdrOffset_8060" offlineaccess="read" onlineaccess="read">12</Value>
-                        <Name>AdrOffset_8060</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8063" type="std:USINT" IndexInDevDesc="55">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_063" visiblename="BitOffset_8060" offlineaccess="read" onlineaccess="read">0</Value>
-                        <Name>BitOffset_8060</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8064" type="std:USINT" IndexInDevDesc="56">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_064" visiblename="BitLength_8060" offlineaccess="read" onlineaccess="read">16</Value>
-                        <Name>BitLength_8060</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8070" type="std:INT" IndexInDevDesc="57">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_070" visiblename="Add velocity value" offlineaccess="read" onlineaccess="read">10177</Value>
-                        <Name>Add velocity value</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8071" type="std:STRING" IndexInDevDesc="58">
-                        <Attributes download="false" offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_071" visiblename="Object_8070" offlineaccess="read" onlineaccess="read">16#60B1:16#00</Value>
-                        <Name>Object_8070</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8072" type="std:UDINT" IndexInDevDesc="59">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_072" visiblename="AdrOffset_8070" offlineaccess="read" onlineaccess="read">4294967295</Value>
-                        <Name>AdrOffset_8070</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8073" type="std:USINT" IndexInDevDesc="60">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_073" visiblename="BitOffset_8070" offlineaccess="read" onlineaccess="read">0</Value>
-                        <Name>BitOffset_8070</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8074" type="std:USINT" IndexInDevDesc="61">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_074" visiblename="BitLength_8070" offlineaccess="read" onlineaccess="read">0</Value>
-                        <Name>BitLength_8070</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8080" type="std:INT" IndexInDevDesc="62">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_080" visiblename="Add torque value" offlineaccess="read" onlineaccess="read">10178</Value>
-                        <Name>Add torque value</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8081" type="std:STRING" IndexInDevDesc="63">
-                        <Attributes download="false" offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_081" visiblename="Object_8080" offlineaccess="read" onlineaccess="read">16#60B2:16#00</Value>
-                        <Name>Object_8080</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8082" type="std:UDINT" IndexInDevDesc="64">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_082" visiblename="AdrOffset_8080" offlineaccess="read" onlineaccess="read">4294967295</Value>
-                        <Name>AdrOffset_8080</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8083" type="std:USINT" IndexInDevDesc="65">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_083" visiblename="BitOffset_8080" offlineaccess="read" onlineaccess="read">0</Value>
-                        <Name>BitOffset_8080</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8084" type="std:USINT" IndexInDevDesc="66">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_084" visiblename="BitLength_8080" offlineaccess="read" onlineaccess="read">0</Value>
-                        <Name>BitLength_8080</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8090" type="std:INT" IndexInDevDesc="67">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_090" visiblename="Digital outputs (A637)" offlineaccess="read" onlineaccess="read">10254</Value>
-                        <Name>Digital outputs (A637)</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8091" type="std:STRING" IndexInDevDesc="68">
-                        <Attributes download="false" offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_091" visiblename="Object_8090" offlineaccess="read" onlineaccess="read">16#60FE:16#01</Value>
-                        <Name>Object_8090</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8092" type="std:UDINT" IndexInDevDesc="69">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_092" visiblename="AdrOffset_8090" offlineaccess="read" onlineaccess="read">16</Value>
-                        <Name>AdrOffset_8090</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8093" type="std:USINT" IndexInDevDesc="70">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_093" visiblename="BitOffset_8090" offlineaccess="read" onlineaccess="read">0</Value>
-                        <Name>BitOffset_8090</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8094" type="std:USINT" IndexInDevDesc="71">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_094" visiblename="BitLength_8090" offlineaccess="read" onlineaccess="read">32</Value>
-                        <Name>BitLength_8090</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8100" type="std:INT" IndexInDevDesc="72">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_100" visiblename="Max Profile Velocity" offlineaccess="read" onlineaccess="read">2010</Value>
-                        <Name>Max Profile Velocity</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8101" type="std:STRING" IndexInDevDesc="73">
-                        <Attributes download="false" offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_101" visiblename="Object_8100" offlineaccess="read" onlineaccess="read">16#607F:16#00</Value>
-                        <Name>Object_8100</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8102" type="std:UDINT" IndexInDevDesc="74">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_102" visiblename="AdrOffset_8100" offlineaccess="read" onlineaccess="read">4294967295</Value>
-                        <Name>AdrOffset_8100</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8103" type="std:USINT" IndexInDevDesc="75">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_103" visiblename="BitOffset_8100" offlineaccess="read" onlineaccess="read">0</Value>
-                        <Name>BitOffset_8100</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8104" type="std:USINT" IndexInDevDesc="76">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_104" visiblename="BitLength_8100" offlineaccess="read" onlineaccess="read">0</Value>
-                        <Name>BitLength_8100</Name>
-                      </Parameter>
                       <Parameter ParameterId="8500" type="std:INT" IndexInDevDesc="77">
                         <Attributes offlineaccess="read" onlineaccess="read" />
                         <Value name="_x0038_500" visiblename="NumberOfInputMappingParams" offlineaccess="read" onlineaccess="read">12</Value>
@@ -8564,259 +8574,9 @@ PRG_Force485();</xhtml>
                         <Value name="_x0038_524" visiblename="BitLength_8520" offlineaccess="read" onlineaccess="read">32</Value>
                         <Name>BitLength_8520</Name>
                       </Parameter>
-                      <Parameter ParameterId="8530" type="std:INT" IndexInDevDesc="88">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_530" visiblename="actual velocity (diActVelocity)" offlineaccess="read" onlineaccess="read">1119</Value>
-                        <Name>actual velocity (diActVelocity)</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8531" type="std:STRING" IndexInDevDesc="89">
-                        <Attributes download="false" offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_531" visiblename="Object_8530" offlineaccess="read" onlineaccess="read">16#606C:16#00</Value>
-                        <Name>Object_8530</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8532" type="std:UDINT" IndexInDevDesc="90">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_532" visiblename="AdrOffset_8530" offlineaccess="read" onlineaccess="read">4294967295</Value>
-                        <Name>AdrOffset_8530</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8533" type="std:USINT" IndexInDevDesc="91">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_533" visiblename="BitOffset_8530" offlineaccess="read" onlineaccess="read">0</Value>
-                        <Name>BitOffset_8530</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8534" type="std:USINT" IndexInDevDesc="92">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_534" visiblename="BitLength_8530" offlineaccess="read" onlineaccess="read">0</Value>
-                        <Name>BitLength_8530</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8540" type="std:INT" IndexInDevDesc="93">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_540" visiblename="actual torque (wActTorque)" offlineaccess="read" onlineaccess="read">1169</Value>
-                        <Name>actual torque (wActTorque)</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8541" type="std:STRING" IndexInDevDesc="94">
-                        <Attributes download="false" offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_541" visiblename="Object_8540" offlineaccess="read" onlineaccess="read">16#6077:16#00</Value>
-                        <Name>Object_8540</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8542" type="std:UDINT" IndexInDevDesc="95">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_542" visiblename="AdrOffset_8540" offlineaccess="read" onlineaccess="read">4294967295</Value>
-                        <Name>AdrOffset_8540</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8543" type="std:USINT" IndexInDevDesc="96">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_543" visiblename="BitOffset_8540" offlineaccess="read" onlineaccess="read">0</Value>
-                        <Name>BitOffset_8540</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8544" type="std:USINT" IndexInDevDesc="97">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_544" visiblename="BitLength_8540" offlineaccess="read" onlineaccess="read">0</Value>
-                        <Name>BitLength_8540</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8550" type="std:INT" IndexInDevDesc="98">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_550" visiblename="Modes of operation display (OP)" offlineaccess="read" onlineaccess="read">20097</Value>
-                        <Name>Modes of operation display (OP)</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8551" type="std:STRING" IndexInDevDesc="99">
-                        <Attributes download="false" offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_551" visiblename="Object_8550" offlineaccess="read" onlineaccess="read">16#6061:16#00</Value>
-                        <Name>Object_8550</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8552" type="std:UDINT" IndexInDevDesc="100">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_552" visiblename="AdrOffset_8550" offlineaccess="read" onlineaccess="read">8</Value>
-                        <Name>AdrOffset_8550</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8553" type="std:USINT" IndexInDevDesc="101">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_553" visiblename="BitOffset_8550" offlineaccess="read" onlineaccess="read">0</Value>
-                        <Name>BitOffset_8550</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8554" type="std:USINT" IndexInDevDesc="102">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_554" visiblename="BitLength_8550" offlineaccess="read" onlineaccess="read">8</Value>
-                        <Name>BitLength_8550</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8560" type="std:INT" IndexInDevDesc="103">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_560" visiblename="digital inputs (in.dwDigitalInputs)" offlineaccess="read" onlineaccess="read">20253</Value>
-                        <Name>digital inputs (in.dwDigitalInputs)</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8561" type="std:STRING" IndexInDevDesc="104">
-                        <Attributes download="false" offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_561" visiblename="Object_8560" offlineaccess="read" onlineaccess="read">16#60FD:16#00</Value>
-                        <Name>Object_8560</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8562" type="std:UDINT" IndexInDevDesc="105">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_562" visiblename="AdrOffset_8560" offlineaccess="read" onlineaccess="read">40</Value>
-                        <Name>AdrOffset_8560</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8563" type="std:USINT" IndexInDevDesc="106">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_563" visiblename="BitOffset_8560" offlineaccess="read" onlineaccess="read">0</Value>
-                        <Name>BitOffset_8560</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8564" type="std:USINT" IndexInDevDesc="107">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_564" visiblename="BitLength_8560" offlineaccess="read" onlineaccess="read">32</Value>
-                        <Name>BitLength_8560</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8570" type="std:INT" IndexInDevDesc="108">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_570" visiblename="Touch Probe Status" offlineaccess="read" onlineaccess="read">20185</Value>
-                        <Name>Touch Probe Status</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8571" type="std:STRING" IndexInDevDesc="109">
-                        <Attributes download="false" offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_571" visiblename="Object_8570" offlineaccess="read" onlineaccess="read">16#60B9:16#00</Value>
-                        <Name>Object_8570</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8572" type="std:UDINT" IndexInDevDesc="110">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_572" visiblename="AdrOffset_8570" offlineaccess="read" onlineaccess="read">20</Value>
-                        <Name>AdrOffset_8570</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8573" type="std:USINT" IndexInDevDesc="111">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_573" visiblename="BitOffset_8570" offlineaccess="read" onlineaccess="read">0</Value>
-                        <Name>BitOffset_8570</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8574" type="std:USINT" IndexInDevDesc="112">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_574" visiblename="BitLength_8570" offlineaccess="read" onlineaccess="read">16</Value>
-                        <Name>BitLength_8570</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8580" type="std:INT" IndexInDevDesc="113">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_580" visiblename="Touch Probe 1 rising edge" offlineaccess="read" onlineaccess="read">20186</Value>
-                        <Name>Touch Probe 1 rising edge</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8581" type="std:STRING" IndexInDevDesc="114">
-                        <Attributes download="false" offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_581" visiblename="Object_8580" offlineaccess="read" onlineaccess="read">16#60BA:16#00</Value>
-                        <Name>Object_8580</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8582" type="std:UDINT" IndexInDevDesc="115">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_582" visiblename="AdrOffset_8580" offlineaccess="read" onlineaccess="read">24</Value>
-                        <Name>AdrOffset_8580</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8583" type="std:USINT" IndexInDevDesc="116">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_583" visiblename="BitOffset_8580" offlineaccess="read" onlineaccess="read">0</Value>
-                        <Name>BitOffset_8580</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8584" type="std:USINT" IndexInDevDesc="117">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_584" visiblename="BitLength_8580" offlineaccess="read" onlineaccess="read">32</Value>
-                        <Name>BitLength_8580</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8590" type="std:INT" IndexInDevDesc="118">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_590" visiblename="Touch Probe 1 falling edge" offlineaccess="read" onlineaccess="read">20187</Value>
-                        <Name>Touch Probe 1 falling edge</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8591" type="std:STRING" IndexInDevDesc="119">
-                        <Attributes download="false" offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_591" visiblename="Object_8590" offlineaccess="read" onlineaccess="read">16#60BB:16#00</Value>
-                        <Name>Object_8590</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8592" type="std:UDINT" IndexInDevDesc="120">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_592" visiblename="AdrOffset_8590" offlineaccess="read" onlineaccess="read">28</Value>
-                        <Name>AdrOffset_8590</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8593" type="std:USINT" IndexInDevDesc="121">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_593" visiblename="BitOffset_8590" offlineaccess="read" onlineaccess="read">0</Value>
-                        <Name>BitOffset_8590</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8594" type="std:USINT" IndexInDevDesc="122">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_594" visiblename="BitLength_8590" offlineaccess="read" onlineaccess="read">32</Value>
-                        <Name>BitLength_8590</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8600" type="std:INT" IndexInDevDesc="123">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_600" visiblename="Touch Probe 2 rising edge" offlineaccess="read" onlineaccess="read">20188</Value>
-                        <Name>Touch Probe 2 rising edge</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8601" type="std:STRING" IndexInDevDesc="124">
-                        <Attributes download="false" offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_601" visiblename="Object_8600" offlineaccess="read" onlineaccess="read">16#60BC:16#00</Value>
-                        <Name>Object_8600</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8602" type="std:UDINT" IndexInDevDesc="125">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_602" visiblename="AdrOffset_8600" offlineaccess="read" onlineaccess="read">32</Value>
-                        <Name>AdrOffset_8600</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8603" type="std:USINT" IndexInDevDesc="126">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_603" visiblename="BitOffset_8600" offlineaccess="read" onlineaccess="read">0</Value>
-                        <Name>BitOffset_8600</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8604" type="std:USINT" IndexInDevDesc="127">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_604" visiblename="BitLength_8600" offlineaccess="read" onlineaccess="read">32</Value>
-                        <Name>BitLength_8600</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8610" type="std:INT" IndexInDevDesc="128">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_610" visiblename="Touch Probe 2 falling edge" offlineaccess="read" onlineaccess="read">20189</Value>
-                        <Name>Touch Probe 2 falling edge</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8611" type="std:STRING" IndexInDevDesc="129">
-                        <Attributes download="false" offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_611" visiblename="Object_8600" offlineaccess="read" onlineaccess="read">16#60BD:16#00</Value>
-                        <Name>Object_8600</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8612" type="std:UDINT" IndexInDevDesc="130">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_612" visiblename="AdrOffset_8600" offlineaccess="read" onlineaccess="read">36</Value>
-                        <Name>AdrOffset_8600</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8613" type="std:USINT" IndexInDevDesc="131">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_613" visiblename="BitOffset_8600" offlineaccess="read" onlineaccess="read">0</Value>
-                        <Name>BitOffset_8600</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8614" type="std:USINT" IndexInDevDesc="132">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_614" visiblename="BitLength_8600" offlineaccess="read" onlineaccess="read">32</Value>
-                        <Name>BitLength_8600</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8620" type="std:INT" IndexInDevDesc="133">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_620" visiblename="Error Code(603F)" offlineaccess="read" onlineaccess="read">2020</Value>
-                        <Name>Error Code(603F)</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8621" type="std:STRING" IndexInDevDesc="134">
-                        <Attributes download="false" offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_621" visiblename="Object_8620" offlineaccess="read" onlineaccess="read">16#603F:16#00</Value>
-                        <Name>Object_8620</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8622" type="std:UDINT" IndexInDevDesc="135">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_622" visiblename="AdrOffset_8620" offlineaccess="read" onlineaccess="read">4</Value>
-                        <Name>AdrOffset_8620</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8623" type="std:USINT" IndexInDevDesc="136">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_623" visiblename="BitOffset_8620" offlineaccess="read" onlineaccess="read">0</Value>
-                        <Name>BitOffset_8620</Name>
-                      </Parameter>
-                      <Parameter ParameterId="8624" type="std:USINT" IndexInDevDesc="137">
-                        <Attributes offlineaccess="read" onlineaccess="read" />
-                        <Value name="_x0038_624" visiblename="BitLength_8620" offlineaccess="read" onlineaccess="read">16</Value>
-                        <Name>BitLength_8620</Name>
-                      </Parameter>
                       <Parameter ParameterId="8999" type="std:BOOL" IndexInDevDesc="138">
                         <Attributes />
-                        <Value name="_x0038_999" visiblename="Automatic Mapping">TRUE</Value>
+                        <Value name="_x0038_999" visiblename="Automatic Mapping">True</Value>
                         <Name>Automatic Mapping</Name>
                       </Parameter>
                     </ParameterSection>
@@ -9088,6 +8848,31 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
                       <Value name="_x0038_027" visiblename="AddressPointer_8020" offlineaccess="read" onlineaccess="read">ADR(%QD2)</Value>
                       <Name>AddressPointer_8020</Name>
                     </Parameter>
+                    <Parameter ParameterId="8030" type="std:INT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_030" visiblename="set velocity (diSetVelocity)" offlineaccess="read" onlineaccess="read">1118</Value>
+                      <Name>set velocity (diSetVelocity)</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8031" type="std:STRING">
+                      <Attributes download="false" offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_031" visiblename="Object_8030" offlineaccess="read" onlineaccess="read">16#60FF:16#00</Value>
+                      <Name>Object_8030</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8032" type="std:UDINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_032" visiblename="AdrOffset_8030" offlineaccess="read" onlineaccess="read">4294967295</Value>
+                      <Name>AdrOffset_8030</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8033" type="std:USINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_033" visiblename="BitOffset_8030" offlineaccess="read" onlineaccess="read">0</Value>
+                      <Name>BitOffset_8030</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8034" type="std:USINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_034" visiblename="BitLength_8030" offlineaccess="read" onlineaccess="read">0</Value>
+                      <Name>BitLength_8030</Name>
+                    </Parameter>
                     <Parameter ParameterId="8035" type="std:STRING">
                       <Attributes offlineaccess="read" onlineaccess="read" />
                       <Value name="_x0038_035" visiblename="Address_8030" offlineaccess="read" onlineaccess="read">''</Value>
@@ -9102,6 +8887,31 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
                       <Attributes offlineaccess="read" onlineaccess="read" />
                       <Value name="_x0038_037" visiblename="AddressPointer_8030" offlineaccess="read" onlineaccess="read">0</Value>
                       <Name>AddressPointer_8030</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8040" type="std:INT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_040" visiblename="set torque (wSetTorque)" offlineaccess="read" onlineaccess="read">1168</Value>
+                      <Name>set torque (wSetTorque)</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8041" type="std:STRING">
+                      <Attributes download="false" offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_041" visiblename="Object_8040" offlineaccess="read" onlineaccess="read">16#6071:16#00</Value>
+                      <Name>Object_8040</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8042" type="std:UDINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_042" visiblename="AdrOffset_8040" offlineaccess="read" onlineaccess="read">4294967295</Value>
+                      <Name>AdrOffset_8040</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8043" type="std:USINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_043" visiblename="BitOffset_8040" offlineaccess="read" onlineaccess="read">0</Value>
+                      <Name>BitOffset_8040</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8044" type="std:USINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_044" visiblename="BitLength_8040" offlineaccess="read" onlineaccess="read">0</Value>
+                      <Name>BitLength_8040</Name>
                     </Parameter>
                     <Parameter ParameterId="8045" type="std:STRING">
                       <Attributes offlineaccess="read" onlineaccess="read" />
@@ -9118,6 +8928,31 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
                       <Value name="_x0038_047" visiblename="AddressPointer_8040" offlineaccess="read" onlineaccess="read">0</Value>
                       <Name>AddressPointer_8040</Name>
                     </Parameter>
+                    <Parameter ParameterId="8050" type="std:INT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_050" visiblename="Modes of operation (OP)" offlineaccess="read" onlineaccess="read">10096</Value>
+                      <Name>Modes of operation (OP)</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8051" type="std:STRING">
+                      <Attributes download="false" offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_051" visiblename="Object_8050" offlineaccess="read" onlineaccess="read">16#6060:16#00</Value>
+                      <Name>Object_8050</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8052" type="std:UDINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_052" visiblename="AdrOffset_8050" offlineaccess="read" onlineaccess="read">6</Value>
+                      <Name>AdrOffset_8050</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8053" type="std:USINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_053" visiblename="BitOffset_8050" offlineaccess="read" onlineaccess="read">0</Value>
+                      <Name>BitOffset_8050</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8054" type="std:USINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_054" visiblename="BitLength_8050" offlineaccess="read" onlineaccess="read">8</Value>
+                      <Name>BitLength_8050</Name>
+                    </Parameter>
                     <Parameter ParameterId="8055" type="std:STRING">
                       <Attributes offlineaccess="read" onlineaccess="read" />
                       <Value name="_x0038_055" visiblename="Address_8050" offlineaccess="read" onlineaccess="read">'%QB6'</Value>
@@ -9132,6 +8967,31 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
                       <Attributes offlineaccess="read" onlineaccess="read" />
                       <Value name="_x0038_057" visiblename="AddressPointer_8050" offlineaccess="read" onlineaccess="read">ADR(%QB6)</Value>
                       <Name>AddressPointer_8050</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8060" type="std:INT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_060" visiblename="Touch Probe Function" offlineaccess="read" onlineaccess="read">10184</Value>
+                      <Name>Touch Probe Function</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8061" type="std:STRING">
+                      <Attributes download="false" offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_061" visiblename="Object_8060" offlineaccess="read" onlineaccess="read">16#60B8:16#00</Value>
+                      <Name>Object_8060</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8062" type="std:UDINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_062" visiblename="AdrOffset_8060" offlineaccess="read" onlineaccess="read">12</Value>
+                      <Name>AdrOffset_8060</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8063" type="std:USINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_063" visiblename="BitOffset_8060" offlineaccess="read" onlineaccess="read">0</Value>
+                      <Name>BitOffset_8060</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8064" type="std:USINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_064" visiblename="BitLength_8060" offlineaccess="read" onlineaccess="read">16</Value>
+                      <Name>BitLength_8060</Name>
                     </Parameter>
                     <Parameter ParameterId="8065" type="std:STRING">
                       <Attributes offlineaccess="read" onlineaccess="read" />
@@ -9148,6 +9008,31 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
                       <Value name="_x0038_067" visiblename="AddressPointer_8060" offlineaccess="read" onlineaccess="read">ADR(%QW6)</Value>
                       <Name>AddressPointer_8060</Name>
                     </Parameter>
+                    <Parameter ParameterId="8070" type="std:INT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_070" visiblename="Add velocity value" offlineaccess="read" onlineaccess="read">10177</Value>
+                      <Name>Add velocity value</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8071" type="std:STRING">
+                      <Attributes download="false" offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_071" visiblename="Object_8070" offlineaccess="read" onlineaccess="read">16#60B1:16#00</Value>
+                      <Name>Object_8070</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8072" type="std:UDINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_072" visiblename="AdrOffset_8070" offlineaccess="read" onlineaccess="read">4294967295</Value>
+                      <Name>AdrOffset_8070</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8073" type="std:USINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_073" visiblename="BitOffset_8070" offlineaccess="read" onlineaccess="read">0</Value>
+                      <Name>BitOffset_8070</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8074" type="std:USINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_074" visiblename="BitLength_8070" offlineaccess="read" onlineaccess="read">0</Value>
+                      <Name>BitLength_8070</Name>
+                    </Parameter>
                     <Parameter ParameterId="8075" type="std:STRING">
                       <Attributes offlineaccess="read" onlineaccess="read" />
                       <Value name="_x0038_075" visiblename="Address_8070" offlineaccess="read" onlineaccess="read">''</Value>
@@ -9162,6 +9047,31 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
                       <Attributes offlineaccess="read" onlineaccess="read" />
                       <Value name="_x0038_077" visiblename="AddressPointer_8070" offlineaccess="read" onlineaccess="read">0</Value>
                       <Name>AddressPointer_8070</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8080" type="std:INT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_080" visiblename="Add torque value" offlineaccess="read" onlineaccess="read">10178</Value>
+                      <Name>Add torque value</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8081" type="std:STRING">
+                      <Attributes download="false" offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_081" visiblename="Object_8080" offlineaccess="read" onlineaccess="read">16#60B2:16#00</Value>
+                      <Name>Object_8080</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8082" type="std:UDINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_082" visiblename="AdrOffset_8080" offlineaccess="read" onlineaccess="read">4294967295</Value>
+                      <Name>AdrOffset_8080</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8083" type="std:USINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_083" visiblename="BitOffset_8080" offlineaccess="read" onlineaccess="read">0</Value>
+                      <Name>BitOffset_8080</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8084" type="std:USINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_084" visiblename="BitLength_8080" offlineaccess="read" onlineaccess="read">0</Value>
+                      <Name>BitLength_8080</Name>
                     </Parameter>
                     <Parameter ParameterId="8085" type="std:STRING">
                       <Attributes offlineaccess="read" onlineaccess="read" />
@@ -9178,6 +9088,31 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
                       <Value name="_x0038_087" visiblename="AddressPointer_8080" offlineaccess="read" onlineaccess="read">0</Value>
                       <Name>AddressPointer_8080</Name>
                     </Parameter>
+                    <Parameter ParameterId="8090" type="std:INT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_090" visiblename="Digital outputs (A637)" offlineaccess="read" onlineaccess="read">10254</Value>
+                      <Name>Digital outputs (A637)</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8091" type="std:STRING">
+                      <Attributes download="false" offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_091" visiblename="Object_8090" offlineaccess="read" onlineaccess="read">16#60FE:16#01</Value>
+                      <Name>Object_8090</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8092" type="std:UDINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_092" visiblename="AdrOffset_8090" offlineaccess="read" onlineaccess="read">16</Value>
+                      <Name>AdrOffset_8090</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8093" type="std:USINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_093" visiblename="BitOffset_8090" offlineaccess="read" onlineaccess="read">0</Value>
+                      <Name>BitOffset_8090</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8094" type="std:USINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_094" visiblename="BitLength_8090" offlineaccess="read" onlineaccess="read">32</Value>
+                      <Name>BitLength_8090</Name>
+                    </Parameter>
                     <Parameter ParameterId="8095" type="std:STRING">
                       <Attributes offlineaccess="read" onlineaccess="read" />
                       <Value name="_x0038_095" visiblename="Address_8090" offlineaccess="read" onlineaccess="read">'%QD4'</Value>
@@ -9192,6 +9127,31 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
                       <Attributes offlineaccess="read" onlineaccess="read" />
                       <Value name="_x0038_097" visiblename="AddressPointer_8090" offlineaccess="read" onlineaccess="read">ADR(%QD4)</Value>
                       <Name>AddressPointer_8090</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8100" type="std:INT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_100" visiblename="Max Profile Velocity" offlineaccess="read" onlineaccess="read">2010</Value>
+                      <Name>Max Profile Velocity</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8101" type="std:STRING">
+                      <Attributes download="false" offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_101" visiblename="Object_8100" offlineaccess="read" onlineaccess="read">16#607F:16#00</Value>
+                      <Name>Object_8100</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8102" type="std:UDINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_102" visiblename="AdrOffset_8100" offlineaccess="read" onlineaccess="read">4294967295</Value>
+                      <Name>AdrOffset_8100</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8103" type="std:USINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_103" visiblename="BitOffset_8100" offlineaccess="read" onlineaccess="read">0</Value>
+                      <Name>BitOffset_8100</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8104" type="std:USINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_104" visiblename="BitLength_8100" offlineaccess="read" onlineaccess="read">0</Value>
+                      <Name>BitLength_8100</Name>
                     </Parameter>
                     <Parameter ParameterId="8105" type="std:STRING">
                       <Attributes offlineaccess="read" onlineaccess="read" />
@@ -9238,6 +9198,31 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
                       <Value name="_x0038_527" visiblename="AddressPointer_8520" offlineaccess="read" onlineaccess="read">ADR(%ID3)</Value>
                       <Name>AddressPointer_8520</Name>
                     </Parameter>
+                    <Parameter ParameterId="8530" type="std:INT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_530" visiblename="actual velocity (diActVelocity)" offlineaccess="read" onlineaccess="read">1119</Value>
+                      <Name>actual velocity (diActVelocity)</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8531" type="std:STRING">
+                      <Attributes download="false" offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_531" visiblename="Object_8530" offlineaccess="read" onlineaccess="read">16#606C:16#00</Value>
+                      <Name>Object_8530</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8532" type="std:UDINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_532" visiblename="AdrOffset_8530" offlineaccess="read" onlineaccess="read">4294967295</Value>
+                      <Name>AdrOffset_8530</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8533" type="std:USINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_533" visiblename="BitOffset_8530" offlineaccess="read" onlineaccess="read">0</Value>
+                      <Name>BitOffset_8530</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8534" type="std:USINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_534" visiblename="BitLength_8530" offlineaccess="read" onlineaccess="read">0</Value>
+                      <Name>BitLength_8530</Name>
+                    </Parameter>
                     <Parameter ParameterId="8535" type="std:STRING">
                       <Attributes offlineaccess="read" onlineaccess="read" />
                       <Value name="_x0038_535" visiblename="Address_8530" offlineaccess="read" onlineaccess="read">''</Value>
@@ -9252,6 +9237,31 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
                       <Attributes offlineaccess="read" onlineaccess="read" />
                       <Value name="_x0038_537" visiblename="AddressPointer_8530" offlineaccess="read" onlineaccess="read">0</Value>
                       <Name>AddressPointer_8530</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8540" type="std:INT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_540" visiblename="actual torque (wActTorque)" offlineaccess="read" onlineaccess="read">1169</Value>
+                      <Name>actual torque (wActTorque)</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8541" type="std:STRING">
+                      <Attributes download="false" offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_541" visiblename="Object_8540" offlineaccess="read" onlineaccess="read">16#6077:16#00</Value>
+                      <Name>Object_8540</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8542" type="std:UDINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_542" visiblename="AdrOffset_8540" offlineaccess="read" onlineaccess="read">4294967295</Value>
+                      <Name>AdrOffset_8540</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8543" type="std:USINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_543" visiblename="BitOffset_8540" offlineaccess="read" onlineaccess="read">0</Value>
+                      <Name>BitOffset_8540</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8544" type="std:USINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_544" visiblename="BitLength_8540" offlineaccess="read" onlineaccess="read">0</Value>
+                      <Name>BitLength_8540</Name>
                     </Parameter>
                     <Parameter ParameterId="8545" type="std:STRING">
                       <Attributes offlineaccess="read" onlineaccess="read" />
@@ -9268,6 +9278,31 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
                       <Value name="_x0038_547" visiblename="AddressPointer_8540" offlineaccess="read" onlineaccess="read">0</Value>
                       <Name>AddressPointer_8540</Name>
                     </Parameter>
+                    <Parameter ParameterId="8550" type="std:INT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_550" visiblename="Modes of operation display (OP)" offlineaccess="read" onlineaccess="read">20097</Value>
+                      <Name>Modes of operation display (OP)</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8551" type="std:STRING">
+                      <Attributes download="false" offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_551" visiblename="Object_8550" offlineaccess="read" onlineaccess="read">16#6061:16#00</Value>
+                      <Name>Object_8550</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8552" type="std:UDINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_552" visiblename="AdrOffset_8550" offlineaccess="read" onlineaccess="read">8</Value>
+                      <Name>AdrOffset_8550</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8553" type="std:USINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_553" visiblename="BitOffset_8550" offlineaccess="read" onlineaccess="read">0</Value>
+                      <Name>BitOffset_8550</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8554" type="std:USINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_554" visiblename="BitLength_8550" offlineaccess="read" onlineaccess="read">8</Value>
+                      <Name>BitLength_8550</Name>
+                    </Parameter>
                     <Parameter ParameterId="8555" type="std:STRING">
                       <Attributes offlineaccess="read" onlineaccess="read" />
                       <Value name="_x0038_555" visiblename="Address_8550" offlineaccess="read" onlineaccess="read">'%IB8'</Value>
@@ -9282,6 +9317,31 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
                       <Attributes offlineaccess="read" onlineaccess="read" />
                       <Value name="_x0038_557" visiblename="AddressPointer_8550" offlineaccess="read" onlineaccess="read">ADR(%IB8)</Value>
                       <Name>AddressPointer_8550</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8560" type="std:INT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_560" visiblename="digital inputs (in.dwDigitalInputs)" offlineaccess="read" onlineaccess="read">20253</Value>
+                      <Name>digital inputs (in.dwDigitalInputs)</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8561" type="std:STRING">
+                      <Attributes download="false" offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_561" visiblename="Object_8560" offlineaccess="read" onlineaccess="read">16#60FD:16#00</Value>
+                      <Name>Object_8560</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8562" type="std:UDINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_562" visiblename="AdrOffset_8560" offlineaccess="read" onlineaccess="read">40</Value>
+                      <Name>AdrOffset_8560</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8563" type="std:USINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_563" visiblename="BitOffset_8560" offlineaccess="read" onlineaccess="read">0</Value>
+                      <Name>BitOffset_8560</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8564" type="std:USINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_564" visiblename="BitLength_8560" offlineaccess="read" onlineaccess="read">32</Value>
+                      <Name>BitLength_8560</Name>
                     </Parameter>
                     <Parameter ParameterId="8565" type="std:STRING">
                       <Attributes offlineaccess="read" onlineaccess="read" />
@@ -9298,6 +9358,31 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
                       <Value name="_x0038_567" visiblename="AddressPointer_8560" offlineaccess="read" onlineaccess="read">ADR(%ID10)</Value>
                       <Name>AddressPointer_8560</Name>
                     </Parameter>
+                    <Parameter ParameterId="8570" type="std:INT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_570" visiblename="Touch Probe Status" offlineaccess="read" onlineaccess="read">20185</Value>
+                      <Name>Touch Probe Status</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8571" type="std:STRING">
+                      <Attributes download="false" offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_571" visiblename="Object_8570" offlineaccess="read" onlineaccess="read">16#60B9:16#00</Value>
+                      <Name>Object_8570</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8572" type="std:UDINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_572" visiblename="AdrOffset_8570" offlineaccess="read" onlineaccess="read">20</Value>
+                      <Name>AdrOffset_8570</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8573" type="std:USINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_573" visiblename="BitOffset_8570" offlineaccess="read" onlineaccess="read">0</Value>
+                      <Name>BitOffset_8570</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8574" type="std:USINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_574" visiblename="BitLength_8570" offlineaccess="read" onlineaccess="read">16</Value>
+                      <Name>BitLength_8570</Name>
+                    </Parameter>
                     <Parameter ParameterId="8575" type="std:STRING">
                       <Attributes offlineaccess="read" onlineaccess="read" />
                       <Value name="_x0038_575" visiblename="Address_8570" offlineaccess="read" onlineaccess="read">'%IW10'</Value>
@@ -9312,6 +9397,31 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
                       <Attributes offlineaccess="read" onlineaccess="read" />
                       <Value name="_x0038_577" visiblename="AddressPointer_8570" offlineaccess="read" onlineaccess="read">ADR(%IW10)</Value>
                       <Name>AddressPointer_8570</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8580" type="std:INT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_580" visiblename="Touch Probe 1 rising edge" offlineaccess="read" onlineaccess="read">20186</Value>
+                      <Name>Touch Probe 1 rising edge</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8581" type="std:STRING">
+                      <Attributes download="false" offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_581" visiblename="Object_8580" offlineaccess="read" onlineaccess="read">16#60BA:16#00</Value>
+                      <Name>Object_8580</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8582" type="std:UDINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_582" visiblename="AdrOffset_8580" offlineaccess="read" onlineaccess="read">24</Value>
+                      <Name>AdrOffset_8580</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8583" type="std:USINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_583" visiblename="BitOffset_8580" offlineaccess="read" onlineaccess="read">0</Value>
+                      <Name>BitOffset_8580</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8584" type="std:USINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_584" visiblename="BitLength_8580" offlineaccess="read" onlineaccess="read">32</Value>
+                      <Name>BitLength_8580</Name>
                     </Parameter>
                     <Parameter ParameterId="8585" type="std:STRING">
                       <Attributes offlineaccess="read" onlineaccess="read" />
@@ -9328,6 +9438,31 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
                       <Value name="_x0038_587" visiblename="AddressPointer_8580" offlineaccess="read" onlineaccess="read">ADR(%ID6)</Value>
                       <Name>AddressPointer_8580</Name>
                     </Parameter>
+                    <Parameter ParameterId="8590" type="std:INT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_590" visiblename="Touch Probe 1 falling edge" offlineaccess="read" onlineaccess="read">20187</Value>
+                      <Name>Touch Probe 1 falling edge</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8591" type="std:STRING">
+                      <Attributes download="false" offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_591" visiblename="Object_8590" offlineaccess="read" onlineaccess="read">16#60BB:16#00</Value>
+                      <Name>Object_8590</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8592" type="std:UDINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_592" visiblename="AdrOffset_8590" offlineaccess="read" onlineaccess="read">28</Value>
+                      <Name>AdrOffset_8590</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8593" type="std:USINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_593" visiblename="BitOffset_8590" offlineaccess="read" onlineaccess="read">0</Value>
+                      <Name>BitOffset_8590</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8594" type="std:USINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_594" visiblename="BitLength_8590" offlineaccess="read" onlineaccess="read">32</Value>
+                      <Name>BitLength_8590</Name>
+                    </Parameter>
                     <Parameter ParameterId="8595" type="std:STRING">
                       <Attributes offlineaccess="read" onlineaccess="read" />
                       <Value name="_x0038_595" visiblename="Address_8590" offlineaccess="read" onlineaccess="read">'%ID7'</Value>
@@ -9342,6 +9477,31 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
                       <Attributes offlineaccess="read" onlineaccess="read" />
                       <Value name="_x0038_597" visiblename="AddressPointer_8590" offlineaccess="read" onlineaccess="read">ADR(%ID7)</Value>
                       <Name>AddressPointer_8590</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8600" type="std:INT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_600" visiblename="Touch Probe 2 rising edge" offlineaccess="read" onlineaccess="read">20188</Value>
+                      <Name>Touch Probe 2 rising edge</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8601" type="std:STRING">
+                      <Attributes download="false" offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_601" visiblename="Object_8600" offlineaccess="read" onlineaccess="read">16#60BC:16#00</Value>
+                      <Name>Object_8600</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8602" type="std:UDINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_602" visiblename="AdrOffset_8600" offlineaccess="read" onlineaccess="read">32</Value>
+                      <Name>AdrOffset_8600</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8603" type="std:USINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_603" visiblename="BitOffset_8600" offlineaccess="read" onlineaccess="read">0</Value>
+                      <Name>BitOffset_8600</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8604" type="std:USINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_604" visiblename="BitLength_8600" offlineaccess="read" onlineaccess="read">32</Value>
+                      <Name>BitLength_8600</Name>
                     </Parameter>
                     <Parameter ParameterId="8605" type="std:STRING">
                       <Attributes offlineaccess="read" onlineaccess="read" />
@@ -9358,6 +9518,31 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
                       <Value name="_x0038_607" visiblename="AddressPointer_8600" offlineaccess="read" onlineaccess="read">ADR(%ID8)</Value>
                       <Name>AddressPointer_8600</Name>
                     </Parameter>
+                    <Parameter ParameterId="8610" type="std:INT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_610" visiblename="Touch Probe 2 falling edge" offlineaccess="read" onlineaccess="read">20189</Value>
+                      <Name>Touch Probe 2 falling edge</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8611" type="std:STRING">
+                      <Attributes download="false" offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_611" visiblename="Object_8600" offlineaccess="read" onlineaccess="read">16#60BD:16#00</Value>
+                      <Name>Object_8600</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8612" type="std:UDINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_612" visiblename="AdrOffset_8600" offlineaccess="read" onlineaccess="read">36</Value>
+                      <Name>AdrOffset_8600</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8613" type="std:USINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_613" visiblename="BitOffset_8600" offlineaccess="read" onlineaccess="read">0</Value>
+                      <Name>BitOffset_8600</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8614" type="std:USINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_614" visiblename="BitLength_8600" offlineaccess="read" onlineaccess="read">32</Value>
+                      <Name>BitLength_8600</Name>
+                    </Parameter>
                     <Parameter ParameterId="8615" type="std:STRING">
                       <Attributes offlineaccess="read" onlineaccess="read" />
                       <Value name="_x0038_615" visiblename="Address_8610" offlineaccess="read" onlineaccess="read">'%ID9'</Value>
@@ -9372,6 +9557,31 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
                       <Attributes offlineaccess="read" onlineaccess="read" />
                       <Value name="_x0038_617" visiblename="AddressPointer_8610" offlineaccess="read" onlineaccess="read">ADR(%ID9)</Value>
                       <Name>AddressPointer_8610</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8620" type="std:INT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_620" visiblename="Error Code(603F)" offlineaccess="read" onlineaccess="read">2020</Value>
+                      <Name>Error Code(603F)</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8621" type="std:STRING">
+                      <Attributes download="false" offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_621" visiblename="Object_8620" offlineaccess="read" onlineaccess="read">16#603F:16#00</Value>
+                      <Name>Object_8620</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8622" type="std:UDINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_622" visiblename="AdrOffset_8620" offlineaccess="read" onlineaccess="read">4</Value>
+                      <Name>AdrOffset_8620</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8623" type="std:USINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_623" visiblename="BitOffset_8620" offlineaccess="read" onlineaccess="read">0</Value>
+                      <Name>BitOffset_8620</Name>
+                    </Parameter>
+                    <Parameter ParameterId="8624" type="std:USINT">
+                      <Attributes offlineaccess="read" onlineaccess="read" />
+                      <Value name="_x0038_624" visiblename="BitLength_8620" offlineaccess="read" onlineaccess="read">16</Value>
+                      <Name>BitLength_8620</Name>
                     </Parameter>
                     <Parameter ParameterId="8625" type="std:STRING">
                       <Attributes offlineaccess="read" onlineaccess="read" />
@@ -9666,7 +9876,7 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
                       </Parameter>
                       <Parameter ParameterId="1343291392" type="std:BOOL">
                         <Attributes download="false" />
-                        <Value name="_x0031_343291392" visiblename="AutoUpdate">False</Value>
+                        <Value name="_x0031_343291392" visiblename="AutoUpdate">True</Value>
                         <Name>AutoUpdate</Name>
                       </Parameter>
                     </ParameterSection>
@@ -29500,7 +29710,7 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
             <xhtml xmlns="http://www.w3.org/1999/xhtml">【X直控·M2目标速度】m/s</xhtml>
           </documentation>
         </variable>
-                <variable name="HMI_iDirectModeX">
+        <variable name="HMI_iDirectModeX">
           <type>
             <UINT />
           </type>
@@ -30348,6 +30558,230 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
             <xhtml xmlns="http://www.w3.org/1999/xhtml">【只读·M2 切 CSV 失败】状态 word74 bit3</xhtml>
           </documentation>
         </variable>
+                <variable name="HMI_xStepMode">
+          <type>
+            <BOOL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【外部工步·模式请求】命令 word5 bit12；自动模式优先；网关离线清零</xhtml>
+          </documentation>
+        </variable>
+        <variable name="HMI_iStepCmd">
+          <type>
+            <UINT />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【外部工步·命令】word76：0中止 1X走距 2Z压到力 3Y恒力行程 4YZR点位</xhtml>
+          </documentation>
+        </variable>
+        <variable name="HMI_wStepId">
+          <type>
+            <WORD />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【外部工步·命令号】word77：变化即新命令（锁存参数）</xhtml>
+          </documentation>
+        </variable>
+        <variable name="HMI_wStepFlags">
+          <type>
+            <WORD />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【外部工步·标志】word78：bit0/1/2 点位选 Y/Z/R；bit3 压力前去皮</xhtml>
+          </documentation>
+        </variable>
+        <variable name="HMI_rStepDist">
+          <type>
+            <REAL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【外部工步·距离】m，word79/80 ×1000；工步1 X / 工步3 Y 相对距离</xhtml>
+          </documentation>
+        </variable>
+        <variable name="HMI_rStepVel">
+          <type>
+            <REAL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【外部工步·速度】m/s，word81 ×1000；工步1 X / 工步3 Y / 工步4 Y·Z</xhtml>
+          </documentation>
+        </variable>
+        <variable name="HMI_rStepVelR">
+          <type>
+            <REAL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【外部工步·R速度】°/s，word82 ×100；工步4</xhtml>
+          </documentation>
+        </variable>
+        <variable name="HMI_rStepPosY">
+          <type>
+            <REAL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【外部工步·Y目标】m，word83/84 ×1000；工步4</xhtml>
+          </documentation>
+        </variable>
+        <variable name="HMI_rStepPosZ">
+          <type>
+            <REAL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【外部工步·Z目标】m，word85/86 ×1000；工步4（向下为负）</xhtml>
+          </documentation>
+        </variable>
+        <variable name="HMI_rStepPosR">
+          <type>
+            <REAL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【外部工步·R目标】°，word87/88 ×1000；工步4</xhtml>
+          </documentation>
+        </variable>
+        <variable name="HMI_rStepForce">
+          <type>
+            <REAL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【外部工步·恒力目标】N，word89/90 ×100；工步2/3</xhtml>
+          </documentation>
+        </variable>
+        <variable name="HMI_rStepKpForce">
+          <type>
+            <REAL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【外部工步·力控Kp】(m/s)/N，word91/92 ×1e6；工步2/3</xhtml>
+          </documentation>
+        </variable>
+        <variable name="HMI_rStepVelZMax">
+          <type>
+            <REAL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【外部工步·力跟随Z限速】m/s，word93 ×1000；工步2/3</xhtml>
+          </documentation>
+        </variable>
+        <variable name="HMI_rStepTimeout">
+          <type>
+            <REAL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【外部工步·超时】s，word94 ×10；0=PLC默认</xhtml>
+          </documentation>
+        </variable>
+        <variable name="Step_wIdEcho">
+          <type>
+            <WORD />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【只读·工步·命令号回显】状态 word75</xhtml>
+          </documentation>
+        </variable>
+        <variable name="Step_iCmdEcho">
+          <type>
+            <UINT />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【只读·工步·命令回显】状态 word76</xhtml>
+          </documentation>
+        </variable>
+        <variable name="Step_iState">
+          <type>
+            <INT />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【只读·工步·状态】word77：0空闲 1执行 2完成 3失败</xhtml>
+          </documentation>
+        </variable>
+        <variable name="Step_iErr">
+          <type>
+            <INT />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【只读·工步·错误码】word78：1模式 2参数 3越限 4忙 10超时 11安全 12心跳 20未接触</xhtml>
+          </documentation>
+        </variable>
+        <variable name="Step_iPhase">
+          <type>
+            <INT />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【只读·工步·子阶段】word79（诊断）</xhtml>
+          </documentation>
+        </variable>
+        <variable name="Step_xModeActive">
+          <type>
+            <BOOL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【只读·工步·模式在役】eOpMode=2；word80 bit0</xhtml>
+          </documentation>
+        </variable>
+        <variable name="Step_xForceFollow">
+          <type>
+            <BOOL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【只读·工步·力跟随中】word80 bit1</xhtml>
+          </documentation>
+        </variable>
+        <variable name="Step_xForceReached">
+          <type>
+            <BOOL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【只读·工步·力已达】word80 bit2</xhtml>
+          </documentation>
+        </variable>
+        <variable name="Step_xForceLow">
+          <type>
+            <BOOL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【只读·工步·恒力行程力偏低(&lt;0.8F)】word80 bit3</xhtml>
+          </documentation>
+        </variable>
+        <variable name="Step_xRHold">
+          <type>
+            <BOOL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【只读·工步·R保持中】word80 bit4</xhtml>
+          </documentation>
+        </variable>
+        <variable name="Step_rProgress">
+          <type>
+            <REAL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【只读·工步·已走距离】m，word81/82 ×1000</xhtml>
+          </documentation>
+        </variable>
+        <variable name="Step_rKpForceEcho">
+          <type>
+            <REAL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【只读·工步·力控Kp回显】word83/84 ×1e6</xhtml>
+          </documentation>
+        </variable>
+        <variable name="Step_rRHoldPos">
+          <type>
+            <REAL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【只读·工步·R保持目标】°，word85/86 ×1000</xhtml>
+          </documentation>
+        </variable>
+        <variable name="Step_rElapsed">
+          <type>
+            <REAL />
+          </type>
+          <documentation>
+            <xhtml xmlns="http://www.w3.org/1999/xhtml">【只读·工步·已用时】s，word87 ×10</xhtml>
+          </documentation>
+        </variable>
 <addData>
           <data name="http://www.3s-software.com/plcopenxml/pathstructure" handleUnknown="discard">
             <pathStructure isFolder="False" name="Device" namespace="1ee21fdd-5562-44a0-a3ce-665d74916d50" factoryName="Inovance.InoPro.InoDeviceObject.DeviceObjectFactory" factoryGuid="{84d12aa5-3225-473b-9df6-18af40889bdf}" objectGuid="d7de5ac3-3f30-45ac-8468-ec250b4e523b">
@@ -30508,7 +30942,6 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
           <Object Name="Application" ObjectId="69822df8-b9c0-4a01-9450-b2cdc030688c">
             <Folder Name="FB">
               <Object Name="FB_XDual" ObjectId="d4e5f6a7-b8c9-4012-c345-d6e7f8a90002" />
-              <Object Name="FB_XLineTrack" ObjectId="92cd9ff9-634c-4ba6-b757-ed5688751163" />
               <Object Name="FB_Servo" ObjectId="095f55bd-5910-4f8e-b349-f7b40f09358c" />
               <Object Name="FB_Force" ObjectId="a1b2c3d4-e5f6-4789-a012-888888888888" />
               <Object Name="FB_ForceFollow" ObjectId="a1b2c3d4-e5f6-4789-a012-999999999999" />
@@ -30540,11 +30973,11 @@ Example: assuming _bImmediateDisabling is FALSE, the value 2#0110 means that onl
               <Object Name="Axis_3" ObjectId="988aa07d-a4a2-4cab-b558-42793de0b7a3" />
             </Object>
           </Object>
+          <Object Name="MODBUS_TCP" ObjectId="20607374-0921-491f-ba1d-5afd94eab04a" />
           <Object Name="MODBUS_COM0" ObjectId="63f393c1-643e-45c4-8942-e46db1e4b23f">
             <Object Name="modbus_protocol" ObjectId="c90e44dd-5e77-4397-9663-543306c00457" />
           </Object>
           <Object Name="HIGH_SPEED_IO" ObjectId="5f8356e3-13dd-4980-9009-e109f35996b0" />
-          <Object Name="MODBUS_TCP" ObjectId="20607374-0921-491f-ba1d-5afd94eab04a" />
           <Object Name="MODBUS_TCP_1" ObjectId="83e60238-7d2e-4b01-9ba9-b198d98825aa">
             <Object Name="modbusTcp" ObjectId="386d752b-a86c-43b5-b3e1-e0ebe8ce13aa" />
           </Object>

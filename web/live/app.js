@@ -299,7 +299,7 @@
     const master = gwHealth && gwHealth.master;
     const plcOk = master ? (master.connected && !gwHealth.statusIsOffline) : (S.Tcp_iCommStatus !== undefined && !S.Tcp_xTimeout);
     setChip('plc-chip', plcOk ? 'ok' : 'alarm', 'PLC');
-    document.querySelectorAll('input[name=opmode]').forEach((r) => { r.checked = (r.value === '1') === !!S.HMI_eOpMode; });
+    document.querySelectorAll('input[name=opmode]').forEach((r) => { r.checked = (r.value === '1') === (Number(S.HMI_eOpMode) === 1); });
 
     const avg = (num(S.AxisFb_rPosM1) + num(S.AxisFb_rPosM2)) * 0.5;
     const dpos = num(S.AxisFb_rSyncErr != null ? S.AxisFb_rSyncErr : (num(S.AxisFb_rPosM1) - num(S.AxisFb_rPosM2)));
@@ -328,7 +328,7 @@
     setText('q-base', fmt(W.HMI_rWheelBase, 1) + ' m'); setText('q-fset', (num(W.HMI_rForceSet) || 0) + ' N');
 
     // manual
-    setChip('manual-chip', S.HMI_eOpMode ? 'warn' : 'run', S.HMI_eOpMode ? '自动模式' : '手动模式');
+    setChip('manual-chip', S.HMI_eOpMode ? 'warn' : 'run', Number(S.HMI_eOpMode) === 2 ? '外部工步' : (S.HMI_eOpMode ? '自动模式' : '手动模式'));
     ['y', 'z', 'r'].forEach((a) => { const on = !!S['HMI_xHomed' + a.toUpperCase()]; const el = $('p-homed-' + a); if (el) el.className = 'chip ' + (on ? 'ok' : ''); });
     setText('out-ready', S.AxisFb_xReady ? 'T' : 'F');
     setText('out-done', 'X=' + (S.AxisFb_xMoveDoneX ? 'T' : 'F') + ' Y=' + (S.AxisFb_xMoveDoneY ? 'T' : 'F'));
@@ -461,6 +461,17 @@
     setText('d2-active', 'X=' + (S.Direct2_xActiveX ? 'T' : 'F') + ' Y=' + (S.Direct2_xActiveY ? 'T' : 'F') + ' Z=' + (S.Direct2_xActiveZ ? 'T' : 'F') + ' R=' + (S.Direct2_xActiveR ? 'T' : 'F'));
     setText('d2-seq', fmt(W.HMI_wDirectSeq, 0) + ' → ' + (S.Direct2_wSeqEcho == null ? '—' : fmt(S.Direct2_wSeqEcho, 0)));
     setText('d-ready', S.AxisFb_xReady ? 'TRUE' : 'FALSE');
+    // 0.80 外部工步（只读）
+    const tf = (v) => (v ? 'T' : 'F');
+    const STEP_STATE = ['空闲', '执行', '完成', '失败'];
+    setText('st-active', S.Step_xModeActive ? 'TRUE' : 'FALSE');
+    setText('st-id', fmt(S.Step_wIdEcho, 0) + ' / ' + fmt(S.Step_iCmdEcho, 0));
+    setText('st-state', (STEP_STATE[Number(S.Step_iState)] || fmt(S.Step_iState, 0)) + ' / ' + fmt(S.Step_iErr, 0) + ' / ' + fmt(S.Step_iPhase, 0));
+    setText('st-prog', fmt(S.Step_rProgress, 3) + ' m / ' + fmt(S.Step_rElapsed, 1) + ' s');
+    setText('st-force', tf(S.Step_xForceFollow) + ' / ' + tf(S.Step_xForceReached) + ' / ' + tf(S.Step_xForceLow));
+    setText('st-kp', fmt(S.Step_rKpForceEcho, 6));
+    setText('st-rhold', tf(S.Step_xRHold) + ' / ' + fmt(S.Step_rRHoldPos, 2));
+    setText('st-still', tf(S.AxisFb_xStandstillY) + tf(S.AxisFb_xStandstillZ) + tf(S.AxisFb_xStandstillR));
     setText('d-alarm', fmt(S.HMI_iAlarmShow, 0));
     setText('d-cmd-m1', fmt(S.AxisFb_rVelCmdM1, 3)); setText('d-cmd-m2', fmt(S.AxisFb_rVelCmdM2, 3));
     setText('d-m1-act', fmt(S.AxisFb_rVelActM1, 3)); setText('d-m2-act', fmt(S.AxisFb_rVelActM2, 3));

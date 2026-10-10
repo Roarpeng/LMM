@@ -289,6 +289,21 @@
           <div class="hint">视觉工控机与操作员共用本页写入；M1/M2 走速度环（无独立位置），X 位置为整机目标 HMI_rDirectPosX。使能/报警/限位/急停由 PLC 全权负责。</div>
         </div>
 
+        <div class="card span">
+          <h2>外部工步（0.80，上位机 RK3588 编排，本页只读）</h2>
+          <div class="list">
+            <div class="item"><span class="name">模式在役 Step_xModeActive（eOpMode=2）</span><span class="val" id="st-active">—</span></div>
+            <div class="item"><span class="name">命令号 / 命令 Step_wIdEcho / Step_iCmdEcho</span><span class="val mono" id="st-id">—</span></div>
+            <div class="item"><span class="name">状态 / 错误 / 子阶段 Step_iState / Step_iErr / Step_iPhase</span><span class="val mono" id="st-state">—</span></div>
+            <div class="item"><span class="name">已走 / 用时 Step_rProgress / Step_rElapsed</span><span class="val mono" id="st-prog">—</span></div>
+            <div class="item"><span class="name">力跟随 / 已达 / 偏低 Step_xForceFollow / Step_xForceReached / Step_xForceLow</span><span class="val mono" id="st-force">—</span></div>
+            <div class="item"><span class="name">力控 Kp 回显 Step_rKpForceEcho</span><span class="val mono" id="st-kp">—</span></div>
+            <div class="item"><span class="name">R 保持 Step_xRHold / Step_rRHoldPos</span><span class="val mono" id="st-rhold">—</span></div>
+            <div class="item"><span class="name">静止 Y/Z/R AxisFb_xStandstillY / AxisFb_xStandstillZ / AxisFb_xStandstillR</span><span class="val mono" id="st-still">—</span></div>
+          </div>
+          <div class="hint">命令由上位机写：HMI_xStepMode、HMI_iStepCmd、HMI_wStepId、HMI_wStepFlags、HMI_rStepDist、HMI_rStepVel、HMI_rStepVelR、HMI_rStepPosY、HMI_rStepPosZ、HMI_rStepPosR、HMI_rStepForce、HMI_rStepKpForce、HMI_rStepVelZMax、HMI_rStepTimeout。工步模式下手动点动/回零/自动循环不生效；本页点任何按钮都会抢走写租约，上位机随即被拒写、PLC 300ms 心跳超时停机。</div>
+        </div>
+
         <div class="card">
           <h2>X 双驱 · M1/M2（速度）</h2>
           <div class="row"><label><input type="checkbox" id="direct-enable" /> 直控使能 HMI_xDirectEnable</label></div>
