@@ -49,8 +49,10 @@ def strip_comments(text):
 
 
 def main():
-    raw = (ROOT / "LMM.xml").read_text(encoding="utf-8")
-    tree = ET.parse(ROOT / "LMM.xml")
+    # 默认校验 LMM.xml（旧 LineTrack 线）；g 线传路径：check_lmm.py LMM_g_0.80.xml
+    xml_path = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "LMM.xml"
+    raw = xml_path.read_text(encoding="utf-8-sig")
+    tree = ET.parse(xml_path)
     root = tree.getroot()
 
     # ---- 1. POU 集合 ----

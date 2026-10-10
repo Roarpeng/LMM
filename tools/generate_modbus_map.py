@@ -68,8 +68,9 @@ def validate(data: dict) -> None:
             names.add(name)
             if field_type not in SUPPORTED_TYPES:
                 raise ValueError(f"{name}: unsupported type {field_type}")
-            if field_type in ("SCALED_DINT", "SCALED_INT") and field.get("scale") not in (100, 1000):
-                raise ValueError(f"{name}: scale must be 100 or 1000")
+            # 0.80：外部工步需要 ×10（超时 s）与 ×1e6（力控 Kp (m/s)/N），网关/PLC 编解码对 scale 无假设
+            if field_type in ("SCALED_DINT", "SCALED_INT") and field.get("scale") not in (10, 100, 1000, 1000000):
+                raise ValueError(f"{name}: scale must be 10, 100, 1000 or 1000000")
 
             for cell in field_cells(field):
                 offset, bit = cell
