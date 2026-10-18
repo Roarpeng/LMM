@@ -14,6 +14,12 @@ function createModbusMaster(options) {
   const unitID = Number(options.unitID || 1);
   const store = options.store;
   const pollMs = Number(options.pollMs || 100);
+  // PLC_SERVER=1（PLC 为 Modbus 主站）时：命令由 PLC 从网关服务器自取，
+  // 主站只读状态；statusPollAddress 允许从 ESV 侧窗地址读同一状态帧。
+  const writeCommands = options.writeCommands !== false;
+  const statusPollAddress = Number.isFinite(options.statusPollAddress)
+    ? options.statusPollAddress
+    : map.status.baseAddress;
   const onError = options.onError || (() => {});
   const onConnected = options.onConnected || (() => {});
   const onDisconnected = options.onDisconnected || (() => {});
@@ -72,17 +78,19 @@ function createModbusMaster(options) {
       const commandWords = Array.from(store.getCommandWords());
       // 写命令镜像 word0..imageWords-2（含直控块 60..75 与视觉块 56..59）；
       // 尾部快照序号单独写在 word imageWords-1，保证同一轮询请求内完成。
-      const tailIndex = map.command.header.tailSequence;
-      await client.writeRegisters(
-        map.command.baseAddress,
-        commandWords.slice(0, map.protocol.imageWords - 1),
-      );
-      await client.writeRegisters(
-        map.command.baseAddress + tailIndex,
-        [commandWords[tailIndex]],
-      );
+      if (writeCommands) {
+        const tailIndex = map.command.header.tailSequence;
+        await client.writeRegisters(
+          map.command.baseAddress,
+          commandWords.slice(0, map.protocol.imageWords - 1),
+        );
+        await client.writeRegisters(
+          map.command.baseAddress + tailIndex,
+          [commandWords[tailIndex]],
+        );
+      }
       const result = await client.readHoldingRegisters(
-        map.status.baseAddress,
+        statusPollAddress,
         map.protocol.imageWords,
       );
       pollCount += 1;
@@ -169,6 +177,8 @@ function createModbusMaster(options) {
         port,
         unitID,
         pollMs,
+        writeCommands,
+        statusPollAddress,
       };
     },
     get connected() {

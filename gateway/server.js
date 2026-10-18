@@ -121,6 +121,11 @@ function startGateway(env = process.env) {
   const plcPort = Number(env.PLC_PORT || env.MODBUS_PORT || 502);
   const unitID = Number(env.PLC_UNIT_ID || env.MODBUS_UNIT_ID || 1);
   const pollMs = Number(env.PLC_POLL_MS || 50);
+  // 服务器模式（PLC_SERVER=1）：网关作为 Modbus TCP Server，等 PLC 主站来拉命令/推状态。
+  const serverMode = env.PLC_SERVER === '1';
+  const plcServerPort = Number(env.PLC_SERVER_PORT || 502);
+  // 状态轮询地址覆盖：从站 ESV 侧窗读同一状态帧时与契约基址可能相差若干字。
+  const statusPollAddress = env.PLC_STATUS_POLL_ADDR ? Number(env.PLC_STATUS_POLL_ADDR) : undefined;
   const writerLeaseMs = Number(env.WRITER_LEASE_MS || 1000);
   const statusTimeoutMs = Number(env.STATUS_TIMEOUT_MS || 1000);
   const statusCheckMs = Number(env.STATUS_CHECK_MS || 100);
@@ -206,6 +211,8 @@ function startGateway(env = process.env) {
   };
 
   let modbusMaster = null;
+  let modbusServer = null;
+  let heartbeatTimer = null;
   let mockPlc = null;
   let mockTimer = null;
   let statusTimer = null;
@@ -253,6 +260,8 @@ function startGateway(env = process.env) {
       unitID,
       store,
       pollMs,
+      writeCommands: !serverMode,
+      statusPollAddress,
       onError(error) {
         console.warn('[gateway] Modbus master:', error.message || error);
       },
@@ -264,6 +273,79 @@ function startGateway(env = process.env) {
       },
     });
     modbusMaster.start();
+    if (serverMode) {
+      // PLC 为主站的架构（0.80）：PLC 通过 Modbus 主站通道从网关拉命令（FC03 @4096）、
+      // 推状态（FC16 @4352）。此处起 Modbus TCP Server 提供该接口；
+      // 主站轮询退化为只读状态（见 writeCommands/statusPollAddress）。
+      const { ServerTCP } = require('modbus-serial');
+      // 不按 unitID 过滤：Wecon 主站可能以 SlaveAddr(如 255) 发请求，vector 不区分 unit。
+      const serverVector = Object.assign({}, store.vector);
+      if (!serverVector.getInputRegister && serverVector.getHoldingRegister) {
+        serverVector.getInputRegister = serverVector.getHoldingRegister;
+      }
+      // 0.80 现场写通道挂接在 %QW42（比 MB_StatusOut 早 2 字）：FC16 推来的 96 字是
+      // [前缀2][帧0..93]，帧头落在 +2。兼容重构为 [帧0..93, 0, 0]——word94 无字段、
+      // word95 为尾序号回显，codec 对 tail=0 容忍，无数据丢失。
+      const rawSetRegisterArray = store.vector.setRegisterArray;
+      const isShiftedStatus = (list) => list[map.status.header.magic + 2] === map.protocol.magic
+        && (list[map.status.header.version + 2] >>> 8) === map.protocol.versionMajor;
+      serverVector.setRegisterArray = (address, values, unitID, callback) => {
+        const list = Array.from(values);
+        if (
+          address === map.status.baseAddress
+          && list.length === map.protocol.imageWords
+          && isShiftedStatus(list)
+        ) {
+          return rawSetRegisterArray(address, [...list.slice(2), 0, 0], unitID, callback);
+        }
+        return rawSetRegisterArray(address, values, unitID, callback);
+      };
+      modbusServer = new ServerTCP(serverVector, {
+        host: env.PLC_SERVER_HOST || '0.0.0.0',
+        port: plcServerPort,
+        debug: false,
+      });
+      modbusServer.on('initialized', () => {
+        console.log(`[gateway] Modbus TCP server listening :${plcServerPort} (PLC master pulls cmd@${map.command.baseAddress}, pushes status@${map.status.baseAddress})`);
+      });
+      // 调试：记录 PLC 主站前若干个原始请求帧（MBAP+PDU hex），用于联调对齐。
+      // 注意 ServerTCP 是 EventEmitter 包装，socket 连接事件挂在内部 _server 上。
+      if (env.PLC_SERVER_TRACE === '1') {
+        let fcReads = 0;
+        let fcPushes = 0;
+        const rawGet = serverVector.getHoldingRegister;
+        serverVector.getHoldingRegister = (a, u, cb) => {
+          fcReads += 1;
+          return rawGet(a, u, cb);
+        };
+        const rawPush = serverVector.setRegisterArray;
+        serverVector.setRegisterArray = (a, v, u, cb) => {
+          fcPushes += 1;
+          return rawPush(a, v, u, cb);
+        };
+        setInterval(() => {
+          if (fcReads || fcPushes) console.log(`[modbus-server] served FC03 words=${fcReads} FC16 pushes=${fcPushes}`);
+          fcReads = 0;
+          fcPushes = 0;
+        }, 10000).unref();
+        const netServer = modbusServer._server;
+        if (netServer && typeof netServer.on === 'function') {
+          netServer.on('connection', (sock) => {
+            const peer = `${sock.remoteAddress}:${sock.remotePort}`;
+            let seen = 0;
+            console.log(`[modbus-server] conn from ${peer}`);
+            sock.on('data', (buf) => {
+              if (seen >= 6) return;
+              seen += 1;
+              console.log(`[modbus-rx] ${peer} ${buf.toString('hex')}`);
+            });
+            sock.on('error', () => {});
+          });
+        }
+      }
+      // 服务器模式下由网关侧推进心跳（≥1Hz），维持 PLC 远程在线看门狗 tonHb。
+      heartbeatTimer = setInterval(() => store.advanceHeartbeat(), 500);
+    }
     statusTimer = setInterval(() => {
       if (
         !statusIsOffline
@@ -378,6 +460,7 @@ function startGateway(env = process.env) {
       clearInterval(mockTimer);
       clearInterval(statusTimer);
       clearInterval(visionTimer);
+      clearInterval(heartbeatTimer);
       for (const client of wss.clients) client.terminate();
 
       const closes = [
@@ -386,6 +469,9 @@ function startGateway(env = process.env) {
       ];
       if (modbusMaster) {
         closes.push(Promise.resolve(modbusMaster.close()));
+      }
+      if (modbusServer) {
+        closes.push(closeComponent((done) => modbusServer.close(done)));
       }
       if (typeof httpServer.closeAllConnections === 'function') {
         httpServer.closeAllConnections();
