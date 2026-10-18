@@ -49,7 +49,7 @@ FB_XDual 的 `eMode`（`FB_XDual.st:348-392`，优先级 Stop > 旋转 > 外部�
 |---|---|---|---|---|
 | 进入 | 手动 + 安全门 | 手动 + `xDirectEnable` + 心跳 + `ModeX=0` | 同 B，`ModeX=1` | 自动 + `AutoStart` 上升沿 |
 | X | 点动 eMode1 | 仍可点动 eMode1 | eMode4 | 走距 eMode1 |
-| 视觉航向生效 | ✅ | ✅（**当前视觉伺服用此模式**） | ❌ | ✅ |
+| 视觉航向生效 | ✅（仅 eCtrlSrc=1，面板点动不生效） | ✅（**当前视觉伺服用此模式**） | ❌ | ⚠ PLC 侧会用，但自动由 WebHMI 启动、写租约在 WebHMI，视觉写不进去 → **实际无视觉纠偏** |
 | Z 恒力 | ✅ 力引导 | ❌ 被屏蔽 `:306` | ❌ | ✅ |
 | Y/Z/R | 点动 | 速度/绝对/相对 | 同 B | 状态机，R 锁存保持 |
 | 掉线 | 网关租约 1 s → Stop | 300 ms 心跳 → 停 | 同 B | **PLC 不看上位心跳**，只有网关 1 s 后航向清零 |
@@ -225,7 +225,7 @@ R 只能通过工步 4 改变。工步 1–3 期间不在本工步内运动的�
 | 89–90 | `HMI_rStepForce` | SCALED_DINT | 100 | N | 工步 2/3 恒力目标 |
 | 91–92 | `HMI_rStepKpForce` | SCALED_DINT | 1000000 | (m/s)/N | 工步 2/3 力控 P |
 | 93 | `HMI_rStepVelZMax` | SCALED_INT | 1000 | m/s | 工步 2/3 力跟随 Z 限速 |
-| 94 | `HMI_tStepTimeout` | UINT | 10 | s | 0 = PLC 默认（按距离/速度估算 ×2 + 5 s） |
+| 94 | `HMI_rStepTimeout` | SCALED_INT | 10 | s | 0 = PLC 默认（按距离/速度估算 ×2 + 5 s） |
 
 ### 4.2 状态镜像（w75–87）
 
@@ -240,7 +240,7 @@ R 只能通过工步 4 改变。工步 1–3 期间不在本工步内运动的�
 | 81–82 | `Step_rProgress` | SCALED_DINT ×1000 | m | 工步 1/3 已走距离 |
 | 83–84 | `Step_rKpForceEcho` | SCALED_DINT ×1e6 | (m/s)/N | 实际采用的力控 Kp |
 | 85–86 | `Step_rRHoldPos` | SCALED_DINT ×1000 | ° | 当前 R 保持目标 |
-| 87 | `Step_tElapsed` | UINT ×10 | s | 本工步已用时 |
+| 87 | `Step_rElapsed` | SCALED_INT ×10 | s | 本工步已用时 |
 
 `HMI_rForceSetEcho`（w44）语义改为"实际下发给力跟随的 F"（工步模式下即锁存的 `rStepForce`）。
 状态 w80 bit5–7 = `AxisFb_xStandstillY/Z/R`；w88–94 保留。
@@ -296,7 +296,8 @@ R 只能通过工步 4 改变。工步 1–3 期间不在本工步内运动的�
 8. `gateway/test/step-mode.test.js`（13 项）+ `gateway/scripts/smoke-step.js`（上位机模拟 + 故障注入）。
 9. WebHMI 直控页新增只读"外部工步"卡；运行方式显示支持"外部工步"。
 
-**RK3588（视觉仓，不在本仓库）** —— 未开始
+**RK3588（视觉仓，不在本仓库）** —— ✅ 已实现：`comm/plc_step.py`（握手）、`app/job.py`（作业编排）、Web 作业页 `/job`；
+以下为原计划条目，细节见视觉仓 `docs/PLC_STEP_MODE.md` §6、`docs/DEBUG_MODES.md`
 10. `comm/plc_direct.py` 拆航向通道/工步通道；`comm/plc_contract.py` 工步字段权限档；
     作业状态机、示教/参数 YAML、Web 作业/示教/参数页、局域网口令与操作者锁；`tools/mock_gateway.py` 同步。
 

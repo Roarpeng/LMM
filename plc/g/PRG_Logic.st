@@ -166,7 +166,7 @@ Direct2_wSeqEcho := HMI_wDirectSeq;
 Direct2_xSafe := xSafe AND (eOpMode = 0) AND NOT HMI_xStop AND NOT xFaultAggregate;
 xDirect2Enable := HMI_xDirectEnable AND Direct2_xOnline AND Direct2_xSafe;
 
-(* ===== 0.60/0.68 X 视觉/Web 直控：视觉(Vis_*)优先，Web 走 HMI_* 全轴通道 ===== *)
+(* ===== 0.60/0.68 X 视觉/Web 直控：视觉 Vis_ 系列优先，Web 走 HMI_ 全轴通道 ===== *)
 (* 视觉心跳：Vis_wSeq 变化则复位看门狗；200ms 无变化 -> 离线 *)
 IF Vis_wSeq <> Vis_wSeqPrev THEN
     Vis_wSeqPrev := Vis_wSeq;
