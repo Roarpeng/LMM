@@ -1,6 +1,4 @@
 PROGRAM PRG_Logic
-(* PRG_Logic — 消费已仲裁 HMI_* + 面板键；写 AxisCmd_*；状态只读派生（无状态机耦合）。
-   禁止 CALL Axis / FB_Servo。 *)
 VAR
     tonHold : TON;
     tonReady : TON;
@@ -113,7 +111,13 @@ VAR
     tonStepForce : TON;
     tonStepInPos : TON;
     tonStepNoContact : TON;
+    rRTgtA : REAL;
+    rRTgtB : REAL;
+    rYWidth : REAL;
+    xCmdMoveAbsZ : BOOL;
 END_VAR
+(* PRG_Logic — 消费已仲裁 HMI_* + 面板键；写 AxisCmd_*；状态只读派生（无状态机耦合）。
+   禁止 CALL Axis / FB_Servo。 *)
 
 (* ===== 急停锁存 / 长按复位 ===== *)
 IF NOT HMI_xEStop THEN
@@ -309,6 +313,7 @@ xCmdForceFollow := FALSE;
 xCmdMoveRelX := FALSE;
 xCmdMoveRelY := FALSE;
 xCmdMoveAbsY := FALSE;
+    xCmdMoveAbsZ := FALSE;
 xCmdHoldR := FALSE;
 (* 视觉差速：手动点动与自动走距都下发 Kp；FB 仅在直行模式用 *)
 AxisCmd_rTrackKp := HMI_rKpTrack;
@@ -358,70 +363,104 @@ IF xSafe AND (eOpMode = 0) AND NOT HMI_xStop AND NOT xFaultAggregate THEN
     END_IF;
 END_IF;
 
-(* ===== 自动多道循环 ===== *)
+(* ===== 自动多道循环 1.1：回零→压靠→Y双向横扫(恒力)→Z回零→X走距→R换角 ===== *)
 IF xSafe AND (eOpMode = 1) AND NOT HMI_xStop AND NOT xFaultAggregate THEN
-    IF iAutoStep = 0 AND xAutoStartEdge THEN
-        rRHold := AxisFb_rPosR;
+    IF (iAutoStep = 0) AND xAutoStartEdge THEN
+        rYWidth := LIMIT(0.0, HMI_rYWidth, Cfg_rLimYPos);
+        rRTgtA := HMI_rRAngleA;
+        rRTgtB := HMI_rRAngleB;
         xAutoTareSent := FALSE;
         HMI_xAutoDone := FALSE;
         HMI_xAutoBusy := TRUE;
         iPass := 1;
-        iAutoStep := 1;
+        iAutoStep := 10;
     END_IF;
 
     CASE iAutoStep OF
-        1:
+        10: (* 回零 Y：一次一轴 *)
+            IF AxisFb_xHomedY THEN
+                iAutoStep := 11;
+            ELSIF NOT xAnyHomeBusy THEN
+                AxisCmd_xHomeY := TRUE;
+            END_IF
+
+        11: (* 回零 Z *)
+            IF AxisFb_xHomedZ THEN
+                iAutoStep := 12;
+            ELSIF NOT xAnyHomeBusy THEN
+                AxisCmd_xHomeZ := TRUE;
+            END_IF
+
+        12: (* 回零 R；M5 不在线跳过 *)
+            IF AxisFb_xHomedR OR NOT xM5Ready THEN
+                iAutoStep := 13;
+            ELSIF NOT xAnyHomeBusy THEN
+                AxisCmd_xHomeR := TRUE;
+            END_IF
+
+        13: (* 力去皮 + R 预置角度 A *)
+            IF NOT xAutoTareSent THEN
+                Logic_xForceTare := TRUE;
+                xAutoTareSent := TRUE;
+            END_IF;
             xCmdHoldR := TRUE;
-            AxisCmd_rRHoldPos := rRHold;
-            AxisCmd_rTrackKp := HMI_rKpTrack;
+            AxisCmd_rRHoldPos := rRTgtA;
+            IF AxisFb_xStandstillR AND (ABS(AxisFb_rPosR - rRTgtA) < 0.2) THEN
+                iAutoStep := 20;
+            END_IF
+
+        20: (* Z 压靠：力跟随，实际力到设定转步 *)
+            xCmdHoldR := TRUE;
+            AxisCmd_rRHoldPos := SEL(iPass MOD 2 = 0, rRTgtA, rRTgtB);
+            xCmdForceFollow := TRUE;
+            IF rForceAct >= HMI_rForceSet THEN
+                iAutoStep := 21;
+            END_IF
+
+        21: (* Y 横扫全程：奇数道 0→宽度 / 偶数道 宽度→0，恒力跟随 *)
+            xCmdHoldR := TRUE;
+            AxisCmd_rRHoldPos := SEL(iPass MOD 2 = 0, rRTgtA, rRTgtB);
+            xCmdForceFollow := TRUE;
+            AxisCmd_rMoveAbsPosY := SEL(iPass MOD 2 = 0, rYWidth, 0.0);
+            AxisCmd_rMoveVelY := HMI_rAutoVelY;
+            xCmdMoveAbsY := TRUE;
+            IF AxisFb_xStandstillY AND (ABS(AxisFb_rPosY - AxisCmd_rMoveAbsPosY) < 0.05) THEN
+                iAutoStep := 22;
+            END_IF
+
+        22: (* Z 抬升回零位：擤力跟随，绝对定位回 0 *)
+            AxisCmd_rMoveAbsPosZ := 0.0;
+            AxisCmd_rMoveVelZ := HMI_rAutoVelZ;
+            xCmdMoveAbsZ := TRUE;
+            IF AxisFb_xStandstillZ AND (ABS(AxisFb_rPosZ) < 0.05) THEN
+                iAutoStep := 23;
+            END_IF
+
+        23: (* X 走一个行程 *)
             AxisCmd_rMoveDistX := HMI_rAutoDistX;
             AxisCmd_rMoveVelX := HMI_rAutoVelX;
             xCmdMoveRelX := TRUE;
             IF AxisFb_xMoveDoneX THEN
                 xCmdMoveRelX := FALSE;
-                iAutoStep := 2;
-            END_IF;
-        2:
+                iAutoStep := 24;
+            END_IF
+
+        24: (* R 换角：下一道角度（A/B 交替），HoldR 在 22/23 已撤形成上升沿 *)
             xCmdHoldR := TRUE;
-            AxisCmd_rRHoldPos := rRHold;
-            AxisCmd_rMoveAbsPosY := 0.0;
-            AxisCmd_rMoveVelY := HMI_rAutoVelY;
-            xCmdMoveAbsY := TRUE;
-            IF AxisFb_xStandstillY AND (ABS(AxisFb_rPosY) < 0.005) THEN
-                xCmdMoveAbsY := FALSE;
-                xAutoTareSent := FALSE;
-                iAutoStep := 3;
-            END_IF;
-        3:
-            xCmdHoldR := TRUE;
-            AxisCmd_rRHoldPos := rRHold;
-            IF NOT xAutoTareSent THEN
-                Logic_xForceTare := TRUE;
-                xAutoTareSent := TRUE;
-            END_IF;
-            xCmdForceFollow := TRUE;
-            IF rForceAct >= HMI_rForceSet THEN
-                iAutoStep := 4;
-            END_IF;
-        4:
-            xCmdHoldR := TRUE;
-            AxisCmd_rRHoldPos := rRHold;
-            xCmdForceFollow := TRUE;
-            AxisCmd_rMoveDistY := AxisCmd_rWheelBase;
-            AxisCmd_rMoveVelY := HMI_rAutoVelY;
-            xCmdMoveRelY := TRUE;
-            IF AxisFb_xMoveDoneY THEN
-                xCmdMoveRelY := FALSE;
-                iAutoStep := 5;
-            END_IF;
-        5:
+            AxisCmd_rRHoldPos := SEL(iPass MOD 2 <> 0, rRTgtA, rRTgtB);
+            IF AxisFb_xStandstillR AND (ABS(AxisFb_rPosR - AxisCmd_rRHoldPos) < 0.2) THEN
+                iAutoStep := 25;
+            END_IF
+
+        25: (* 道数判定 *)
             IF iPass < HMI_iAutoPasses THEN
                 iPass := iPass + 1;
-                iAutoStep := 1;
+                iAutoStep := 20;
             ELSE
-                iAutoStep := 6;
-            END_IF;
-        6:
+                iAutoStep := 30;
+            END_IF
+
+        30: (* 完成 *)
             HMI_xAutoBusy := FALSE;
             HMI_xAutoDone := TRUE;
             iAutoStep := 0;
@@ -729,6 +768,7 @@ AxisCmd_xForceFollow := xCmdForceFollow;
 AxisCmd_xMoveRelX := xCmdMoveRelX;
 AxisCmd_xMoveRelY := xCmdMoveRelY;
 AxisCmd_xMoveAbsY := xCmdMoveAbsY;
+AxisCmd_xMoveAbsZ := xCmdMoveAbsZ;
 AxisCmd_xHoldR := xCmdHoldR;
 (* 0.68 全轴直控：模式仲裁结果一次性写 AxisCmd_*，避免同扫描 TRUE->FALSE 空窗 *)
 AxisCmd_xDirectVelY := xDirectVelY; AxisCmd_xDirectVelZ := xDirectVelZ; AxisCmd_xDirectVelR := xDirectVelR;

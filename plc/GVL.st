@@ -324,6 +324,15 @@ HMI_xResetReq : BOOL;           (* 【触摸屏复位】 *)
 HMI_xEStopReq : BOOL := TRUE;   (* 【触摸屏急停】TRUE正常 *)
 HMI_xAutoStartReq : BOOL;       (* 【触摸屏自动启动】 *)
 HMI_xAutoAbortReq : BOOL;       (* 【触摸屏自动中止】 *)
+    AxisCmd_rMoveAbsPosZ : REAL; (* 【1.1】自动流程 Z 绝对定位目标 *)
+    AxisCmd_rMoveVelZ : REAL; (* 【1.1】自动流程 Z 定位速度 *)
+    AxisCmd_xMoveAbsZ : BOOL; (* 【1.1】自动流程 Z 绝对定位请求（抬升回零） *)
+    HMI_rYWidth : REAL; (* 【1.1】Y 行程宽度（0→该值往复）；WebUI word76/77 ×1000；1.2 工步模式共享字 *)
+    HMI_rRAngleA : REAL; (* 【1.1】R 角度 A（奇数道）；WebUI word78/79 ×1000；1.2 工步模式共享字 *)
+    HMI_rRAngleB : REAL; (* 【1.1】R 角度 B（偶数道）；WebUI word80/81 ×1000；1.2 工步模式共享字 *)
+    Tcp_rYWidth : REAL; (* 【1.1】网关镜像：Y 行程宽度 *)
+    Tcp_rRAngleA : REAL; (* 【1.1】网关镜像：R 角度 A *)
+    Tcp_rRAngleB : REAL; (* 【1.1】网关镜像：R 角度 B *)
 END_VAR
 
 VAR_GLOBAL RETAIN

@@ -1,12 +1,4 @@
 PROGRAM PRG_TcpHmi
-(* PRG_TcpHmi — Modbus TCP 过程映像编解码 + 控制源仲裁。
-   PLC=从站；Gateway=主站：FC16 写 Holding1000 命令 / FC03 读 Holding1100 状态。
-   eCtrlSrc 为 GVL 变量：0=面板/触摸屏 1=远程(Web)。
-   0.68：镜像 96 字；命令 word60..75 全轴直控；状态 word39..45 回传。
-   0.70：命令 word5 bit11 力峰值复位；状态 word46/47 力峰值 ×100、word48 力原始计数。
-   0.80：外部工步模式 —— 命令 word5 bit12 + word76..94 直写 HMI_*（不受 eCtrlSrc 门控）；
-         状态 word75..87 工步回报；航向误差非远程源时清零（修 0.79 面板点动冻结旧航向）。 *)
-SM3001:=TRUE;
 VAR
     xInit : BOOL;
     xPanelOp : BOOL;
@@ -22,11 +14,21 @@ VAR
     iTmp : INT;
     i : INT;
     tonHb : TON;
+    xStepModePrev : BOOL; (* 1.2：word76..81 共享字让出/复位用 *)
 END_VAR
+(* PRG_TcpHmi — Modbus TCP 过程映像编解码 + 控制源仲裁。
+   PLC=从站；Gateway=主站：FC16 写 Holding1000 命令 / FC03 读 Holding1100 状态。
+   eCtrlSrc 为 GVL 变量：0=面板/触摸屏 1=远程(Web)。
+   0.68：镜像 96 字；命令 word60..75 全轴直控；状态 word39..45 回传。
+   0.70：命令 word5 bit11 力峰值复位；状态 word46/47 力峰值 ×100、word48 力原始计数。
+   0.80：外部工步模式 —— 命令 word5 bit12 + word76..94 直写 HMI_*（不受 eCtrlSrc 门控）；
+         状态 word75..87 工步回报；航向误差非远程源时清零（修 0.79 面板点动冻结旧航向）。
+   1.2：合并 1.1 自动循环 —— word76..81 与工步区共享，工步模式下 Y 宽度/R 角度解码让出。 *)
 
 (* PRG_TcpHmi — Modbus TCP 过程映像编解码 + 控制源仲裁。
    PLC=Master 读 Holding1000 / 写 Holding1100；Gateway=Server。
    eCtrlSrc 为 GVL 变量：0=面板/触摸屏 1=远程(Web)。 *)
+SM3001:=TRUE;
 
 IF NOT xInit THEN
     Tcp_xEStop := TRUE;
@@ -35,6 +37,7 @@ IF NOT xInit THEN
     Tcp_rAutoDistX := 1.0; Tcp_rAutoVelX := 0.4;
     Tcp_rAutoVelY := 0.3; Tcp_rAutoVelZ := 0.15;
     Tcp_rWheelBase := 5.0; Tcp_rForceSet := 100.0;
+    Tcp_rYWidth := 100.0; Tcp_rRAngleA := 0.0; Tcp_rRAngleB := 0.0;
     Tcp_xForceSimEnable := FALSE;
     Tcp_iAutoPasses := 1;
     Tcp_rHeadingErr := 0.0;
@@ -152,6 +155,21 @@ IF xValid THEN
         Tcp_rAccR := DINT_TO_REAL(DWORD_TO_DINT(dwTmp)) / 1000.0;
         dwTmp := SHL(WORD_TO_DWORD(MB_CmdIn[52]), 16) OR WORD_TO_DWORD(MB_CmdIn[53]);
         Tcp_rDecR := DINT_TO_REAL(DWORD_TO_DINT(dwTmp)) / 1000.0;
+        (* 1.1 word76..81：Y 宽度 / R 角度A / R 角度B，×1000
+           1.2：与 0.80 工步区 word76..81 共享 —— 工步模式下让出（不解码），
+           退出工步模式时共享字残留工步参数，恢复安全默认值（重设后再开自动循环）。 *)
+        IF NOT HMI_xStepMode THEN
+            IF xStepModePrev THEN
+                Tcp_rYWidth := 100.0; Tcp_rRAngleA := 0.0; Tcp_rRAngleB := 0.0;
+            END_IF;
+            dwTmp := SHL(WORD_TO_DWORD(MB_CmdIn[76]), 16) OR WORD_TO_DWORD(MB_CmdIn[77]);
+            Tcp_rYWidth := DINT_TO_REAL(DWORD_TO_DINT(dwTmp)) / 1000.0;
+            dwTmp := SHL(WORD_TO_DWORD(MB_CmdIn[78]), 16) OR WORD_TO_DWORD(MB_CmdIn[79]);
+            Tcp_rRAngleA := DINT_TO_REAL(DWORD_TO_DINT(dwTmp)) / 1000.0;
+            dwTmp := SHL(WORD_TO_DWORD(MB_CmdIn[80]), 16) OR WORD_TO_DWORD(MB_CmdIn[81]);
+            Tcp_rRAngleB := DINT_TO_REAL(DWORD_TO_DINT(dwTmp)) / 1000.0;
+        END_IF;
+        xStepModePrev := HMI_xStepMode;
         (* 0.68 全轴直控命令 word60..75；视觉与操作员共用同一镜像 *)
         (* 模式字 word60/63/67/71：用局部索引读取（word63 与旧 tailSequence 同号，静态规则勿再出现直写下标） *)
         i := 60; iTmp := WORD_TO_INT(MB_CmdIn[i]); Tcp_iDirectModeX := INT_TO_UINT(iTmp);
@@ -397,10 +415,12 @@ MB_StatusOut[70] := AxisFb_wTq03M2;
 MB_StatusOut[71] := AxisFb_wTq04M2;
 MB_StatusOut[72] := AxisFb_wTq05M2;
 MB_StatusOut[73] := AxisFb_wTq06M2;
-(* 0.79 CSV 模式诊断 word74：bit0 M1 6060=9 / bit2 M2 6060=9（模式由从站 RxPDO 组态决定，只读） *)
+(* 0.74 CSV 模式切换状态 word74：bit0 M1done / bit1 M1err / bit2 M2done / bit3 M2err *)
 MB_StatusOut[74] := 0;
 IF AxisFb_xModeCsvM1 THEN MB_StatusOut[74] := MB_StatusOut[74] OR 1; END_IF;
+IF AxisFb_xModeCsvErrM1 THEN MB_StatusOut[74] := MB_StatusOut[74] OR 2; END_IF;
 IF AxisFb_xModeCsvM2 THEN MB_StatusOut[74] := MB_StatusOut[74] OR 4; END_IF;
+IF AxisFb_xModeCsvErrM2 THEN MB_StatusOut[74] := MB_StatusOut[74] OR 8; END_IF;
 (* 0.80 外部工步回报 word75..87 *)
 MB_StatusOut[75] := Step_wIdEcho;
 MB_StatusOut[76] := UINT_TO_WORD(Step_iCmdEcho);
@@ -477,6 +497,7 @@ IF eCtrlSrc = 1 THEN
     HMI_rAccY := Tcp_rAccY; HMI_rDecY := Tcp_rDecY;
     HMI_rAccZ := Tcp_rAccZ; HMI_rDecZ := Tcp_rDecZ;
     HMI_rAccR := Tcp_rAccR; HMI_rDecR := Tcp_rDecR;
+    HMI_rYWidth := Tcp_rYWidth; HMI_rRAngleA := Tcp_rRAngleA; HMI_rRAngleB := Tcp_rRAngleB;
 END_IF;
 
 (* 0.80 航向误差：只在远程源在线时采用（远程操作源，或外部工步模式）；否则清零。
