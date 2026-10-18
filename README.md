@@ -28,6 +28,7 @@ PLC（汇川 AM600 + InoProShop）+ Modbus TCP 网关 + 浏览器 WebHMI。
 
 ## 当前版本
 
+- **草稿（分支 `feat/step-mode-0.80`，未编译）**：`LMM_g_0.80.xml` 外部工步模式（`tools/patch_g080.py` 由 0.79 生成；设计与离线验收见 `docs/plc/STEP_MODE.md`）
 - **PLC 在役**：`LMM_g_0.78.xml`（现场）；**待烧录**：`LMM_g_0.79.xml`
   （96W 镜像 + 每轴直控 + 力峰值 + X 双驱 CoE 诊断 word49..74；
   注意 M1/M2 的 CSV 速度模式需在 InoProShop 把 MDX_EC/MDX_EC_1 的 RxPDO 从 0x1600 改为 0x1603，详见 `.equipment-workflow/state.md` 0.79 节）
@@ -37,9 +38,10 @@ PLC（汇川 AM600 + InoProShop）+ Modbus TCP 网关 + 浏览器 WebHMI。
 
 ```bash
 # PLC：改 plc/g/*.st 后注入并校验
-python3 tools/inject_g.py LMM_g_0.79.xml LMM_g_0.80.xml
+python3 tools/patch_g080.py                  # 0.80：GVL 加工步变量 + 注入 plc/g/*.st（0.79 → 0.80）
 python3 tools/inject_g.py --check
 python3 tools/check_plcopen_xml.py LMM_g_0.80.xml
+python3 tools/check_lmm.py LMM_g_0.80.xml
 
 # Modbus 契约改后重生成文档
 python3 tools/generate_modbus_map.py

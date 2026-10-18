@@ -2,7 +2,7 @@
 
 > **权威源码**：`plc/src/*.st` + `plc/GVL.st`（维护工作流见 `plc/README.md`）。
 > 本目录是说明文档；代码与文档冲突时以 `plc/` 源码为准。
-> **当前在役**：`LMM_g_0.78.xml`（现场）；**待烧录（推荐）**：`LMM_g_0.79.xml` = 96W 镜像 + 每轴直控 + 力峰值 + X 双驱 CoE 诊断（word49..74），删除 0.74~0.78 无效的运行时切 CSV 代码（M1/M2 速度模式由设备树 RxPDO 组态决定，需把 MDX_EC/MDX_EC_1 的 RxPDO 从 0x1600 改为 0x1603）；设备树通道 `0x1000/0x1100` 各 96 字。仓库只保留最新 3 个 XML，历史版本见 git 历史。
+> **当前在役**：`LMM_g_0.78.xml`（现场）；**待烧录（推荐）**：`LMM_g_0.79.xml` = 96W 镜像 + 每轴直控 + 力峰值 + X 双驱 CoE 诊断（word49..74），删除 0.74~0.78 无效的运行时切 CSV 代码（M1/M2 速度模式由设备树 RxPDO 组态决定，需把 MDX_EC/MDX_EC_1 的 RxPDO 从 0x1600 改为 0x1603）；设备树通道 `0x1000/0x1100` 各 96 字。**草稿（未编译）**：`LMM_g_0.80.xml` = 0.79 + 外部工步模式（见 [STEP_MODE.md](STEP_MODE.md)）。仓库只保留最新 3 个 XML，历史版本见 git 历史。
 
 | # | 文档 | 内容 |
 |---|------|------|
@@ -16,6 +16,7 @@
 | 6c | [VISION_MODBUS_TCP.md](VISION_MODBUS_TCP.md) | 视觉纠偏 Modbus TCP（IP / 寄存器 / 字节） |
 | 6d | [VISION_DIRECT.md](VISION_DIRECT.md) | X 轴视觉直控（0.60）+ 双电机速度通用透传（0.63） |
 | 6e | [VISION_AXIS_API.md](VISION_AXIS_API.md) | **视觉直控全轴开放接口**（给视觉开发者；v1 草案） |
+| 6f | [STEP_MODE.md](STEP_MODE.md) | **0.80 外部工步模式**（eOpMode=2；上位机编排 X 走距 / Z 压到力 / Y 恒力行程 / 点位；草稿未编译） |
 | 7 | [PLC_PRG.md](PLC_PRG.md) | 主入口与任务一览 |
 | 8 | [IMPORT_LMM_XML.md](IMPORT_LMM_XML.md) | 导入 InoProShop / 联调检查单 |
 | 9 | [WEB_PLC_ALIGN.md](WEB_PLC_ALIGN.md) | Web live ↔ PLC 对齐速查 |

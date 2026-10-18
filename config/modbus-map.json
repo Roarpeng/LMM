@@ -457,6 +457,101 @@
         "type": "UINT",
         "offset": 75,
         "zh": "【直控·心跳序号】客户端每周期 +1；PLC 300ms 看门狗"
+      },
+      {
+        "name": "HMI_xStepMode",
+        "type": "BOOL",
+        "offset": 5,
+        "bit": 12,
+        "zh": "【外部工步·模式请求】0.80：TRUE=请求 eOpMode=2（自动模式优先）；网关离线 PLC 自动清零。"
+      },
+      {
+        "name": "HMI_iStepCmd",
+        "type": "UINT",
+        "offset": 76,
+        "zh": "【外部工步·命令】0中止 1X走距(带视觉纠偏) 2Z压到力 3Y恒力行程 4Y/Z/R点位。"
+      },
+      {
+        "name": "HMI_wStepId",
+        "type": "UINT",
+        "offset": 77,
+        "zh": "【外部工步·命令号】变化即新命令；PLC 此时锁存全部工步参数。须与参数同一条写入。"
+      },
+      {
+        "name": "HMI_wStepFlags",
+        "type": "UINT",
+        "offset": 78,
+        "zh": "【外部工步·标志】bit0/1/2 点位选 Y/Z/R；bit3 压力前去皮。"
+      },
+      {
+        "name": "HMI_rStepDist",
+        "type": "SCALED_DINT",
+        "offset": 79,
+        "scale": 1000,
+        "zh": "【外部工步·距离】m；工步1 X / 工步3 Y 相对距离（带符号）。"
+      },
+      {
+        "name": "HMI_rStepVel",
+        "type": "SCALED_INT",
+        "offset": 81,
+        "scale": 1000,
+        "zh": "【外部工步·速度】m/s；工步1 X / 工步3 Y(拉毛) / 工步4 Y·Z。"
+      },
+      {
+        "name": "HMI_rStepVelR",
+        "type": "SCALED_INT",
+        "offset": 82,
+        "scale": 100,
+        "zh": "【外部工步·R速度】°/s；工步4。"
+      },
+      {
+        "name": "HMI_rStepPosY",
+        "type": "SCALED_DINT",
+        "offset": 83,
+        "scale": 1000,
+        "zh": "【外部工步·Y目标】m；工步4。"
+      },
+      {
+        "name": "HMI_rStepPosZ",
+        "type": "SCALED_DINT",
+        "offset": 85,
+        "scale": 1000,
+        "zh": "【外部工步·Z目标】m；工步4（0=顶，向下为负）。"
+      },
+      {
+        "name": "HMI_rStepPosR",
+        "type": "SCALED_DINT",
+        "offset": 87,
+        "scale": 1000,
+        "zh": "【外部工步·R目标】°；工步4。"
+      },
+      {
+        "name": "HMI_rStepForce",
+        "type": "SCALED_DINT",
+        "offset": 89,
+        "scale": 100,
+        "zh": "【外部工步·恒力目标】N；工步2/3。"
+      },
+      {
+        "name": "HMI_rStepKpForce",
+        "type": "SCALED_DINT",
+        "offset": 91,
+        "scale": 1000000,
+        "zh": "【外部工步·力控Kp】(m/s)/N；工步2/3。"
+      },
+      {
+        "name": "HMI_rStepVelZMax",
+        "type": "SCALED_INT",
+        "offset": 93,
+        "scale": 1000,
+        "zh": "【外部工步·力跟随Z限速】m/s；工步2/3。"
+      },
+      {
+        "name": "HMI_rStepTimeout",
+        "type": "SCALED_INT",
+        "offset": 94,
+        "scale": 10,
+        "zh": "【外部工步·超时】s；0=PLC默认（工步1/3 距离/速度×2+5，工步2/4 60s）。"
       }
     ]
   },
@@ -1101,6 +1196,120 @@
         "offset": 74,
         "bit": 2,
         "zh": "【只读·M2 6060 实测=9(CSV)】"
+      },
+      {
+        "name": "Step_wIdEcho",
+        "type": "UINT",
+        "offset": 75,
+        "zh": "【只读·工步·命令号回显】PLC 已受理的 HMI_wStepId。"
+      },
+      {
+        "name": "Step_iCmdEcho",
+        "type": "UINT",
+        "offset": 76,
+        "zh": "【只读·工步·命令回显】"
+      },
+      {
+        "name": "Step_iState",
+        "type": "UINT",
+        "offset": 77,
+        "zh": "【只读·工步·状态】0空闲 1执行 2完成 3失败。"
+      },
+      {
+        "name": "Step_iErr",
+        "type": "UINT",
+        "offset": 78,
+        "zh": "【只读·工步·错误码】1模式 2参数 3越限 4忙 10超时 11安全 12心跳 20未接触。"
+      },
+      {
+        "name": "Step_iPhase",
+        "type": "UINT",
+        "offset": 79,
+        "zh": "【只读·工步·子阶段】诊断。"
+      },
+      {
+        "name": "Step_xModeActive",
+        "type": "BOOL",
+        "offset": 80,
+        "bit": 0,
+        "zh": "【只读·工步·模式在役】eOpMode=2。"
+      },
+      {
+        "name": "Step_xForceFollow",
+        "type": "BOOL",
+        "offset": 80,
+        "bit": 1,
+        "zh": "【只读·工步·力跟随中】"
+      },
+      {
+        "name": "Step_xForceReached",
+        "type": "BOOL",
+        "offset": 80,
+        "bit": 2,
+        "zh": "【只读·工步·力已达】"
+      },
+      {
+        "name": "Step_xForceLow",
+        "type": "BOOL",
+        "offset": 80,
+        "bit": 3,
+        "zh": "【只读·工步·恒力行程力偏低】< 0.8F，只报不停。"
+      },
+      {
+        "name": "Step_xRHold",
+        "type": "BOOL",
+        "offset": 80,
+        "bit": 4,
+        "zh": "【只读·工步·R保持中】"
+      },
+      {
+        "name": "AxisFb_xStandstillY",
+        "type": "BOOL",
+        "offset": 80,
+        "bit": 5,
+        "zh": "【只读·Y静止】"
+      },
+      {
+        "name": "AxisFb_xStandstillZ",
+        "type": "BOOL",
+        "offset": 80,
+        "bit": 6,
+        "zh": "【只读·Z静止】"
+      },
+      {
+        "name": "AxisFb_xStandstillR",
+        "type": "BOOL",
+        "offset": 80,
+        "bit": 7,
+        "zh": "【只读·R静止】"
+      },
+      {
+        "name": "Step_rProgress",
+        "type": "SCALED_DINT",
+        "offset": 81,
+        "scale": 1000,
+        "zh": "【只读·工步·已走距离】m；工步1/3。"
+      },
+      {
+        "name": "Step_rKpForceEcho",
+        "type": "SCALED_DINT",
+        "offset": 83,
+        "scale": 1000000,
+        "zh": "【只读·工步·力控Kp回显】(m/s)/N。"
+      },
+      {
+        "name": "Step_rRHoldPos",
+        "type": "SCALED_DINT",
+        "offset": 85,
+        "scale": 1000,
+        "zh": "【只读·工步·R保持目标】°。"
+      },
+      {
+        "name": "Step_rElapsed",
+        "type": "SCALED_INT",
+        "offset": 87,
+        "scale": 10,
+        "zh": "【只读·工步·已用时】s。"
       }
     ]
   },

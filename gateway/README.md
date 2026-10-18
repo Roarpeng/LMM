@@ -39,6 +39,7 @@ npm start           # 仅本地 Mock（无 PLC）
 | `PLC_CMD_BASE` | 4096 | 现场对齐：命令区基址（=0x1000） |
 | `PLC_STATUS_BASE` | 4352 | 现场对齐：状态区基址（=0x1100） |
 | `MOCK_PLC` | 未设置 | 仅值为 `1` 时启用进程内模拟 PLC |
+| `MOCK_GROUND_Z` | `-0.3` | mock 地面高度（m，Z 向下为负）；外部工步“压到力”用的接触力模型 |
 
 兼容：若未设 `PLC_HOST`/`PLC_PORT`，可读旧名 `MODBUS_HOST`/`MODBUS_PORT` 作为 **PLC 目标**（不再表示本机监听）。
 
@@ -53,9 +54,11 @@ npm start           # 仅本地 Mock（无 PLC）
 ## 诊断与实时性
 
 - `GET /health`：模式、客户端数、写租约归属、在线判定、Modbus 主站诊断（连接/轮询/错误计数/最近成功）。
-- WS 连接立即收到首帧 `t:"s"`，随后 `t:"hello"`（clientId/mode）；写租约变化广播 `t:"lease"`。
+- WS 连接立即收到首帧 `t:"s"`，随后 `t:"hello"`（clientId/mode）、当前租约 `t:"lease"`（有写者时）和命令镜像 `t:"c"`；写租约**易主时**广播 `t:"lease"`（续约不广播）。
+- 命令镜像回显 `{"t":"c","owner":N|null,"at":ms,"values":{...}}`：网关实际收下、将写给 PLC 的命令（含视觉工控机等其他写者），写入后按 `CMD_ECHO_MS`（默认 200 ms）节流广播，租约释放切安全值时立即广播。WebHMI 直控页「网关实收」与寄存器表命令区据此显示。
 - 遥测为**每轮询周期整帧推送**（非浏览器轮询）；默认 50ms，端到端典型 50–120ms。WebHMI v2 用 rAF 合帧 + 变更 diff 渲染。
 - Mock 冒烟：`cd gateway && node scripts/smoke-webhmi.js`（校验页面/health/map/WS 新字段）。
+- 外部工步（0.80）验收：`node scripts/smoke-step.js [--hold] [--fault heartbeat|stop|busy|nocontact|limit]`，扮演上位机经 WS 跑一道作业；台架连真网关加 `--url ws://… --allow-motion`。接口见 `docs/plc/STEP_MODE.md`。
 
 0.63 状态区新增（由 PLC `PRG_TcpHmi` 编码）：`AxisFb_rVelActM1/M2`（word32/34）、
 `AxisFb_xMovingM1/M2` `AxisFb_xPoweredM1/M2` `AxisFb_xSyncWarn/Fault`（word36 位）、

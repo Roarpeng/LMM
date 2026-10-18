@@ -3,7 +3,9 @@ PROGRAM PRG_TcpHmi
    PLC=从站；Gateway=主站：FC16 写 Holding1000 命令 / FC03 读 Holding1100 状态。
    eCtrlSrc 为 GVL 变量：0=面板/触摸屏 1=远程(Web)。
    0.68：镜像 96 字；命令 word60..75 全轴直控；状态 word39..45 回传。
-   0.70：命令 word5 bit11 力峰值复位；状态 word46/47 力峰值 ×100、word48 力原始计数。 *)
+   0.70：命令 word5 bit11 力峰值复位；状态 word46/47 力峰值 ×100、word48 力原始计数。
+   0.80：外部工步模式 —— 命令 word5 bit12 + word76..94 直写 HMI_*（不受 eCtrlSrc 门控）；
+         状态 word75..87 工步回报；航向误差非远程源时清零（修 0.79 面板点动冻结旧航向）。 *)
 SM3001:=TRUE;
 VAR
     xInit : BOOL;
@@ -168,6 +170,27 @@ IF xValid THEN
         dwTmp := SHL(WORD_TO_DWORD(MB_CmdIn[73]), 16) OR WORD_TO_DWORD(MB_CmdIn[74]);
         Tcp_rDirectPosR := DINT_TO_REAL(DWORD_TO_DINT(dwTmp)) / 1000.0;
         Tcp_wDirectSeq := MB_CmdIn[75];
+        (* 0.80 外部工步：word5 bit12 + word76..94 直写 HMI_*（同直控字段，每个新快照都跟随，不受 eCtrlSrc 门控） *)
+        HMI_xStepMode := (MB_CmdIn[5] AND 4096) <> 0;
+        HMI_iStepCmd := WORD_TO_UINT(MB_CmdIn[76]);
+        HMI_wStepId := MB_CmdIn[77];
+        HMI_wStepFlags := MB_CmdIn[78];
+        dwTmp := SHL(WORD_TO_DWORD(MB_CmdIn[79]), 16) OR WORD_TO_DWORD(MB_CmdIn[80]);
+        HMI_rStepDist := DINT_TO_REAL(DWORD_TO_DINT(dwTmp)) / 1000.0;
+        HMI_rStepVel := INT_TO_REAL(WORD_TO_INT(MB_CmdIn[81])) / 1000.0;
+        HMI_rStepVelR := INT_TO_REAL(WORD_TO_INT(MB_CmdIn[82])) / 100.0;
+        dwTmp := SHL(WORD_TO_DWORD(MB_CmdIn[83]), 16) OR WORD_TO_DWORD(MB_CmdIn[84]);
+        HMI_rStepPosY := DINT_TO_REAL(DWORD_TO_DINT(dwTmp)) / 1000.0;
+        dwTmp := SHL(WORD_TO_DWORD(MB_CmdIn[85]), 16) OR WORD_TO_DWORD(MB_CmdIn[86]);
+        HMI_rStepPosZ := DINT_TO_REAL(DWORD_TO_DINT(dwTmp)) / 1000.0;
+        dwTmp := SHL(WORD_TO_DWORD(MB_CmdIn[87]), 16) OR WORD_TO_DWORD(MB_CmdIn[88]);
+        HMI_rStepPosR := DINT_TO_REAL(DWORD_TO_DINT(dwTmp)) / 1000.0;
+        dwTmp := SHL(WORD_TO_DWORD(MB_CmdIn[89]), 16) OR WORD_TO_DWORD(MB_CmdIn[90]);
+        HMI_rStepForce := DINT_TO_REAL(DWORD_TO_DINT(dwTmp)) / 100.0;
+        dwTmp := SHL(WORD_TO_DWORD(MB_CmdIn[91]), 16) OR WORD_TO_DWORD(MB_CmdIn[92]);
+        HMI_rStepKpForce := DINT_TO_REAL(DWORD_TO_DINT(dwTmp)) / 1000000.0;
+        HMI_rStepVelZMax := INT_TO_REAL(WORD_TO_INT(MB_CmdIn[93])) / 1000.0;
+        HMI_rStepTimeout := INT_TO_REAL(WORD_TO_INT(MB_CmdIn[94])) / 10.0;
     END_IF;
 ELSIF wMagic <> 0 AND wMagic <> 19533 THEN
     Tcp_iCommStatus := 2;
@@ -206,6 +229,7 @@ IF tonHb.Q OR Tcp_iCommStatus = 0 THEN
     Tcp_xAutoStart := FALSE;
     Tcp_xForceTare := FALSE; Tcp_xForceUntare := FALSE; Tcp_xForceGuide := FALSE;
     Tcp_xForcePeakReset := FALSE;
+    HMI_xStepMode := FALSE;          (* 0.80：网关离线即退出外部工步 *)
     Tcp_xStop := TRUE;
     Tcp_xAutoAbort := TRUE;
     Tcp_xEStop := TRUE;
@@ -377,6 +401,34 @@ MB_StatusOut[73] := AxisFb_wTq06M2;
 MB_StatusOut[74] := 0;
 IF AxisFb_xModeCsvM1 THEN MB_StatusOut[74] := MB_StatusOut[74] OR 1; END_IF;
 IF AxisFb_xModeCsvM2 THEN MB_StatusOut[74] := MB_StatusOut[74] OR 4; END_IF;
+(* 0.80 外部工步回报 word75..87 *)
+MB_StatusOut[75] := Step_wIdEcho;
+MB_StatusOut[76] := UINT_TO_WORD(Step_iCmdEcho);
+MB_StatusOut[77] := INT_TO_WORD(Step_iState);
+MB_StatusOut[78] := INT_TO_WORD(Step_iErr);
+MB_StatusOut[79] := INT_TO_WORD(Step_iPhase);
+MB_StatusOut[80] := 0;
+IF Step_xModeActive THEN MB_StatusOut[80] := MB_StatusOut[80] OR 1; END_IF;
+IF Step_xForceFollow THEN MB_StatusOut[80] := MB_StatusOut[80] OR 2; END_IF;
+IF Step_xForceReached THEN MB_StatusOut[80] := MB_StatusOut[80] OR 4; END_IF;
+IF Step_xForceLow THEN MB_StatusOut[80] := MB_StatusOut[80] OR 8; END_IF;
+IF Step_xRHold THEN MB_StatusOut[80] := MB_StatusOut[80] OR 16; END_IF;
+IF AxisFb_xStandstillY THEN MB_StatusOut[80] := MB_StatusOut[80] OR 32; END_IF;
+IF AxisFb_xStandstillZ THEN MB_StatusOut[80] := MB_StatusOut[80] OR 64; END_IF;
+IF AxisFb_xStandstillR THEN MB_StatusOut[80] := MB_StatusOut[80] OR 128; END_IF;
+diTmp := REAL_TO_DINT(Step_rProgress * 1000.0);
+dwTmp := DINT_TO_DWORD(diTmp);
+MB_StatusOut[81] := DWORD_TO_WORD(SHR(dwTmp, 16));
+MB_StatusOut[82] := DWORD_TO_WORD(dwTmp AND 16#FFFF);
+diTmp := REAL_TO_DINT(Step_rKpForceEcho * 1000000.0);
+dwTmp := DINT_TO_DWORD(diTmp);
+MB_StatusOut[83] := DWORD_TO_WORD(SHR(dwTmp, 16));
+MB_StatusOut[84] := DWORD_TO_WORD(dwTmp AND 16#FFFF);
+diTmp := REAL_TO_DINT(Step_rRHoldPos * 1000.0);
+dwTmp := DINT_TO_DWORD(diTmp);
+MB_StatusOut[85] := DWORD_TO_WORD(SHR(dwTmp, 16));
+MB_StatusOut[86] := DWORD_TO_WORD(dwTmp AND 16#FFFF);
+MB_StatusOut[87] := INT_TO_WORD(REAL_TO_INT(Step_rElapsed * 10.0));
 MB_StatusOut[95] := Tcp_wStatusSeq;
 
 (* ===== 控制源仲裁 ===== *)
@@ -419,13 +471,23 @@ IF eCtrlSrc = 1 THEN
     HMI_rWheelBase := Tcp_rWheelBase; HMI_rForceSet := Tcp_rForceSet;
     HMI_rForceSim := Tcp_rForceSim;
     HMI_iAutoPasses := Tcp_iAutoPasses;
-    HMI_rHeadingErr := Tcp_rHeadingErr;
     HMI_rKpTrack := Tcp_rKpTrack;
     HMI_rKpForce := Tcp_rKpForce;
     HMI_rAccX := Tcp_rAccX; HMI_rDecX := Tcp_rDecX;
     HMI_rAccY := Tcp_rAccY; HMI_rDecY := Tcp_rDecY;
     HMI_rAccZ := Tcp_rAccZ; HMI_rDecZ := Tcp_rDecZ;
     HMI_rAccR := Tcp_rAccR; HMI_rDecR := Tcp_rDecR;
+END_IF;
+
+(* 0.80 航向误差：只在远程源在线时采用（远程操作源，或外部工步模式）；否则清零。
+   0.79 及以前只在 eCtrlSrc=1 时复制，面板点动 X 时 HMI_rHeadingErr 会冻结在最后一个远程值继续打差速。 *)
+IF Tcp_xOnline AND ((eCtrlSrc = 1) OR HMI_xStepMode) THEN
+    HMI_rHeadingErr := Tcp_rHeadingErr;
+ELSE
+    HMI_rHeadingErr := 0.0;
+END_IF;
+IF Tcp_xOnline AND HMI_xStepMode THEN
+    HMI_rKpTrack := Tcp_rKpTrack;
 END_IF;
 
 HMI_xEStop := EStop AND Tcp_xEStop AND HMI_xEStopReq;

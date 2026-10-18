@@ -213,6 +213,69 @@ test('non-owner ping does not keep another browser write lease alive', {
   }
 });
 
+test('command echo lets every client see what the lease owner wrote', { timeout: 3000 }, async () => {
+  const gateway = await startMockGateway();
+  const owner = await connectBrowser(gateway.httpServer);
+  const observer = await connectBrowser(gateway.httpServer);
+  try {
+    await waitUntil(() => owner.messages.some((message) => message.t === 'hello'));
+    const ownerId = owner.messages.find((message) => message.t === 'hello').clientId;
+    // 连接即收到一帧当前命令镜像（此时无写者）
+    await waitUntil(() => observer.messages.some((message) => message.t === 'c'));
+    assert.equal(observer.messages.find((message) => message.t === 'c').owner, null);
+
+    owner.ws.send(JSON.stringify({
+      t: 'w', HMI_xEStop: true, HMI_xStop: false, HMI_xDirectEnable: true,
+      HMI_wDirectSeq: 7, HMI_rHeadingErr: 0.0123, HMI_rKpTrack: 1.5,
+    }));
+    await waitUntil(() => observer.messages.some((message) => message.t === 'c'
+      && message.owner === ownerId && message.values.HMI_rHeadingErr === 0.0123));
+    const echo = observer.messages.filter((message) => message.t === 'c').at(-1);
+    assert.equal(echo.values.HMI_rKpTrack, 1.5);
+    assert.equal(echo.values.HMI_xDirectEnable, true);
+    assert.equal(echo.values.HMI_wDirectSeq, 7);
+
+    // 写者断开 → 立即回显安全值、无写者
+    owner.ws.terminate();
+    await waitUntil(() => observer.messages.some((message) => message.t === 'c'
+      && message.owner === null && message.values.HMI_xStop === true));
+  } finally {
+    owner.ws.terminate();
+    observer.ws.terminate();
+    await closeGateway(gateway);
+  }
+});
+
+test('lease is broadcast on ownership change only, and sent to late joiners', { timeout: 3000 }, async () => {
+  const gateway = await startMockGateway({ CMD_ECHO_MS: '200' });
+  const owner = await connectBrowser(gateway.httpServer);
+  const observer = await connectBrowser(gateway.httpServer);
+  try {
+    for (let seq = 1; seq <= 10; seq += 1) {
+      owner.ws.send(JSON.stringify({ t: 'w', HMI_xStop: false, HMI_wDirectSeq: seq }));
+      await delay(10);
+    }
+    await waitUntil(() => observer.messages.some((message) => message.t === 'c'
+      && message.values.HMI_wDirectSeq === 10), 1500);
+    const leases = observer.messages.filter((message) => message.t === 'lease');
+    assert.equal(leases.length, 1);
+    // 10 次写入（~100 ms）在 200 ms 节流下最多：连接 1 帧 + 首帧 + 末帧补发
+    assert.ok(observer.messages.filter((message) => message.t === 'c').length <= 3);
+
+    const late = await connectBrowser(gateway.httpServer);
+    try {
+      await waitUntil(() => late.messages.some((message) => message.t === 'lease'));
+      assert.equal(late.messages.find((message) => message.t === 'lease').owner, leases[0].owner);
+    } finally {
+      late.ws.terminate();
+    }
+  } finally {
+    owner.ws.terminate();
+    observer.ws.terminate();
+    await closeGateway(gateway);
+  }
+});
+
 test('invalid browser values return t:err and leave gateway running', { timeout: 3000 }, async () => {
   const gateway = await startMockGateway();
   const browser = await connectBrowser(gateway.httpServer);
